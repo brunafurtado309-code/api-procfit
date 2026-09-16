@@ -12,6 +12,11 @@
 // - LUCRO_BRUTO_PRODUTOS_VENDAS usa preço de tabela, não o praticado: não usamos.
 // - Identificação de cada venda: no PDV é CAIXA + VENDA; na NFE esses campos vêm
 //   zerados e quem identifica é DOCUMENTO_NUMERO (+ SERIE_NF).
+// - DOCUMENTO_TIPO (tabela TIPOS_DOCUMENTOS_VENDAS_ANALITICAS) define o grupo:
+//     CAIXA     = 1, 2, 9, 10, 18, 19 (PDV e vendas manuais, com cancelamentos)
+//     DEVOLUCAO = 12, 13, 14, 16      (notas de devolução e devolução no caixa)
+//     NOTA      = demais              (notas emitidas, canceladas e estornadas)
+//     20 (importação de demanda) não é venda e fica fora de tudo.
 // - Margem: calculada SÓ sobre as vendas que têm custo. O campo cobertura_custo_pct
 //   informa quanto da venda líquida entrou nesse cálculo (0% = sem margem).
 
@@ -32,6 +37,12 @@ const BASE = `
       VA.DOCUMENTO_NUMERO,
       VA.SERIE_NF,
       VA.PRODUTO,
+      VA.VENDEDOR,
+      CASE
+        WHEN VA.DOCUMENTO_TIPO IN (12, 13, 14, 16)       THEN 'DEVOLUCAO'
+        WHEN VA.DOCUMENTO_TIPO IN (1, 2, 9, 10, 18, 19)  THEN 'CAIXA'
+        ELSE 'NOTA'
+      END AS CATEGORIA,
       VA.QUANTIDADE,
       VA.VENDA_BRUTA,
       VA.DESCONTO,
@@ -44,6 +55,7 @@ const BASE = `
     FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
     WHERE VA.MOVIMENTO BETWEEN CAST(@inicio AS date) AND CAST(@fim AS date)
       AND (@empresa IS NULL OR VA.EMPRESA = @empresa)
+      AND ISNULL(VA.DOCUMENTO_TIPO, 0) <> 20
   ),
   VENDAS AS (
     SELECT
@@ -146,6 +158,40 @@ async function porOrigem(filtros) {
   return recordset;
 }
 
+// Vendas por vendedor, separando notas, devoluções e caixa.
+// DOCS = cada documento (nota, devolução ou cupom) com seu valor líquido.
+// Um documento só é contado se terminou com valor (positivo para venda, negativo para devolução).
+async function porVendedor(filtros) {
+  const request = await criarRequest(filtros);
+  const { recordset } = await request.query(`
+    ${BASE},
+    DOCS AS (
+      SELECT
+        VENDEDOR, CATEGORIA,
+        SUM(VENDA_LIQUIDA) AS LIQUIDA
+      FROM ITENS
+      GROUP BY VENDEDOR, CATEGORIA, EMPRESA, MOVIMENTO, ESPECIE_FISCAL,
+               CAIXA, VENDA, DOCUMENTO_NUMERO, SERIE_NF
+    )
+    SELECT
+      D.VENDEDOR                          AS vendedor,
+      COALESCE(V.NOME, 'Sem vendedor')    AS nome,
+      SUM(CASE WHEN D.CATEGORIA = 'NOTA' THEN D.LIQUIDA ELSE 0 END)                     AS notas_valor,
+      SUM(CASE WHEN D.CATEGORIA = 'NOTA' AND D.LIQUIDA > 0 THEN 1 ELSE 0 END)           AS notas_qtd,
+      SUM(CASE WHEN D.CATEGORIA = 'DEVOLUCAO' THEN D.LIQUIDA ELSE 0 END)                AS devolucoes_valor,
+      SUM(CASE WHEN D.CATEGORIA = 'DEVOLUCAO' AND D.LIQUIDA < 0 THEN 1 ELSE 0 END)      AS devolucoes_qtd,
+      SUM(CASE WHEN D.CATEGORIA = 'CAIXA' THEN D.LIQUIDA ELSE 0 END)                    AS caixa_valor,
+      SUM(CASE WHEN D.CATEGORIA = 'CAIXA' AND D.LIQUIDA > 0 THEN 1 ELSE 0 END)          AS caixa_qtd,
+      SUM(D.LIQUIDA)                      AS liquido
+    FROM DOCS D
+    LEFT JOIN VENDEDORES V WITH (NOLOCK)
+      ON V.VENDEDOR = D.VENDEDOR
+    GROUP BY D.VENDEDOR, V.NOME
+    ORDER BY liquido DESC
+  `);
+  return recordset;
+}
+
 // Produtos mais vendidos (por valor líquido)
 async function topProdutos(filtros, limite) {
   const request = await criarRequest(filtros);
@@ -171,4 +217,4 @@ async function topProdutos(filtros, limite) {
   return recordset;
 }
 
-module.exports = { resumo, porDia, porLoja, porOrigem, topProdutos };
+module.exports = { resumo, porDia, porLoja, porOrigem, porVendedor, topProdutos };

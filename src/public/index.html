@@ -49,6 +49,31 @@
         </p>
       </section>
 
+      <section class="bloco" aria-labelledby="titulo-composicao">
+        <h2 id="titulo-composicao">Como a venda se forma</h2>
+        <dl class="numeros">
+          <div class="numero">
+            <dt>Notas faturadas</dt>
+            <dd id="total-notas">—</dd>
+            <dd id="total-notas-qtd" class="nota"></dd>
+          </div>
+          <div class="numero">
+            <dt>Vendas no caixa</dt>
+            <dd id="total-caixa">—</dd>
+            <dd id="total-caixa-qtd" class="nota"></dd>
+          </div>
+          <div class="numero">
+            <dt>Devoluções</dt>
+            <dd id="total-devolucoes">—</dd>
+            <dd id="total-devolucoes-qtd" class="nota"></dd>
+          </div>
+          <div class="numero">
+            <dt>Venda líquida</dt>
+            <dd id="total-liquido">—</dd>
+          </div>
+        </dl>
+      </section>
+
       <dl class="numeros">
         <div class="numero">
           <dt>Vendas</dt>
@@ -68,6 +93,26 @@
           <dd id="margem-nota" class="nota"></dd>
         </div>
       </dl>
+
+      <section class="bloco" aria-labelledby="titulo-vendedores">
+        <h2 id="titulo-vendedores">Vendas por vendedor</h2>
+        <div class="tabela-rolagem">
+          <table class="tabela">
+            <thead>
+              <tr>
+                <th scope="col">Vendedor</th>
+                <th scope="col">Notas faturadas</th>
+                <th scope="col">Devoluções</th>
+                <th scope="col">Notas menos devoluções</th>
+                <th scope="col">Caixa</th>
+                <th scope="col">Total líquido</th>
+              </tr>
+            </thead>
+            <tbody id="vendedores"></tbody>
+            <tfoot id="vendedores-total"></tfoot>
+          </table>
+        </div>
+      </section>
     </div>
   </main>
 </body>

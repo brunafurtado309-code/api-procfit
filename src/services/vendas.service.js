@@ -58,7 +58,27 @@ const resumo = (query) => repo.resumo(montarFiltros(query));
 const porDia = (query) => repo.porDia(montarFiltros(query));
 const porLoja = (query) => repo.porLoja(montarFiltros(query));
 const porOrigem = (query) => repo.porOrigem(montarFiltros(query));
+// Vendedores + linha de total calculada aqui (regra de negócio fica no service).
+const COLUNAS_SOMADAS = [
+  'notas_valor', 'notas_qtd',
+  'devolucoes_valor', 'devolucoes_qtd',
+  'caixa_valor', 'caixa_qtd',
+  'liquido',
+];
+const arredondar = (n) => Math.round(n * 100) / 100;
+
+async function porVendedor(query) {
+  const vendedores = await repo.porVendedor(montarFiltros(query));
+  const total = {};
+  for (const coluna of COLUNAS_SOMADAS) {
+    total[coluna] = arredondar(vendedores.reduce((soma, v) => soma + Number(v[coluna] || 0), 0));
+  }
+  return { vendedores, total };
+}
+
 const topProdutos = (query) =>
   repo.topProdutos(montarFiltros(query), montarLimite(query.limite));
 
-module.exports = { resumo, porDia, porLoja, porOrigem, topProdutos, montarFiltros, montarLimite };
+module.exports = {
+  resumo, porDia, porLoja, porOrigem, porVendedor, topProdutos, montarFiltros, montarLimite,
+};

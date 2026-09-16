@@ -10,6 +10,16 @@ const NOMES_ORIGEM = { PDV: 'Caixa', NFE: 'Nota fiscal', OUTROS: 'Outros' };
 
 const el = (id) => document.getElementById(id);
 
+// "1 nota" / "3 notas"
+const contar = (n, singular, plural) =>
+  `${inteiro.format(n ?? 0)} ${n === 1 ? singular : plural}`;
+
+// Escreve um valor em reais e pinta de alerta se for negativo
+function escreverValor(elemento, valor) {
+  elemento.textContent = moeda.format(valor ?? 0);
+  elemento.classList.toggle('negativo', valor < 0);
+}
+
 // Data de hoje no formato AAAA-MM-DD (horário local)
 function formatarData(data) {
   const doisDigitos = (n) => String(n).padStart(2, '0');
@@ -122,18 +132,91 @@ function mostrarOrigens(origens) {
   }
 }
 
+function mostrarComposicao(total) {
+  escreverValor(el('total-notas'), total.notas_valor);
+  el('total-notas-qtd').textContent = contar(total.notas_qtd, 'nota', 'notas');
+
+  escreverValor(el('total-caixa'), total.caixa_valor);
+  el('total-caixa-qtd').textContent = contar(total.caixa_qtd, 'cupom', 'cupons');
+
+  escreverValor(el('total-devolucoes'), total.devolucoes_valor);
+  el('total-devolucoes-qtd').textContent =
+    contar(total.devolucoes_qtd, 'nota de devolução', 'notas de devolução');
+
+  escreverValor(el('total-liquido'), total.liquido);
+}
+
+// Célula com valor em reais e, opcionalmente, a quantidade embaixo
+function celulaValor(valor, textoQtd, classeExtra) {
+  const td = document.createElement('td');
+  const texto = document.createElement('span');
+  escreverValor(texto, valor);
+  td.append(texto);
+
+  if (textoQtd) {
+    const qtd = document.createElement('span');
+    qtd.className = 'qtd';
+    qtd.textContent = textoQtd;
+    td.append(qtd);
+  }
+  if (classeExtra) td.classList.add(classeExtra);
+  return td;
+}
+
+function linhaVendedor(v, ehTotal = false) {
+  const tr = document.createElement('tr');
+
+  const nome = document.createElement(ehTotal ? 'td' : 'th');
+  if (!ehTotal) nome.scope = 'row';
+  nome.textContent = ehTotal ? 'Total' : v.nome;
+
+  const notasMenosDevolucoes = (v.notas_valor ?? 0) + (v.devolucoes_valor ?? 0);
+
+  tr.append(
+    nome,
+    celulaValor(v.notas_valor, contar(v.notas_qtd, 'nota', 'notas')),
+    celulaValor(v.devolucoes_valor, contar(v.devolucoes_qtd, 'devolução', 'devoluções')),
+    celulaValor(notasMenosDevolucoes),
+    celulaValor(v.caixa_valor, contar(v.caixa_qtd, 'cupom', 'cupons')),
+    celulaValor(v.liquido, null, 'coluna-final'),
+  );
+  return tr;
+}
+
+function mostrarVendedores({ vendedores, total }) {
+  const corpo = el('vendedores');
+
+  if (vendedores.length === 0) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 6;
+    td.className = 'vazio';
+    td.textContent = 'Nenhuma venda no período. Escolha outras datas e clique em Atualizar.';
+    tr.append(td);
+    corpo.replaceChildren(tr);
+    el('vendedores-total').replaceChildren();
+    return;
+  }
+
+  corpo.replaceChildren(...vendedores.map((v) => linhaVendedor(v)));
+  el('vendedores-total').replaceChildren(linhaVendedor(total, true));
+}
+
 async function carregar() {
   const filtros = { inicio: el('inicio').value, fim: el('fim').value };
   mostrarStatus('Carregando…');
 
   try {
     // As duas consultas rodam ao mesmo tempo
-    const [resumo, origens] = await Promise.all([
+    const [resumo, origens, porVendedor] = await Promise.all([
       buscar('resumo', filtros),
       buscar('por-origem', filtros),
+      buscar('por-vendedor', filtros),
     ]);
     mostrarResumo(resumo);
     mostrarOrigens(origens);
+    mostrarComposicao(porVendedor.total);
+    mostrarVendedores(porVendedor);
     mostrarStatus(`Atualizado às ${new Date().toLocaleTimeString('pt-BR')}`);
   } catch (erro) {
     if (erro instanceof ChaveInvalida) {
