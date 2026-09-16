@@ -14,6 +14,7 @@ router.get('/vendedores/:vendedor/notas', controller.notasDoVendedor);
 router.get('/por-operador', controller.porOperador);
 router.get('/operadores/:operador/cupons', controller.cuponsDoOperador);
 router.get('/top-produtos', controller.topProdutos);
+router.get('/pesquisa', controller.pesquisar);
 
 // Downloads em Excel
 router.get('/exportar/excel', controller.exportarPainel);

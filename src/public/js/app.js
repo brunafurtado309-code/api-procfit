@@ -387,6 +387,47 @@ const DETALHES = {
   },
 };
 
+// Pesquisa na tela principal: notas e cupons juntos
+function celulaTipo(linha) {
+  const td = document.createElement('td');
+  td.className = 'esquerda';
+  const selo = document.createElement('span');
+  selo.className = `tipo-documento tipo-documento--${linha.tipo === 'Nota' ? 'nota' : 'cupom'}`;
+  selo.textContent = linha.tipo;
+  td.append(selo);
+  return td;
+}
+
+DETALHES.pesquisa = {
+  rota: () => 'pesquisa',
+  rotaExcel: null,
+  pessoa: (d) => ({ nome: `Resultado para "${d.termo}"` }),
+  linhas: (d) => [
+    ...d.notas.map((n) => ({ ...n, tipo: 'Nota', documento: n.nota })),
+    ...d.cupons.map((c) => ({ ...c, tipo: 'Cupom', documento: c.cupom, pedido: null })),
+  ].sort((a, b) => (a.data || '').localeCompare(b.data || '') || (a.documento ?? 0) - (b.documento ?? 0)),
+  carregando: 'Pesquisando…',
+  vazio: 'Nenhuma nota ou cupom encontrado no período. Confira o que foi digitado ou amplie as datas.',
+  situacoes: ['Faturada', 'Emitido', 'Cancelada', 'Cancelado', 'Devolução'],
+  dicaBusca: 'Refinar: número, cliente, vendedor…',
+  busca: (l) => [l.tipo, l.documento, l.pedido, l.vendedor, l.codigo_cliente, l.cliente, l.fantasia, l.cnpj_cpf],
+  resumo: (t) => [
+    contar(t.notas_qtd, 'nota', 'notas'),
+    contar(t.cupons_qtd, 'cupom', 'cupons'),
+  ],
+  colunas: [
+    { titulo: 'Tipo', esquerda: true, celula: celulaTipo },
+    { titulo: 'Data', celula: (l) => celulaTexto(dataBR(l.data), 'sem-quebra') },
+    { titulo: 'Situação', esquerda: true, celula: (l) => celulaSituacao(l.situacao) },
+    { titulo: 'Nº documento', celula: (l) => celulaTexto(l.documento) },
+    { titulo: 'Nº do pedido', celula: (l) => celulaTexto(l.pedido) },
+    { titulo: 'Vendedor', esquerda: true, celula: (l) => celulaTexto(l.vendedor || 'Não informado', 'esquerda') },
+    { titulo: 'Cód. cliente', celula: (l) => celulaTexto(l.codigo_cliente) },
+    { titulo: 'Cliente', esquerda: true, celula: celulaCliente },
+    { titulo: 'Valor', celula: (l) => celulaValor(l.valor) },
+  ],
+};
+
 function montarCabecalho(config) {
   const tr = document.createElement('tr');
   for (const coluna of config.colunas) {
@@ -503,10 +544,10 @@ function mostrarDetalhe(config, dados) {
   aplicarFiltroDetalhe();
   el('detalhe-busca').focus();
 
-  mostrarStatusDetalhe(
-    dados.limite_atingido ? 'Mostrando só os primeiros registros. Diminua o período para ver todos.' : '',
-    dados.limite_atingido,
-  );
+  const avisoLimite = dados.termo
+    ? `Mostrando os primeiros ${dados.limite} resultados de cada tipo. Use uma pesquisa mais específica.`
+    : 'Mostrando só os primeiros registros. Diminua o período para ver todos.';
+  mostrarStatusDetalhe(dados.limite_atingido ? avisoLimite : '', dados.limite_atingido);
 }
 
 function mostrarStatusDetalhe(texto, erro = false) {
@@ -517,9 +558,10 @@ function mostrarStatusDetalhe(texto, erro = false) {
 // Guarda o que está aberto na janela, para o botão de Excel saber o que baixar
 let detalheAberto = null;
 
-async function abrirDetalhe(tipo, codigo, nome) {
+async function abrirDetalhe(tipo, codigo, nome, filtrosExtras = {}) {
   const config = DETALHES[tipo];
-  detalheAberto = { config, codigo, filtros: filtrosAtuais() };
+  detalheAberto = { config, codigo, filtros: { ...filtrosAtuais(), ...filtrosExtras } };
+  el('detalhe-baixar').hidden = !config.rotaExcel;
   el('detalhe-titulo').textContent = nome;
   el('detalhe-resumo').textContent = '';
   montarCabecalho(config);
@@ -537,6 +579,18 @@ async function abrirDetalhe(tipo, codigo, nome) {
     console.error(erro);
     mostrarStatusDetalhe(erro.message, true);
   }
+}
+
+function pesquisarNaTelaPrincipal(evento) {
+  evento.preventDefault();
+  const termo = el('pesquisa-termo').value.trim();
+  if (termo.length < 2) {
+    mostrarStatus('Digite pelo menos 2 caracteres para pesquisar.', true);
+    el('pesquisa-termo').focus();
+    return;
+  }
+  mostrarStatus('');
+  abrirDetalhe('pesquisa', null, `Resultado para "${termo}"`, { q: termo });
 }
 
 async function baixarDetalhe() {
@@ -616,6 +670,7 @@ document.addEventListener('DOMContentLoaded', () => {
   el('detalhe-busca').addEventListener('input', aoDigitarBusca);
   el('detalhe-situacao').addEventListener('change', aplicarFiltroDetalhe);
   el('baixar-painel').addEventListener('click', baixarPainel);
+  el('form-pesquisa').addEventListener('submit', pesquisarNaTelaPrincipal);
 
   el('trocar-chave').addEventListener('click', () => {
     chave.apagar();

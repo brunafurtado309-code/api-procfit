@@ -38,6 +38,7 @@ module.exports = {
   notasDoVendedor: acao(service.notasDoVendedor),
   porOperador: acao(service.porOperador),
   cuponsDoOperador: acao(service.cuponsDoOperador),
+  pesquisar: acao(service.pesquisar),
   topProdutos: acao(service.topProdutos),
   exportarPainel: download(exportacao.exportarPainel),
   exportarNotas: download(exportacao.exportarNotasVendedor),

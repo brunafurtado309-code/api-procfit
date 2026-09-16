@@ -156,11 +156,43 @@ async function cuponsDoOperador(query, params) {
   };
 }
 
+// Pesquisa de notas e cupons no período
+const LIMITE_PESQUISA = 200;
+
+async function pesquisar(query) {
+  const filtros = montarFiltros(query);
+  const termo = String(query.q ?? '').trim().replace(/\s+/g, ' ');
+
+  if (termo.length < 2) throw new AppError('Digite pelo menos 2 caracteres para pesquisar');
+  if (termo.length > 60) throw new AppError('A pesquisa pode ter no máximo 60 caracteres');
+
+  const [notas, cupons] = await Promise.all([
+    repo.notasDoVendedor(filtros, null, LIMITE_PESQUISA, termo),
+    repo.cuponsDoOperador(filtros, null, LIMITE_PESQUISA, termo),
+  ]);
+
+  const somar = (lista) => arredondar(lista.reduce((s, item) => s + Number(item.valor || 0), 0));
+
+  return {
+    termo,
+    periodo: { inicio: filtros.inicio, fim: filtros.fim },
+    limite: LIMITE_PESQUISA,
+    limite_atingido: notas.length >= LIMITE_PESQUISA || cupons.length >= LIMITE_PESQUISA,
+    total: {
+      notas_qtd: notas.length,
+      cupons_qtd: cupons.length,
+      valor: arredondar(somar(notas) + somar(cupons)),
+    },
+    notas,
+    cupons,
+  };
+}
+
 const topProdutos = (query) =>
   repo.topProdutos(montarFiltros(query), montarLimite(query.limite));
 
 module.exports = {
   resumo, porDia, porLoja, porOrigem, porVendedor, notasDoVendedor,
-  porOperador, cuponsDoOperador, topProdutos,
+  porOperador, cuponsDoOperador, pesquisar, topProdutos,
   montarFiltros, montarLimite,
 };

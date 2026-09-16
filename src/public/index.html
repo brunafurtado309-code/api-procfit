@@ -35,6 +35,15 @@
         <button id="baixar-painel" type="button" class="botao-secundario">Baixar Excel</button>
       </form>
 
+      <form id="form-pesquisa" class="pesquisa" role="search">
+        <label class="campo campo--busca">
+          <span>Encontrar nota ou cupom no período</span>
+          <input id="pesquisa-termo" type="search" maxlength="60" autocomplete="off"
+                 placeholder="Nº da nota, cupom ou pedido, cliente, CNPJ/CPF ou código do cliente">
+        </label>
+        <button type="submit">Pesquisar</button>
+      </form>
+
       <p id="status" class="status" role="status" aria-live="polite"></p>
 
       <section class="destaque" aria-labelledby="titulo-liquida">

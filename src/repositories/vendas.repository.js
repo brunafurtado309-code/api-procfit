@@ -88,6 +88,30 @@ const INDICADORES = `
   ROUND(SUM(LIQUIDA) / NULLIF(SUM(CASE WHEN LIQUIDA > 0 THEN 1 ELSE 0 END), 0), 2) AS ticket_medio
 `;
 
+// ===== Pesquisa por texto (nota, cupom, pedido, cliente) =====
+// Números: comparação exata. Nomes: por partes, sem diferenciar acentos.
+// Caracteres especiais do LIKE (% _ [) são tratados como texto comum.
+function prepararBusca(termo) {
+  if (!termo) return { busca: null, buscaLike: null, buscaDigitos: null };
+  const escapado = termo.replace(/[%_[]/g, '[$&]');
+  const digitos = termo.replace(/\D/g, '');
+  return {
+    busca: termo,
+    buscaLike: `%${escapado.split(/\s+/).join('%')}%`,
+    buscaDigitos: digitos.length >= 3 ? `%${digitos}%` : null,
+  };
+}
+
+function adicionarBusca(request, termo) {
+  const { busca, buscaLike, buscaDigitos } = prepararBusca(termo);
+  request.input('busca', sql.VarChar(60), busca);
+  request.input('buscaLike', sql.VarChar(200), buscaLike);
+  request.input('buscaDigitos', sql.VarChar(40), buscaDigitos);
+}
+
+const SEM_PONTUACAO = (coluna) =>
+  `REPLACE(REPLACE(REPLACE(${coluna}, '.', ''), '/', ''), '-', '')`;
+
 async function criarRequest({ inicio, fim, empresa }) {
   const pool = await getPool();
   return pool
@@ -204,10 +228,11 @@ async function porVendedor(filtros) {
 // - vendedor 0 = notas sem vendedor informado; vendedor null = todos (exportação).
 const LIMITE_NOTAS = 5000;
 
-async function notasDoVendedor(filtros, vendedor, limite = LIMITE_NOTAS) {
+async function notasDoVendedor(filtros, vendedor, limite = LIMITE_NOTAS, termo = null) {
   const request = await criarRequest(filtros);
   request.input('vendedor', sql.Int, vendedor ?? null);
   request.input('limite', sql.Int, limite);
+  adicionarBusca(request, termo);
   const { recordset } = await request.query(`
     WITH ITENS AS (
       SELECT
@@ -265,6 +290,13 @@ async function notasDoVendedor(filtros, vendedor, limite = LIMITE_NOTAS) {
       ON E.ENTIDADE = D.CLIENTE
     LEFT JOIN VENDEDORES V WITH (NOLOCK)
       ON V.VENDEDOR = D.VENDEDOR
+    WHERE @busca IS NULL
+       OR CAST(D.DOCUMENTO_NUMERO AS varchar(20)) = @busca
+       OR LTRIM(RTRIM(NF.PEDIDO_CLIENTE)) = @busca
+       OR CAST(D.CLIENTE AS varchar(20)) = @busca
+       OR E.NOME COLLATE Latin1_General_CI_AI LIKE @buscaLike
+       OR E.NOME_FANTASIA COLLATE Latin1_General_CI_AI LIKE @buscaLike
+       OR (@buscaDigitos IS NOT NULL AND ${SEM_PONTUACAO('E.INSCRICAO_FEDERAL')} LIKE @buscaDigitos)
     ORDER BY D.MOVIMENTO, D.DOCUMENTO_NUMERO
   `);
   return recordset;
@@ -332,10 +364,11 @@ async function porOperador(filtros) {
 }
 
 // operador null = todos (exportação)
-async function cuponsDoOperador(filtros, operador, limite = LIMITE_NOTAS) {
+async function cuponsDoOperador(filtros, operador, limite = LIMITE_NOTAS, termo = null) {
   const request = await criarRequest(filtros);
   request.input('operador', sql.Int, operador ?? null);
   request.input('limite', sql.Int, limite);
+  adicionarBusca(request, termo);
   const { recordset } = await request.query(`
     ${BASE_CAIXA}
     SELECT TOP (@limite)
@@ -356,6 +389,7 @@ async function cuponsDoOperador(filtros, operador, limite = LIMITE_NOTAS) {
       CO.CLIENTE                              AS codigo_cliente,
       LTRIM(RTRIM(E.NOME))                    AS cliente,
       LTRIM(RTRIM(E.NOME_FANTASIA))           AS fantasia,
+      E.INSCRICAO_FEDERAL                     AS cnpj_cpf,
       CO.LIQUIDA                              AS valor
     FROM CUPONS_OPERADOR CO
     LEFT JOIN VENDEDORES VV WITH (NOLOCK) ON VV.VENDEDOR = CO.VENDEDOR
@@ -363,6 +397,14 @@ async function cuponsDoOperador(filtros, operador, limite = LIMITE_NOTAS) {
     LEFT JOIN OPERADORES O WITH (NOLOCK)  ON O.OPERADOR = CO.OPERADOR
     LEFT JOIN VENDEDORES VO WITH (NOLOCK) ON VO.VENDEDOR = O.VENDEDOR
     WHERE (@operador IS NULL OR CO.OPERADOR = @operador)
+      AND (
+        @busca IS NULL
+        OR CAST(CO.DOCUMENTO_NUMERO AS varchar(20)) = @busca
+        OR CAST(CO.CLIENTE AS varchar(20)) = @busca
+        OR E.NOME COLLATE Latin1_General_CI_AI LIKE @buscaLike
+        OR E.NOME_FANTASIA COLLATE Latin1_General_CI_AI LIKE @buscaLike
+        OR (@buscaDigitos IS NOT NULL AND ${SEM_PONTUACAO('E.INSCRICAO_FEDERAL')} LIKE @buscaDigitos)
+      )
     ORDER BY CO.MOVIMENTO, CO.DATA_HORA, CO.DOCUMENTO_NUMERO
   `);
   return recordset;
