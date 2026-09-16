@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Painel de vendas | Belo Norte</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/app.js" defer></script>
+</head>
+<body>
+  <header class="topo">
+    <div>
+      <p class="marca">Belo Norte</p>
+      <h1>Painel de vendas</h1>
+    </div>
+    <button id="trocar-chave" class="botao-texto" type="button" hidden>Trocar chave</button>
+  </header>
+
+  <main class="conteudo">
+    <!-- Tela de entrada: pede a chave da API -->
+    <form id="form-chave" class="entrada" hidden>
+      <h2>Entrar no painel</h2>
+      <p>Informe a chave de acesso da API. Ela fica guardada só até você fechar esta aba.</p>
+      <label for="campo-chave">Chave de acesso</label>
+      <input id="campo-chave" type="password" autocomplete="off" required>
+      <button type="submit">Entrar</button>
+    </form>
+
+    <!-- Painel -->
+    <div id="painel" hidden>
+      <form id="filtros" class="filtros">
+        <label>De <input type="date" id="inicio" required></label>
+        <label>Até <input type="date" id="fim" required></label>
+        <button type="submit">Atualizar</button>
+      </form>
+
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+
+      <section class="destaque" aria-labelledby="titulo-liquida">
+        <h2 id="titulo-liquida">Venda líquida no período</h2>
+        <p id="venda-liquida" class="valor-grande">—</p>
+
+        <div id="barra" class="barra" aria-hidden="true"></div>
+        <ul id="legenda" class="legenda"></ul>
+
+        <p class="explica">
+          <span class="amostra amostra--cheia"></span> com custo cadastrado
+          <span class="amostra amostra--listrada"></span> sem custo cadastrado
+        </p>
+      </section>
+
+      <dl class="numeros">
+        <div class="numero">
+          <dt>Vendas</dt>
+          <dd id="qtd-vendas">—</dd>
+        </div>
+        <div class="numero">
+          <dt>Ticket médio</dt>
+          <dd id="ticket">—</dd>
+        </div>
+        <div class="numero">
+          <dt>Descontos</dt>
+          <dd id="desconto">—</dd>
+        </div>
+        <div class="numero">
+          <dt>Margem bruta</dt>
+          <dd id="margem">—</dd>
+          <dd id="margem-nota" class="nota"></dd>
+        </div>
+      </dl>
+    </div>
+  </main>
+</body>
+</html>

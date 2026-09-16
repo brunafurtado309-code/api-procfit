@@ -12,6 +12,8 @@
 // - LUCRO_BRUTO_PRODUTOS_VENDAS usa preço de tabela, não o praticado: não usamos.
 // - Identificação de cada venda: no PDV é CAIXA + VENDA; na NFE esses campos vêm
 //   zerados e quem identifica é DOCUMENTO_NUMERO (+ SERIE_NF).
+// - Margem: calculada SÓ sobre as vendas que têm custo. O campo cobertura_custo_pct
+//   informa quanto da venda líquida entrou nesse cálculo (0% = sem margem).
 
 const { sql, getPool } = require('../config/db');
 
@@ -36,6 +38,8 @@ const BASE = `
       VA.VENDA_LIQUIDA,
       CASE WHEN VA.CUSTO_MEDIO_PRODUTOS_VENDAS > 0
            THEN VA.QUANTIDADE * VA.CUSTO_MEDIO_PRODUTOS_VENDAS END AS CUSTO,
+      CASE WHEN VA.CUSTO_MEDIO_PRODUTOS_VENDAS > 0
+           THEN VA.VENDA_LIQUIDA END AS LIQUIDA_COM_CUSTO,
       CASE WHEN VA.CUSTO_MEDIO_PRODUTOS_VENDAS > 0 THEN 0 ELSE 1 END AS SEM_CUSTO
     FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
     WHERE VA.MOVIMENTO BETWEEN CAST(@inicio AS date) AND CAST(@fim AS date)
@@ -49,6 +53,7 @@ const BASE = `
       SUM(DESCONTO)      AS DESCONTOS,
       SUM(VENDA_LIQUIDA) AS LIQUIDA,
       SUM(CUSTO)         AS CUSTO,
+      SUM(LIQUIDA_COM_CUSTO) AS LIQUIDA_COM_CUSTO,
       SUM(SEM_CUSTO)     AS ITENS_SEM_CUSTO
     FROM ITENS
     GROUP BY EMPRESA, MOVIMENTO, ESPECIE_FISCAL, CAIXA, VENDA, DOCUMENTO_NUMERO, SERIE_NF
@@ -57,16 +62,15 @@ const BASE = `
 
 // Indicadores calculados a partir do bloco VENDAS.
 // Só conta como venda o cupom que terminou com valor positivo (cancelados totalmente ficam de fora).
-// Custo, lucro e margem só aparecem se TODOS os itens do grupo tiverem custo.
+// Custo, lucro e margem consideram só as vendas com custo (null se nenhuma tiver).
 const INDICADORES = `
   SUM(CASE WHEN LIQUIDA > 0 THEN 1 ELSE 0 END) AS qtd_vendas,
   SUM(LIQUIDA)                                 AS venda_liquida,
   SUM(ITENS_SEM_CUSTO)                         AS itens_sem_custo,
-  CASE WHEN SUM(ITENS_SEM_CUSTO) = 0 THEN SUM(CUSTO) END                AS custo,
-  CASE WHEN SUM(ITENS_SEM_CUSTO) = 0 THEN SUM(LIQUIDA) - SUM(CUSTO) END AS lucro_bruto,
-  CASE WHEN SUM(ITENS_SEM_CUSTO) = 0
-       THEN ROUND(100.0 * (SUM(LIQUIDA) - SUM(CUSTO)) / NULLIF(SUM(LIQUIDA), 0), 2)
-  END                                          AS margem_pct,
+  ROUND(100.0 * ISNULL(SUM(LIQUIDA_COM_CUSTO), 0) / NULLIF(SUM(LIQUIDA), 0), 2) AS cobertura_custo_pct,
+  SUM(CUSTO)                                   AS custo,
+  SUM(LIQUIDA_COM_CUSTO) - SUM(CUSTO)          AS lucro_bruto,
+  ROUND(100.0 * (SUM(LIQUIDA_COM_CUSTO) - SUM(CUSTO)) / NULLIF(SUM(LIQUIDA_COM_CUSTO), 0), 2) AS margem_pct,
   ROUND(SUM(LIQUIDA) / NULLIF(SUM(CASE WHEN LIQUIDA > 0 THEN 1 ELSE 0 END), 0), 2) AS ticket_medio
 `;
 
@@ -133,10 +137,10 @@ async function porOrigem(filtros) {
   const { recordset } = await request.query(`
     ${BASE}
     SELECT
-      ISNULL(ESPECIE_FISCAL, 'OUTROS') AS origem,
+      COALESCE(CAST(ESPECIE_FISCAL AS varchar(10)), 'OUTROS') AS origem,
       ${INDICADORES}
     FROM VENDAS
-    GROUP BY ISNULL(ESPECIE_FISCAL, 'OUTROS')
+    GROUP BY COALESCE(CAST(ESPECIE_FISCAL AS varchar(10)), 'OUTROS')
     ORDER BY venda_liquida DESC
   `);
   return recordset;
@@ -154,11 +158,9 @@ async function topProdutos(filtros, limite) {
       SUM(I.QUANTIDADE)                 AS quantidade,
       SUM(I.VENDA_LIQUIDA)              AS venda_liquida,
       SUM(I.SEM_CUSTO)                  AS itens_sem_custo,
-      CASE WHEN SUM(I.SEM_CUSTO) = 0
-           THEN SUM(I.VENDA_LIQUIDA) - SUM(I.CUSTO) END AS lucro_bruto,
-      CASE WHEN SUM(I.SEM_CUSTO) = 0
-           THEN ROUND(100.0 * (SUM(I.VENDA_LIQUIDA) - SUM(I.CUSTO)) / NULLIF(SUM(I.VENDA_LIQUIDA), 0), 2)
-      END                               AS margem_pct
+      ROUND(100.0 * ISNULL(SUM(I.LIQUIDA_COM_CUSTO), 0) / NULLIF(SUM(I.VENDA_LIQUIDA), 0), 2) AS cobertura_custo_pct,
+      SUM(I.LIQUIDA_COM_CUSTO) - SUM(I.CUSTO) AS lucro_bruto,
+      ROUND(100.0 * (SUM(I.LIQUIDA_COM_CUSTO) - SUM(I.CUSTO)) / NULLIF(SUM(I.LIQUIDA_COM_CUSTO), 0), 2) AS margem_pct
     FROM ITENS I
     LEFT JOIN PRODUTOS P WITH (NOLOCK)
       ON P.PRODUTO = I.PRODUTO

@@ -1,0 +1,244 @@
+/* ===== Cores e medidas (tokens) ===== */
+:root {
+  --fundo: #F7F4F9;        /* lilás bem claro */
+  --superficie: #FFFFFF;
+  --tinta: #2A1533;        /* açaí escuro: texto */
+  --tinta-suave: #6E5D76;
+  --linha: #E3D9EA;
+  --acai: #5B1F6B;         /* nota fiscal */
+  --acai-claro: #CDB3D6;
+  --folha: #3F7D4E;        /* caixa */
+  --folha-clara: #BCD8C3;
+  --outros: #8A7F90;
+  --outros-claro: #D6D0D9;
+  --alerta: #A4561B;
+
+  --fonte: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --raio: 10px;
+}
+
+* { box-sizing: border-box; }
+
+/* Garante que o atributo hidden sempre esconda, mesmo com display definido no CSS */
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  background: var(--fundo);
+  color: var(--tinta);
+  font-family: var(--fonte);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+/* Números sempre alinhados (mesma largura para cada dígito) */
+.valor-grande, .numero dd, .legenda { font-variant-numeric: tabular-nums; }
+
+/* ===== Topo ===== */
+.topo {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
+  padding: 1.5rem clamp(1rem, 4vw, 3rem) 1rem;
+  border-bottom: 1px solid var(--linha);
+}
+.marca {
+  margin: 0;
+  color: var(--acai);
+  font-weight: 600;
+}
+.topo h1 {
+  margin: 0;
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+
+.conteudo {
+  max-width: 1100px;
+  padding: 1.5rem clamp(1rem, 4vw, 3rem) 3rem;
+}
+
+/* ===== Botões e campos ===== */
+button {
+  font: inherit;
+  cursor: pointer;
+  border: 0;
+  border-radius: var(--raio);
+  padding: 0.55rem 1.1rem;
+  background: var(--acai);
+  color: #fff;
+  font-weight: 600;
+}
+button:hover { background: #4A1858; }
+
+.botao-texto {
+  white-space: nowrap;
+  background: none;
+  color: var(--acai);
+  padding: 0.25rem 0;
+  text-decoration: underline;
+}
+.botao-texto:hover { background: none; color: var(--tinta); }
+
+input {
+  font: inherit;
+  color: var(--tinta);
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--linha);
+  border-radius: var(--raio);
+  background: var(--superficie);
+}
+
+:focus-visible {
+  outline: 3px solid var(--acai-claro);
+  outline-offset: 2px;
+}
+
+/* ===== Tela de entrada ===== */
+.entrada {
+  max-width: 26rem;
+  display: grid;
+  gap: 0.6rem;
+}
+.entrada h2 { margin: 0; font-size: 1.35rem; }
+.entrada p { margin: 0 0 0.5rem; color: var(--tinta-suave); }
+.entrada label { font-weight: 600; }
+.entrada button { justify-self: start; margin-top: 0.4rem; }
+
+/* ===== Filtros ===== */
+.filtros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1rem;
+}
+.filtros label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.9rem;
+  color: var(--tinta-suave);
+}
+
+.status {
+  min-height: 1.5rem;
+  margin: 0.75rem 0 0;
+  color: var(--tinta-suave);
+}
+.status--erro { color: var(--alerta); font-weight: 600; }
+
+/* ===== Destaque: venda líquida + barra ===== */
+.destaque { margin-top: 1rem; }
+.destaque h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--tinta-suave);
+}
+.valor-grande {
+  margin: 0.1rem 0 1.25rem;
+  font-size: clamp(2.5rem, 7vw, 4.25rem);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--acai);
+}
+
+/* A barra: cada origem é um segmento; dentro dele, a parte lisa é a que tem custo */
+.barra {
+  display: flex;
+  height: 2.25rem;
+  border-radius: var(--raio);
+  overflow: hidden;
+  background: var(--linha);
+}
+.segmento {
+  --cor: var(--outros);
+  --cor-clara: var(--outros-claro);
+  height: 100%;
+  background: repeating-linear-gradient(
+    135deg, var(--cor-clara) 0 6px, var(--superficie) 6px 12px
+  );
+  transition: width 0.4s ease;
+}
+.segmento + .segmento { border-left: 2px solid var(--fundo); }
+.segmento__custo {
+  height: 100%;
+  background: var(--cor);
+}
+.segmento--pdv { --cor: var(--folha); --cor-clara: var(--folha-clara); }
+.segmento--nfe { --cor: var(--acai); --cor-clara: var(--acai-claro); }
+
+.legenda {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 2.5rem;
+  margin: 0.9rem 0 0;
+  padding: 0;
+}
+.legenda__item {
+  padding-left: 0.75rem;
+  border-left: 4px solid var(--outros);
+}
+.legenda__item--pdv { border-color: var(--folha); }
+.legenda__item--nfe { border-color: var(--acai); }
+.legenda__item strong { display: block; }
+.legenda__item span { display: block; color: var(--tinta-suave); font-size: 0.9rem; }
+
+.explica {
+  margin: 1rem 0 0;
+  font-size: 0.85rem;
+  color: var(--tinta-suave);
+}
+.amostra {
+  display: inline-block;
+  width: 1.4rem;
+  height: 0.8rem;
+  margin: 0 0.3rem -0.1rem 0;
+  border-radius: 3px;
+  vertical-align: baseline;
+}
+.amostra + .amostra, .explica .amostra:nth-of-type(2) { margin-left: 1rem; }
+.amostra--cheia { background: var(--tinta-suave); }
+.amostra--listrada {
+  background: repeating-linear-gradient(135deg, var(--linha) 0 4px, var(--superficie) 4px 8px);
+  border: 1px solid var(--linha);
+}
+
+/* ===== Indicadores ===== */
+.numeros {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 1.25rem 0;
+  margin: 2.5rem 0 0;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--linha);
+}
+.numero {
+  padding: 0 1.25rem;
+  border-left: 1px solid var(--linha);
+}
+.numero:first-child { padding-left: 0; border-left: 0; }
+.numero dt { color: var(--tinta-suave); font-size: 0.9rem; }
+.numero dd {
+  margin: 0.15rem 0 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+.numero .nota {
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--tinta-suave);
+}
+.numero .nota--alerta { color: var(--alerta); }
+
+/* ===== Celular ===== */
+@media (max-width: 560px) {
+  .numeros { grid-template-columns: 1fr 1fr; }
+  .numero, .numero:first-child { padding: 0 0.75rem 0 0; border-left: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .segmento { transition: none; }
+}
