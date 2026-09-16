@@ -2,6 +2,7 @@
 
 require('dotenv').config();
 const express = require('express');
+const path = require('path');
 const helmet = require('helmet');
 const { getPool } = require('./config/db');
 const exigirChave = require('./middlewares/auth');
@@ -9,8 +10,12 @@ const errorHandler = require('./middlewares/errorHandler');
 const vendasRoutes = require('./routes/vendas.routes');
 
 const app = express();
-app.use(helmet());          // proteções básicas de segurança
-app.use(express.json());    // permite receber JSON
+
+app.use(helmet({
+  // Permite abrir o painel pela rede (http) sem forçar https
+  contentSecurityPolicy: { directives: { upgradeInsecureRequests: null } },
+}));
+app.use(express.json());
 
 // Rota de saúde (pública): confirma que a API está viva e conectada ao banco.
 app.get('/health', async (req, res) => {
@@ -29,6 +34,9 @@ app.get('/health', async (req, res) => {
 
 // Rotas protegidas por chave
 app.use('/vendas', exigirChave, vendasRoutes);
+
+// Painel visual (arquivos da pasta src/public)
+app.use('/painel', express.static(path.join(__dirname, 'public')));
 
 // Rota inexistente
 app.use((req, res) => res.status(404).json({ erro: 'Rota não encontrada' }));
