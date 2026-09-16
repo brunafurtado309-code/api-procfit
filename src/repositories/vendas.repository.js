@@ -1,0 +1,172 @@
+// Camada de dados: aqui ficam SOMENTE as consultas SQL de vendas.
+//
+// Aprendizados sobre a VENDAS_ANALITICAS (validados com dados reais):
+// - MOVIMENTO é a data da venda (DATA é quando o PROCFIT processou).
+// - Cancelamentos aparecem como linhas NEGATIVAS da mesma venda.
+// - CMV e LUCRO_BRUTO não servem (CMV vem zerado).
+//   O custo real está em CUSTO_MEDIO_PRODUTOS_VENDAS, que é POR UNIDADE
+//   (fica positivo mesmo no cancelamento), por isso multiplicamos pela QUANTIDADE.
+// - O custo só é preenchido nas vendas do caixa (PDV). Nas vendas por nota (NFE)
+//   ele vem VAZIO, e em alguns produtos vem ZERADO. Os dois casos contam como
+//   "sem custo": custo, lucro e margem voltam como null (indisponível), nunca como zero.
+// - LUCRO_BRUTO_PRODUTOS_VENDAS usa preço de tabela, não o praticado: não usamos.
+// - Identificação de cada venda: no PDV é CAIXA + VENDA; na NFE esses campos vêm
+//   zerados e quem identifica é DOCUMENTO_NUMERO (+ SERIE_NF).
+
+const { sql, getPool } = require('../config/db');
+
+// Bloco base usado por todas as consultas.
+// ITENS  = cada item vendido no período, já com o custo total calculado.
+// VENDAS = os itens agrupados por venda (cupom), para saber o valor líquido de cada uma.
+// É um texto fixo nosso (não vem do usuário). Os VALORES entram como parâmetros.
+const BASE = `
+  WITH ITENS AS (
+    SELECT
+      VA.EMPRESA,
+      VA.CAIXA,
+      VA.VENDA,
+      VA.MOVIMENTO,
+      VA.ESPECIE_FISCAL,
+      VA.DOCUMENTO_NUMERO,
+      VA.SERIE_NF,
+      VA.PRODUTO,
+      VA.QUANTIDADE,
+      VA.VENDA_BRUTA,
+      VA.DESCONTO,
+      VA.VENDA_LIQUIDA,
+      CASE WHEN VA.CUSTO_MEDIO_PRODUTOS_VENDAS > 0
+           THEN VA.QUANTIDADE * VA.CUSTO_MEDIO_PRODUTOS_VENDAS END AS CUSTO,
+      CASE WHEN VA.CUSTO_MEDIO_PRODUTOS_VENDAS > 0 THEN 0 ELSE 1 END AS SEM_CUSTO
+    FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
+    WHERE VA.MOVIMENTO BETWEEN CAST(@inicio AS date) AND CAST(@fim AS date)
+      AND (@empresa IS NULL OR VA.EMPRESA = @empresa)
+  ),
+  VENDAS AS (
+    SELECT
+      EMPRESA, MOVIMENTO, ESPECIE_FISCAL,
+      SUM(QUANTIDADE)    AS QTD_ITENS,
+      SUM(VENDA_BRUTA)   AS BRUTA,
+      SUM(DESCONTO)      AS DESCONTOS,
+      SUM(VENDA_LIQUIDA) AS LIQUIDA,
+      SUM(CUSTO)         AS CUSTO,
+      SUM(SEM_CUSTO)     AS ITENS_SEM_CUSTO
+    FROM ITENS
+    GROUP BY EMPRESA, MOVIMENTO, ESPECIE_FISCAL, CAIXA, VENDA, DOCUMENTO_NUMERO, SERIE_NF
+  )
+`;
+
+// Indicadores calculados a partir do bloco VENDAS.
+// Só conta como venda o cupom que terminou com valor positivo (cancelados totalmente ficam de fora).
+// Custo, lucro e margem só aparecem se TODOS os itens do grupo tiverem custo.
+const INDICADORES = `
+  SUM(CASE WHEN LIQUIDA > 0 THEN 1 ELSE 0 END) AS qtd_vendas,
+  SUM(LIQUIDA)                                 AS venda_liquida,
+  SUM(ITENS_SEM_CUSTO)                         AS itens_sem_custo,
+  CASE WHEN SUM(ITENS_SEM_CUSTO) = 0 THEN SUM(CUSTO) END                AS custo,
+  CASE WHEN SUM(ITENS_SEM_CUSTO) = 0 THEN SUM(LIQUIDA) - SUM(CUSTO) END AS lucro_bruto,
+  CASE WHEN SUM(ITENS_SEM_CUSTO) = 0
+       THEN ROUND(100.0 * (SUM(LIQUIDA) - SUM(CUSTO)) / NULLIF(SUM(LIQUIDA), 0), 2)
+  END                                          AS margem_pct,
+  ROUND(SUM(LIQUIDA) / NULLIF(SUM(CASE WHEN LIQUIDA > 0 THEN 1 ELSE 0 END), 0), 2) AS ticket_medio
+`;
+
+async function criarRequest({ inicio, fim, empresa }) {
+  const pool = await getPool();
+  return pool
+    .request()
+    .input('inicio', sql.VarChar(10), inicio)
+    .input('fim', sql.VarChar(10), fim)
+    .input('empresa', sql.Int, empresa ?? null);
+}
+
+// Totais do período
+async function resumo(filtros) {
+  const request = await criarRequest(filtros);
+  const { recordset } = await request.query(`
+    ${BASE}
+    SELECT
+      ${INDICADORES},
+      SUM(QTD_ITENS) AS qtd_itens,
+      SUM(BRUTA)     AS venda_bruta,
+      SUM(DESCONTOS) AS desconto
+    FROM VENDAS
+  `);
+  return recordset[0];
+}
+
+// Evolução dia a dia
+async function porDia(filtros) {
+  const request = await criarRequest(filtros);
+  const { recordset } = await request.query(`
+    ${BASE}
+    SELECT
+      CONVERT(varchar(10), MOVIMENTO, 23) AS dia,
+      ${INDICADORES}
+    FROM VENDAS
+    GROUP BY MOVIMENTO
+    ORDER BY MOVIMENTO
+  `);
+  return recordset;
+}
+
+// Comparativo entre lojas
+async function porLoja(filtros) {
+  const request = await criarRequest(filtros);
+  const { recordset } = await request.query(`
+    ${BASE}
+    SELECT
+      V.EMPRESA        AS empresa,
+      EU.NOME_FANTASIA AS loja,
+      ${INDICADORES}
+    FROM VENDAS V
+    LEFT JOIN EMPRESAS_USUARIAS EU WITH (NOLOCK)
+      ON EU.EMPRESA_USUARIA = V.EMPRESA
+    GROUP BY V.EMPRESA, EU.NOME_FANTASIA
+    ORDER BY venda_liquida DESC
+  `);
+  return recordset;
+}
+
+// Separação entre vendas do caixa (PDV) e por nota fiscal (NFE)
+async function porOrigem(filtros) {
+  const request = await criarRequest(filtros);
+  const { recordset } = await request.query(`
+    ${BASE}
+    SELECT
+      ISNULL(ESPECIE_FISCAL, 'OUTROS') AS origem,
+      ${INDICADORES}
+    FROM VENDAS
+    GROUP BY ISNULL(ESPECIE_FISCAL, 'OUTROS')
+    ORDER BY venda_liquida DESC
+  `);
+  return recordset;
+}
+
+// Produtos mais vendidos (por valor líquido)
+async function topProdutos(filtros, limite) {
+  const request = await criarRequest(filtros);
+  request.input('limite', sql.Int, limite);
+  const { recordset } = await request.query(`
+    ${BASE}
+    SELECT TOP (@limite)
+      I.PRODUTO                         AS produto,
+      P.DESCRICAO                       AS descricao,
+      SUM(I.QUANTIDADE)                 AS quantidade,
+      SUM(I.VENDA_LIQUIDA)              AS venda_liquida,
+      SUM(I.SEM_CUSTO)                  AS itens_sem_custo,
+      CASE WHEN SUM(I.SEM_CUSTO) = 0
+           THEN SUM(I.VENDA_LIQUIDA) - SUM(I.CUSTO) END AS lucro_bruto,
+      CASE WHEN SUM(I.SEM_CUSTO) = 0
+           THEN ROUND(100.0 * (SUM(I.VENDA_LIQUIDA) - SUM(I.CUSTO)) / NULLIF(SUM(I.VENDA_LIQUIDA), 0), 2)
+      END                               AS margem_pct
+    FROM ITENS I
+    LEFT JOIN PRODUTOS P WITH (NOLOCK)
+      ON P.PRODUTO = I.PRODUTO
+    GROUP BY I.PRODUTO, P.DESCRICAO
+    HAVING SUM(I.QUANTIDADE) <> 0
+    ORDER BY venda_liquida DESC
+  `);
+  return recordset;
+}
+
+module.exports = { resumo, porDia, porLoja, porOrigem, topProdutos };
