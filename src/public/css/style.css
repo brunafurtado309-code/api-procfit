@@ -126,7 +126,8 @@ button:disabled {
 }
 .botao-texto:hover { background: rgba(255, 255, 255, 0.22); color: #fff; }
 
-input {
+input,
+select {
   font: inherit;
   color: var(--tinta);
   padding: 0.5rem 0.75rem;
@@ -134,7 +135,8 @@ input {
   border-radius: var(--raio);
   background: var(--fundo);
 }
-input:focus { background: var(--superficie); border-color: var(--verde-medio); }
+input:focus,
+select:focus { background: var(--superficie); border-color: var(--verde-medio); }
 
 :focus-visible {
   outline: 3px solid var(--verde-claro);
@@ -435,7 +437,31 @@ input:focus { background: var(--superficie); border-color: var(--verde-medio); }
 }
 .detalhe__topo #detalhe-baixar:hover { background: var(--verde-claro); }
 
-.detalhe .status { margin: 0.6rem 1.75rem 0; min-height: 1.25rem; }
+/* Pesquisa e filtro dentro do detalhe */
+.detalhe__filtros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1rem;
+  padding: 1rem 1.75rem 0;
+}
+.campo {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--tinta-suave);
+}
+.campo--busca { flex: 1 1 22rem; }
+.campo--busca input { width: 100%; }
+.detalhe__contagem {
+  margin: 0 0 0.55rem auto;
+  font-size: 0.85rem;
+  color: var(--tinta-suave);
+  white-space: nowrap;
+}
+
+.detalhe .status { margin: 0.4rem 1.75rem 0; min-height: 1.25rem; }
 .detalhe__corpo {
   flex: 1;
   margin: 0;

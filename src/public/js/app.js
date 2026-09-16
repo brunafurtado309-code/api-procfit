@@ -339,6 +339,9 @@ const DETALHES = {
     pessoa: (d) => d.vendedor,
     linhas: (d) => d.notas,
     carregando: 'Carregando notas…',
+    situacoes: ['Faturada', 'Cancelada', 'Devolução'],
+    dicaBusca: 'Nº da nota, nº do pedido, cliente, CNPJ/CPF ou código',
+    busca: (n) => [n.nota, n.pedido, n.codigo_cliente, n.cliente, n.fantasia, n.cnpj_cpf],
     vazio: 'Nenhuma nota deste vendedor no período.',
     resumo: (t) => [
       contar(t.faturadas_qtd, 'nota faturada', 'notas faturadas'),
@@ -361,6 +364,9 @@ const DETALHES = {
     pessoa: (d) => d.operador,
     linhas: (d) => d.cupons,
     carregando: 'Carregando cupons…',
+    situacoes: ['Emitido', 'Cancelado', 'Devolução'],
+    dicaBusca: 'Nº do cupom, caixa, vendedor, cliente ou código',
+    busca: (c) => [c.cupom, c.caixa, c.vendedor, c.codigo_cliente, c.cliente, c.fantasia],
     vazio: 'Nenhum cupom deste operador no período.',
     resumo: (t) => [
       contar(t.emitidos_qtd, 'cupom emitido', 'cupons emitidos'),
@@ -400,32 +406,102 @@ function montarLinhaDetalhe(config, linha) {
   return tr;
 }
 
+// ===== Pesquisa dentro do detalhe =====
+// Tira acentos e deixa minúsculo, para "acai" encontrar "AÇAÍ"
+const normalizar = (texto) =>
+  String(texto ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+function prepararFiltrosDetalhe(config) {
+  const busca = el('detalhe-busca');
+  busca.value = '';
+  busca.placeholder = config.dicaBusca;
+
+  const situacao = el('detalhe-situacao');
+  const todas = document.createElement('option');
+  todas.value = '';
+  todas.textContent = 'Todas';
+  const opcoes = config.situacoes.map((nome) => {
+    const opcao = document.createElement('option');
+    opcao.value = nome;
+    opcao.textContent = nome;
+    return opcao;
+  });
+  situacao.replaceChildren(todas, ...opcoes);
+  el('detalhe-contagem').textContent = '';
+}
+
+function linhaUnica(texto, quantidadeColunas) {
+  const tr = document.createElement('tr');
+  const td = celulaTexto(texto, 'vazio');
+  td.colSpan = quantidadeColunas;
+  tr.append(td);
+  return tr;
+}
+
+function aplicarFiltroDetalhe() {
+  if (!detalheAberto?.linhas) return;
+  const { config, linhas } = detalheAberto;
+  // Cada palavra digitada precisa aparecer (em qualquer ordem)
+  const palavras = normalizar(el('detalhe-busca').value).split(/\s+/).filter(Boolean);
+  const situacao = el('detalhe-situacao').value;
+  const quantidadeColunas = config.colunas.length;
+  const corpo = el('detalhe-linhas');
+
+  if (linhas.length === 0) {
+    corpo.replaceChildren(linhaUnica(config.vazio, quantidadeColunas));
+    el('detalhe-total').replaceChildren();
+    el('detalhe-contagem').textContent = '';
+    return;
+  }
+
+  const visiveis = linhas.filter((linha) => {
+    if (situacao && linha.situacao !== situacao) return false;
+    return palavras.every((palavra) => linha._textoBusca.includes(palavra));
+  });
+
+  const filtrando = palavras.length > 0 || Boolean(situacao);
+  el('detalhe-contagem').textContent = filtrando
+    ? `Mostrando ${inteiro.format(visiveis.length)} de ${inteiro.format(linhas.length)}`
+    : `${inteiro.format(linhas.length)} registros`;
+
+  if (visiveis.length === 0) {
+    corpo.replaceChildren(linhaUnica('Nada encontrado com essa pesquisa. Confira o que foi digitado ou limpe o filtro.', quantidadeColunas));
+    el('detalhe-total').replaceChildren();
+    return;
+  }
+
+  corpo.replaceChildren(...visiveis.map((linha) => montarLinhaDetalhe(config, linha)));
+
+  // Total do que está visível
+  const soma = visiveis.reduce((s, linha) => s + Number(linha.valor || 0), 0);
+  const tr = document.createElement('tr');
+  const rotulo = celulaTexto(filtrando ? 'Total filtrado' : 'Total', 'esquerda');
+  rotulo.colSpan = quantidadeColunas - 1;
+  tr.append(rotulo, celulaValor(Math.round(soma * 100) / 100));
+  el('detalhe-total').replaceChildren(tr);
+}
+
+// Espera a pessoa parar de digitar um instante antes de filtrar
+let esperaBusca;
+function aoDigitarBusca() {
+  clearTimeout(esperaBusca);
+  esperaBusca = setTimeout(aplicarFiltroDetalhe, 150);
+}
+
 function mostrarDetalhe(config, dados) {
   const t = dados.total;
-  const linhas = config.linhas(dados);
   el('detalhe-titulo').textContent = config.pessoa(dados).nome;
   el('detalhe-resumo').textContent =
     `${dataBR(dados.periodo.inicio)} a ${dataBR(dados.periodo.fim)}: ` +
     `${config.resumo(t).join(', ')}. Total ${moeda.format(t.valor)}`;
 
-  const corpo = el('detalhe-linhas');
-  const quantidadeColunas = config.colunas.length;
-
-  if (linhas.length === 0) {
-    const tr = document.createElement('tr');
-    const td = celulaTexto(config.vazio, 'vazio');
-    td.colSpan = quantidadeColunas;
-    tr.append(td);
-    corpo.replaceChildren(tr);
-    el('detalhe-total').replaceChildren();
-  } else {
-    corpo.replaceChildren(...linhas.map((linha) => montarLinhaDetalhe(config, linha)));
-    const tr = document.createElement('tr');
-    const rotulo = celulaTexto('Total', 'esquerda');
-    rotulo.colSpan = quantidadeColunas - 1;
-    tr.append(rotulo, celulaValor(t.valor));
-    el('detalhe-total').replaceChildren(tr);
-  }
+  // Prepara o texto de busca de cada linha uma vez só
+  detalheAberto.linhas = config.linhas(dados).map((linha) => ({
+    ...linha,
+    _textoBusca: normalizar(config.busca(linha).filter((v) => v !== null && v !== undefined).join(' ')),
+  }));
+  aplicarFiltroDetalhe();
+  el('detalhe-busca').focus();
 
   mostrarStatusDetalhe(
     dados.limite_atingido ? 'Mostrando só os primeiros registros. Diminua o período para ver todos.' : '',
@@ -447,6 +523,7 @@ async function abrirDetalhe(tipo, codigo, nome) {
   el('detalhe-titulo').textContent = nome;
   el('detalhe-resumo').textContent = '';
   montarCabecalho(config);
+  prepararFiltrosDetalhe(config);
   el('detalhe-linhas').replaceChildren();
   el('detalhe-total').replaceChildren();
   mostrarStatusDetalhe(config.carregando);
@@ -536,6 +613,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   el('detalhe-fechar').addEventListener('click', () => el('detalhe').close());
   el('detalhe-baixar').addEventListener('click', baixarDetalhe);
+  el('detalhe-busca').addEventListener('input', aoDigitarBusca);
+  el('detalhe-situacao').addEventListener('change', aplicarFiltroDetalhe);
   el('baixar-painel').addEventListener('click', baixarPainel);
 
   el('trocar-chave').addEventListener('click', () => {
