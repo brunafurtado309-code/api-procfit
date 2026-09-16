@@ -32,6 +32,7 @@
         <label>De <input type="date" id="inicio" required></label>
         <label>Até <input type="date" id="fim" required></label>
         <button type="submit">Atualizar</button>
+        <button id="baixar-painel" type="button" class="botao-secundario">Baixar Excel</button>
       </form>
 
       <p id="status" class="status" role="status" aria-live="polite"></p>
@@ -141,7 +142,10 @@
         <h2 id="detalhe-titulo">Detalhe</h2>
         <p id="detalhe-resumo" class="detalhe__resumo"></p>
       </div>
-      <button id="detalhe-fechar" type="button" class="botao-secundario">Fechar</button>
+      <div class="detalhe__acoes">
+        <button id="detalhe-baixar" type="button" class="botao-secundario">Baixar Excel</button>
+        <button id="detalhe-fechar" type="button" class="botao-secundario">Fechar</button>
+      </div>
     </header>
 
     <p id="detalhe-status" class="status" role="status" aria-live="polite"></p>

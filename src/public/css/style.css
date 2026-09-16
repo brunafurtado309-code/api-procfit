@@ -319,6 +319,11 @@ input {
 }
 .botao-secundario:hover { background: var(--fundo); }
 
+button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
 /* ===== Janela de detalhe ===== */
 .detalhe {
   width: min(72rem, calc(100vw - 2rem));
@@ -345,6 +350,12 @@ input {
   border-bottom: 1px solid var(--linha);
 }
 .detalhe__topo h2 { margin: 0; font-size: 1.35rem; line-height: 1.25; }
+.detalhe__acoes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
 .detalhe__resumo { margin: 0.25rem 0 0.5rem; color: var(--tinta-suave); }
 .detalhe .status { padding: 0 1.5rem; }
 .detalhe__corpo {

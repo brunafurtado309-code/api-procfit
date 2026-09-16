@@ -15,4 +15,9 @@ router.get('/por-operador', controller.porOperador);
 router.get('/operadores/:operador/cupons', controller.cuponsDoOperador);
 router.get('/top-produtos', controller.topProdutos);
 
+// Downloads em Excel
+router.get('/exportar/excel', controller.exportarPainel);
+router.get('/vendedores/:vendedor/notas/excel', controller.exportarNotas);
+router.get('/operadores/:operador/cupons/excel', controller.exportarCupons);
+
 module.exports = router;

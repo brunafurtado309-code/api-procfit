@@ -201,13 +201,13 @@ async function porVendedor(filtros) {
 //   ela zera a nota e vira situação "Cancelada".
 // - O vínculo com NF_FATURAMENTO é o REG_MASTER_ORIGEM da nota original (não do cancelamento).
 // - Nº impresso = DOCUMENTO_NUMERO (= NF_FATURAMENTO.NF_NUMERO). Pedido = NF_FATURAMENTO.PEDIDO_CLIENTE.
-// - vendedor 0 = notas sem vendedor informado.
+// - vendedor 0 = notas sem vendedor informado; vendedor null = todos (exportação).
 const LIMITE_NOTAS = 5000;
 
-async function notasDoVendedor(filtros, vendedor) {
+async function notasDoVendedor(filtros, vendedor, limite = LIMITE_NOTAS) {
   const request = await criarRequest(filtros);
-  request.input('vendedor', sql.Int, vendedor);
-  request.input('limite', sql.Int, LIMITE_NOTAS);
+  request.input('vendedor', sql.Int, vendedor ?? null);
+  request.input('limite', sql.Int, limite);
   const { recordset } = await request.query(`
     WITH ITENS AS (
       SELECT
@@ -217,13 +217,14 @@ async function notasDoVendedor(filtros, vendedor) {
         VA.DOCUMENTO_TIPO,
         VA.REG_MASTER_ORIGEM,
         VA.CLIENTE,
+        ISNULL(VA.VENDEDOR, 0) AS VENDEDOR,
         VA.QUANTIDADE,
         VA.VENDA_LIQUIDA,
         CASE WHEN VA.DOCUMENTO_TIPO IN (12, 13, 16) THEN 'DEVOLUCAO' ELSE 'NOTA' END AS CATEGORIA
       FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
       WHERE VA.MOVIMENTO BETWEEN CAST(@inicio AS date) AND CAST(@fim AS date)
         AND (@empresa IS NULL OR VA.EMPRESA = @empresa)
-        AND ISNULL(VA.VENDEDOR, 0) = @vendedor
+        AND (@vendedor IS NULL OR ISNULL(VA.VENDEDOR, 0) = @vendedor)
         AND ISNULL(VA.DOCUMENTO_TIPO, 0) NOT IN (1, 2, 9, 10, 14, 18, 19, 20)
     ),
     DOCS AS (
@@ -231,6 +232,7 @@ async function notasDoVendedor(filtros, vendedor) {
         EMPRESA, CATEGORIA, DOCUMENTO_NUMERO,
         MIN(MOVIMENTO)     AS MOVIMENTO,
         MAX(CLIENTE)       AS CLIENTE,
+        MAX(VENDEDOR)      AS VENDEDOR,
         MAX(CASE WHEN DOCUMENTO_TIPO NOT IN (4, 6, 11, 13, 17) THEN REG_MASTER_ORIGEM END) AS NF_ID,
         MAX(CASE WHEN DOCUMENTO_TIPO IN (4, 6, 11, 17) THEN 1 ELSE 0 END) AS TEM_CANCELAMENTO,
         SUM(QUANTIDADE)    AS QUANTIDADE,
@@ -248,6 +250,8 @@ async function notasDoVendedor(filtros, vendedor) {
       D.DOCUMENTO_NUMERO                    AS nota,
       NF.NF_SERIE                           AS serie,
       NF.PEDIDO_CLIENTE                     AS pedido,
+      D.VENDEDOR                            AS codigo_vendedor,
+      LTRIM(RTRIM(V.NOME))                  AS vendedor,
       D.CLIENTE                             AS codigo_cliente,
       LTRIM(RTRIM(E.NOME))                  AS cliente,
       LTRIM(RTRIM(E.NOME_FANTASIA))         AS fantasia,
@@ -259,6 +263,8 @@ async function notasDoVendedor(filtros, vendedor) {
       ON D.CATEGORIA = 'NOTA' AND NF.NF_FATURAMENTO = D.NF_ID
     LEFT JOIN ENTIDADES E WITH (NOLOCK)
       ON E.ENTIDADE = D.CLIENTE
+    LEFT JOIN VENDEDORES V WITH (NOLOCK)
+      ON V.VENDEDOR = D.VENDEDOR
     ORDER BY D.MOVIMENTO, D.DOCUMENTO_NUMERO
   `);
   return recordset;
@@ -325,10 +331,11 @@ async function porOperador(filtros) {
   return recordset;
 }
 
-async function cuponsDoOperador(filtros, operador) {
+// operador null = todos (exportação)
+async function cuponsDoOperador(filtros, operador, limite = LIMITE_NOTAS) {
   const request = await criarRequest(filtros);
-  request.input('operador', sql.Int, operador);
-  request.input('limite', sql.Int, LIMITE_NOTAS);
+  request.input('operador', sql.Int, operador ?? null);
+  request.input('limite', sql.Int, limite);
   const { recordset } = await request.query(`
     ${BASE_CAIXA}
     SELECT TOP (@limite)
@@ -342,6 +349,8 @@ async function cuponsDoOperador(filtros, operador) {
       CO.CAIXA                                AS caixa,
       CO.DOCUMENTO_NUMERO                     AS cupom,
       CO.NFCE_SERIE                           AS serie,
+      CO.OPERADOR                             AS codigo_operador,
+      LTRIM(RTRIM(VO.NOME))                   AS operador,
       CO.VENDEDOR                             AS codigo_vendedor,
       LTRIM(RTRIM(VV.NOME))                   AS vendedor,
       CO.CLIENTE                              AS codigo_cliente,
@@ -351,7 +360,9 @@ async function cuponsDoOperador(filtros, operador) {
     FROM CUPONS_OPERADOR CO
     LEFT JOIN VENDEDORES VV WITH (NOLOCK) ON VV.VENDEDOR = CO.VENDEDOR
     LEFT JOIN ENTIDADES E WITH (NOLOCK)   ON E.ENTIDADE = CO.CLIENTE
-    WHERE CO.OPERADOR = @operador
+    LEFT JOIN OPERADORES O WITH (NOLOCK)  ON O.OPERADOR = CO.OPERADOR
+    LEFT JOIN VENDEDORES VO WITH (NOLOCK) ON VO.VENDEDOR = O.VENDEDOR
+    WHERE (@operador IS NULL OR CO.OPERADOR = @operador)
     ORDER BY CO.MOVIMENTO, CO.DATA_HORA, CO.DOCUMENTO_NUMERO
   `);
   return recordset;

@@ -60,6 +60,51 @@ async function buscar(rota, filtros) {
   return corpo;
 }
 
+// Baixa um arquivo da API (a chave vai no cabeçalho, por isso não dá para usar um link comum)
+async function baixarArquivo(rota, filtros, nomePadrao, botao) {
+  const textoOriginal = botao.textContent;
+  botao.disabled = true;
+  botao.textContent = 'Gerando…';
+
+  try {
+    const url = `/vendas/${rota}?${new URLSearchParams(filtros)}`;
+    const resposta = await fetch(url, { headers: { 'x-api-key': chave.ler() } });
+
+    if (resposta.status === 401) throw new ChaveInvalida();
+    if (!resposta.ok) {
+      const corpo = await resposta.json().catch(() => ({}));
+      throw new Error(corpo.erro || 'Não foi possível gerar o Excel.');
+    }
+
+    // Usa o nome que a API sugeriu, se houver
+    const cabecalho = resposta.headers.get('Content-Disposition') || '';
+    const nomeArquivo = (cabecalho.match(/filename="([^"]+)"/) || [])[1] || nomePadrao;
+
+    const arquivo = await resposta.blob();
+    const endereco = URL.createObjectURL(arquivo);
+    const link = document.createElement('a');
+    link.href = endereco;
+    link.download = nomeArquivo;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(endereco), 1000);
+  } finally {
+    botao.disabled = false;
+    botao.textContent = textoOriginal;
+  }
+}
+
+function pedirChaveDeNovo() {
+  if (el('detalhe').open) el('detalhe').close();
+  chave.apagar();
+  mostrarEntrada();
+  mostrarStatus('');
+  alert('Chave de acesso inválida. Informe a chave novamente.');
+}
+
+const filtrosAtuais = () => ({ inicio: el('inicio').value, fim: el('fim').value });
+
 function mostrarStatus(texto, erro = false) {
   el('status').textContent = texto;
   el('status').classList.toggle('status--erro', erro);
@@ -290,6 +335,7 @@ function celulaCliente(linha) {
 const DETALHES = {
   notas: {
     rota: (codigo) => `vendedores/${encodeURIComponent(codigo)}/notas`,
+    rotaExcel: (codigo) => `vendedores/${encodeURIComponent(codigo)}/notas/excel`,
     pessoa: (d) => d.vendedor,
     linhas: (d) => d.notas,
     carregando: 'Carregando notas…',
@@ -311,6 +357,7 @@ const DETALHES = {
   },
   cupons: {
     rota: (codigo) => `operadores/${encodeURIComponent(codigo)}/cupons`,
+    rotaExcel: (codigo) => `operadores/${encodeURIComponent(codigo)}/cupons/excel`,
     pessoa: (d) => d.operador,
     linhas: (d) => d.cupons,
     carregando: 'Carregando cupons…',
@@ -391,8 +438,12 @@ function mostrarStatusDetalhe(texto, erro = false) {
   el('detalhe-status').classList.toggle('status--erro', erro);
 }
 
+// Guarda o que está aberto na janela, para o botão de Excel saber o que baixar
+let detalheAberto = null;
+
 async function abrirDetalhe(tipo, codigo, nome) {
   const config = DETALHES[tipo];
+  detalheAberto = { config, codigo, filtros: filtrosAtuais() };
   el('detalhe-titulo').textContent = nome;
   el('detalhe-resumo').textContent = '';
   montarCabecalho(config);
@@ -402,19 +453,35 @@ async function abrirDetalhe(tipo, codigo, nome) {
   el('detalhe').showModal();
 
   try {
-    const filtros = { inicio: el('inicio').value, fim: el('fim').value };
-    const dados = await buscar(config.rota(codigo), filtros);
+    const dados = await buscar(config.rota(codigo), detalheAberto.filtros);
     mostrarDetalhe(config, dados);
   } catch (erro) {
-    if (erro instanceof ChaveInvalida) {
-      el('detalhe').close();
-      chave.apagar();
-      mostrarEntrada();
-      alert('Chave de acesso inválida. Informe a chave novamente.');
-      return;
-    }
+    if (erro instanceof ChaveInvalida) return pedirChaveDeNovo();
     console.error(erro);
     mostrarStatusDetalhe(erro.message, true);
+  }
+}
+
+async function baixarDetalhe() {
+  if (!detalheAberto) return;
+  const { config, codigo, filtros } = detalheAberto;
+  try {
+    await baixarArquivo(config.rotaExcel(codigo), filtros, 'detalhe.xlsx', el('detalhe-baixar'));
+  } catch (erro) {
+    if (erro instanceof ChaveInvalida) return pedirChaveDeNovo();
+    console.error(erro);
+    mostrarStatusDetalhe(erro.message, true);
+  }
+}
+
+async function baixarPainel() {
+  const filtros = filtrosAtuais();
+  try {
+    await baixarArquivo('exportar/excel', filtros, `vendas_${filtros.inicio}_a_${filtros.fim}.xlsx`, el('baixar-painel'));
+  } catch (erro) {
+    if (erro instanceof ChaveInvalida) return pedirChaveDeNovo();
+    console.error(erro);
+    mostrarStatus(erro.message, true);
   }
 }
 
@@ -468,6 +535,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   el('detalhe-fechar').addEventListener('click', () => el('detalhe').close());
+  el('detalhe-baixar').addEventListener('click', baixarDetalhe);
+  el('baixar-painel').addEventListener('click', baixarPainel);
 
   el('trocar-chave').addEventListener('click', () => {
     chave.apagar();
