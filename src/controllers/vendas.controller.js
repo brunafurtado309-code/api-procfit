@@ -19,5 +19,7 @@ module.exports = {
   porOrigem: acao(service.porOrigem),
   porVendedor: acao(service.porVendedor),
   notasDoVendedor: acao(service.notasDoVendedor),
+  porOperador: acao(service.porOperador),
+  cuponsDoOperador: acao(service.cuponsDoOperador),
   topProdutos: acao(service.topProdutos),
 };

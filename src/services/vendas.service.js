@@ -110,10 +110,57 @@ async function notasDoVendedor(query, params) {
   };
 }
 
+// Caixa por operador + linha de total
+const COLUNAS_CAIXA = [
+  'caixa_valor', 'caixa_qtd', 'devolucoes_caixa_valor', 'devolucoes_caixa_qtd', 'liquido',
+];
+
+async function porOperador(query) {
+  const operadores = await repo.porOperador(montarFiltros(query));
+  const total = {};
+  for (const coluna of COLUNAS_CAIXA) {
+    total[coluna] = arredondar(operadores.reduce((soma, o) => soma + Number(o[coluna] || 0), 0));
+  }
+  return { operadores, total };
+}
+
+// Cupons de um operador, com totais por situação
+async function cuponsDoOperador(query, params) {
+  const filtros = montarFiltros(query);
+  const codigo = Number(params.operador);
+  if (!Number.isInteger(codigo) || codigo < 0) {
+    throw new AppError('Código de operador inválido');
+  }
+
+  const [cupons, nome] = await Promise.all([
+    repo.cuponsDoOperador(filtros, codigo),
+    codigo === 0 ? Promise.resolve(null) : repo.nomeDoOperador(codigo),
+  ]);
+
+  const daSituacao = (situacao) => cupons.filter((c) => c.situacao === situacao);
+  const somar = (lista) => arredondar(lista.reduce((s, c) => s + Number(c.valor || 0), 0));
+
+  return {
+    operador: { codigo, nome: codigo === 0 ? 'Sem operador informado' : nome ?? `Operador ${codigo}` },
+    periodo: { inicio: filtros.inicio, fim: filtros.fim },
+    limite_atingido: cupons.length >= repo.LIMITE_NOTAS,
+    total: {
+      emitidos_qtd: daSituacao('Emitido').length,
+      emitidos_valor: somar(daSituacao('Emitido')),
+      cancelados_qtd: daSituacao('Cancelado').length,
+      devolucoes_qtd: daSituacao('Devolução').length,
+      devolucoes_valor: somar(daSituacao('Devolução')),
+      valor: somar(cupons),
+    },
+    cupons,
+  };
+}
+
 const topProdutos = (query) =>
   repo.topProdutos(montarFiltros(query), montarLimite(query.limite));
 
 module.exports = {
-  resumo, porDia, porLoja, porOrigem, porVendedor, notasDoVendedor, topProdutos,
+  resumo, porDia, porLoja, porOrigem, porVendedor, notasDoVendedor,
+  porOperador, cuponsDoOperador, topProdutos,
   montarFiltros, montarLimite,
 };

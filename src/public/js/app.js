@@ -164,9 +164,11 @@ function celulaValor(valor, textoQtd, classeExtra) {
   return td;
 }
 
-// Colunas de cada tabela: de onde vem o valor e o texto de quantidade
+// Colunas de cada tabela: de onde vem o valor e o texto de quantidade.
+// codigo = campo que identifica a pessoa; detalhe = qual janela abre ao clicar no nome.
 const TABELA_VENDEDORES = {
-  clicavel: true,
+  codigo: 'vendedor',
+  detalhe: 'notas',
   corpo: 'vendedores',
   rodape: 'vendedores-total',
   vazio: 'Nenhuma nota faturada no período.',
@@ -180,15 +182,17 @@ const TABELA_VENDEDORES = {
 };
 
 const TABELA_CAIXA = {
+  codigo: 'operador',
+  detalhe: 'cupons',
   corpo: 'caixa',
   rodape: 'caixa-total',
   vazio: 'Nenhuma venda no caixa no período.',
   semNome: 'Sem operador informado',
-  participa: (v) => v.caixa_qtd > 0 || v.devolucoes_caixa_qtd > 0,
-  total: (v) => (v.caixa_valor ?? 0) + (v.devolucoes_caixa_valor ?? 0),
+  participa: (o) => o.caixa_qtd > 0 || o.devolucoes_caixa_qtd > 0,
+  total: (o) => (o.caixa_valor ?? 0) + (o.devolucoes_caixa_valor ?? 0),
   colunas: [
-    { valor: (v) => v.caixa_valor, qtd: (v) => contar(v.caixa_qtd, 'cupom', 'cupons') },
-    { valor: (v) => v.devolucoes_caixa_valor, qtd: (v) => contar(v.devolucoes_caixa_qtd, 'devolução', 'devoluções') },
+    { valor: (o) => o.caixa_valor, qtd: (o) => contar(o.caixa_qtd, 'cupom', 'cupons') },
+    { valor: (o) => o.devolucoes_caixa_valor, qtd: (o) => contar(o.devolucoes_caixa_qtd, 'devolução', 'devoluções') },
   ],
 };
 
@@ -198,13 +202,13 @@ function montarLinha(tabela, item, nome, ehTotal = false) {
   const celulaNome = document.createElement(ehTotal ? 'td' : 'th');
   if (!ehTotal) celulaNome.scope = 'row';
 
-  if (tabela.clicavel && !ehTotal) {
-    // O nome vira um botão que abre as notas do vendedor
+  if (tabela.detalhe && !ehTotal) {
+    // O nome vira um botão que abre o detalhe (notas ou cupons)
     const botao = document.createElement('button');
     botao.type = 'button';
     botao.className = 'nome-botao';
     botao.textContent = nome;
-    botao.addEventListener('click', () => abrirDetalhe(item.vendedor || 0, nome));
+    botao.addEventListener('click', () => abrirDetalhe(tabela.detalhe, item[tabela.codigo] || 0, nome));
     celulaNome.append(botao);
   } else {
     celulaNome.textContent = nome;
@@ -218,12 +222,12 @@ function montarLinha(tabela, item, nome, ehTotal = false) {
   return tr;
 }
 
-function mostrarTabela(tabela, { vendedores, total }) {
+function mostrarTabela(tabela, itens, total) {
   const corpo = el(tabela.corpo);
   const rodape = el(tabela.rodape);
 
   // Cada tabela mostra só quem participou daquele tipo de venda, do maior para o menor
-  const linhas = vendedores
+  const linhas = itens
     .filter(tabela.participa)
     .sort((a, b) => tabela.total(b) - tabela.total(a));
 
@@ -239,14 +243,18 @@ function mostrarTabela(tabela, { vendedores, total }) {
     return;
   }
 
-  const nomeDe = (v) => (v.vendedor ? v.nome : tabela.semNome);
-  corpo.replaceChildren(...linhas.map((v) => montarLinha(tabela, v, nomeDe(v))));
+  const nomeDe = (item) => (item[tabela.codigo] ? item.nome : tabela.semNome);
+  corpo.replaceChildren(...linhas.map((item) => montarLinha(tabela, item, nomeDe(item))));
   rodape.replaceChildren(montarLinha(tabela, total, 'Total', true));
 }
 
-// ===== Detalhe do vendedor =====
+// ===== Janela de detalhe (notas do vendedor ou cupons do operador) =====
 const dataBR = (iso) => (iso ? iso.split('-').reverse().join('/') : '—');
-const SITUACAO_CLASSE = { Faturada: 'faturada', Cancelada: 'cancelada', 'Devolução': 'devolucao' };
+const SITUACAO_CLASSE = {
+  Faturada: 'faturada', Emitido: 'faturada',
+  Cancelada: 'cancelada', Cancelado: 'cancelada',
+  'Devolução': 'devolucao',
+};
 
 function celulaTexto(texto, classe) {
   const td = document.createElement('td');
@@ -255,68 +263,125 @@ function celulaTexto(texto, classe) {
   return td;
 }
 
-function linhaNota(n) {
-  const tr = document.createElement('tr');
-  if (n.situacao === 'Cancelada') tr.className = 'linha-cancelada';
-
-  const situacao = document.createElement('td');
+function celulaSituacao(situacao) {
+  const td = document.createElement('td');
+  td.className = 'esquerda';
   const selo = document.createElement('span');
-  selo.className = `situacao situacao--${SITUACAO_CLASSE[n.situacao] || 'faturada'}`;
-  selo.textContent = n.situacao;
-  situacao.append(selo);
+  selo.className = `situacao situacao--${SITUACAO_CLASSE[situacao] || 'faturada'}`;
+  selo.textContent = situacao;
+  td.append(selo);
+  return td;
+}
 
-  const cliente = document.createElement('td');
-  cliente.textContent = n.cliente || '—';
-  if (n.fantasia && n.fantasia !== n.cliente) {
+function celulaCliente(linha) {
+  const td = document.createElement('td');
+  td.className = 'esquerda';
+  td.textContent = linha.cliente || 'Não identificado';
+  if (linha.fantasia && linha.fantasia !== linha.cliente) {
     const fantasia = document.createElement('span');
     fantasia.className = 'fantasia';
-    fantasia.textContent = n.fantasia;
-    cliente.append(fantasia);
+    fantasia.textContent = linha.fantasia;
+    td.append(fantasia);
   }
+  return td;
+}
 
-  tr.append(
-    celulaTexto(dataBR(n.data)),
-    situacao,
-    celulaTexto(n.nota),
-    celulaTexto(n.pedido),
-    celulaTexto(n.codigo_cliente),
-    cliente,
-    celulaValor(n.valor),
-  );
+// Cada tipo de detalhe: rota, colunas e textos
+const DETALHES = {
+  notas: {
+    rota: (codigo) => `vendedores/${encodeURIComponent(codigo)}/notas`,
+    pessoa: (d) => d.vendedor,
+    linhas: (d) => d.notas,
+    carregando: 'Carregando notas…',
+    vazio: 'Nenhuma nota deste vendedor no período.',
+    resumo: (t) => [
+      contar(t.faturadas_qtd, 'nota faturada', 'notas faturadas'),
+      contar(t.canceladas_qtd, 'cancelada', 'canceladas'),
+      contar(t.devolucoes_qtd, 'devolução', 'devoluções'),
+    ],
+    colunas: [
+      { titulo: 'Data', celula: (n) => celulaTexto(dataBR(n.data), 'sem-quebra') },
+      { titulo: 'Situação', esquerda: true, celula: (n) => celulaSituacao(n.situacao) },
+      { titulo: 'Nº da nota', celula: (n) => celulaTexto(n.nota) },
+      { titulo: 'Nº do pedido', celula: (n) => celulaTexto(n.pedido) },
+      { titulo: 'Cód. cliente', celula: (n) => celulaTexto(n.codigo_cliente) },
+      { titulo: 'Cliente', esquerda: true, celula: celulaCliente },
+      { titulo: 'Valor', celula: (n) => celulaValor(n.valor) },
+    ],
+  },
+  cupons: {
+    rota: (codigo) => `operadores/${encodeURIComponent(codigo)}/cupons`,
+    pessoa: (d) => d.operador,
+    linhas: (d) => d.cupons,
+    carregando: 'Carregando cupons…',
+    vazio: 'Nenhum cupom deste operador no período.',
+    resumo: (t) => [
+      contar(t.emitidos_qtd, 'cupom emitido', 'cupons emitidos'),
+      contar(t.cancelados_qtd, 'cancelado', 'cancelados'),
+      contar(t.devolucoes_qtd, 'devolução', 'devoluções'),
+    ],
+    colunas: [
+      { titulo: 'Data', celula: (c) => celulaTexto(dataBR(c.data), 'sem-quebra') },
+      { titulo: 'Hora', celula: (c) => celulaTexto(c.hora) },
+      { titulo: 'Situação', esquerda: true, celula: (c) => celulaSituacao(c.situacao) },
+      { titulo: 'Caixa', celula: (c) => celulaTexto(c.caixa) },
+      { titulo: 'Nº do cupom', celula: (c) => celulaTexto(c.cupom) },
+      { titulo: 'Vendedor', esquerda: true, celula: (c) => celulaTexto(c.vendedor || 'Não informado', 'esquerda') },
+      { titulo: 'Cód. cliente', celula: (c) => celulaTexto(c.codigo_cliente) },
+      { titulo: 'Cliente', esquerda: true, celula: celulaCliente },
+      { titulo: 'Valor', celula: (c) => celulaValor(c.valor) },
+    ],
+  },
+};
+
+function montarCabecalho(config) {
+  const tr = document.createElement('tr');
+  for (const coluna of config.colunas) {
+    const th = document.createElement('th');
+    th.scope = 'col';
+    th.textContent = coluna.titulo;
+    if (coluna.esquerda) th.className = 'esquerda';
+    tr.append(th);
+  }
+  el('detalhe-cabecalho').replaceChildren(tr);
+}
+
+function montarLinhaDetalhe(config, linha) {
+  const tr = document.createElement('tr');
+  if (SITUACAO_CLASSE[linha.situacao] === 'cancelada') tr.className = 'linha-cancelada';
+  for (const coluna of config.colunas) tr.append(coluna.celula(linha));
   return tr;
 }
 
-function mostrarDetalhe(dados) {
+function mostrarDetalhe(config, dados) {
   const t = dados.total;
-  el('detalhe-titulo').textContent = dados.vendedor.nome;
-
-  const partes = [
-    contar(t.faturadas_qtd, 'nota faturada', 'notas faturadas'),
-    contar(t.canceladas_qtd, 'cancelada', 'canceladas'),
-    contar(t.devolucoes_qtd, 'devolução', 'devoluções'),
-  ];
+  const linhas = config.linhas(dados);
+  el('detalhe-titulo').textContent = config.pessoa(dados).nome;
   el('detalhe-resumo').textContent =
-    `${dataBR(dados.periodo.inicio)} a ${dataBR(dados.periodo.fim)}: ${partes.join(', ')}. Total ${moeda.format(t.valor)}`;
+    `${dataBR(dados.periodo.inicio)} a ${dataBR(dados.periodo.fim)}: ` +
+    `${config.resumo(t).join(', ')}. Total ${moeda.format(t.valor)}`;
 
-  const corpo = el('detalhe-notas');
-  if (dados.notas.length === 0) {
+  const corpo = el('detalhe-linhas');
+  const quantidadeColunas = config.colunas.length;
+
+  if (linhas.length === 0) {
     const tr = document.createElement('tr');
-    const td = celulaTexto('Nenhuma nota deste vendedor no período.', 'vazio');
-    td.colSpan = 7;
+    const td = celulaTexto(config.vazio, 'vazio');
+    td.colSpan = quantidadeColunas;
     tr.append(td);
     corpo.replaceChildren(tr);
     el('detalhe-total').replaceChildren();
   } else {
-    corpo.replaceChildren(...dados.notas.map(linhaNota));
+    corpo.replaceChildren(...linhas.map((linha) => montarLinhaDetalhe(config, linha)));
     const tr = document.createElement('tr');
-    const rotulo = celulaTexto('Total');
-    rotulo.colSpan = 6;
+    const rotulo = celulaTexto('Total', 'esquerda');
+    rotulo.colSpan = quantidadeColunas - 1;
     tr.append(rotulo, celulaValor(t.valor));
     el('detalhe-total').replaceChildren(tr);
   }
 
   mostrarStatusDetalhe(
-    dados.limite_atingido ? 'Mostrando só as primeiras notas. Diminua o período para ver todas.' : '',
+    dados.limite_atingido ? 'Mostrando só os primeiros registros. Diminua o período para ver todos.' : '',
     dados.limite_atingido,
   );
 }
@@ -326,18 +391,20 @@ function mostrarStatusDetalhe(texto, erro = false) {
   el('detalhe-status').classList.toggle('status--erro', erro);
 }
 
-async function abrirDetalhe(codigo, nome) {
+async function abrirDetalhe(tipo, codigo, nome) {
+  const config = DETALHES[tipo];
   el('detalhe-titulo').textContent = nome;
   el('detalhe-resumo').textContent = '';
-  el('detalhe-notas').replaceChildren();
+  montarCabecalho(config);
+  el('detalhe-linhas').replaceChildren();
   el('detalhe-total').replaceChildren();
-  mostrarStatusDetalhe('Carregando notas…');
+  mostrarStatusDetalhe(config.carregando);
   el('detalhe').showModal();
 
   try {
     const filtros = { inicio: el('inicio').value, fim: el('fim').value };
-    const dados = await buscar(`vendedores/${encodeURIComponent(codigo)}/notas`, filtros);
-    mostrarDetalhe(dados);
+    const dados = await buscar(config.rota(codigo), filtros);
+    mostrarDetalhe(config, dados);
   } catch (erro) {
     if (erro instanceof ChaveInvalida) {
       el('detalhe').close();
@@ -356,17 +423,18 @@ async function carregar() {
   mostrarStatus('Carregando…');
 
   try {
-    // As duas consultas rodam ao mesmo tempo
-    const [resumo, origens, porVendedor] = await Promise.all([
+    // As consultas rodam ao mesmo tempo
+    const [resumo, origens, porVendedor, porOperador] = await Promise.all([
       buscar('resumo', filtros),
       buscar('por-origem', filtros),
       buscar('por-vendedor', filtros),
+      buscar('por-operador', filtros),
     ]);
     mostrarResumo(resumo);
     mostrarOrigens(origens);
     mostrarComposicao(porVendedor.total);
-    mostrarTabela(TABELA_VENDEDORES, porVendedor);
-    mostrarTabela(TABELA_CAIXA, porVendedor);
+    mostrarTabela(TABELA_VENDEDORES, porVendedor.vendedores, porVendedor.total);
+    mostrarTabela(TABELA_CAIXA, porOperador.operadores, porOperador.total);
     mostrarStatus(`Atualizado às ${new Date().toLocaleTimeString('pt-BR')}`);
   } catch (erro) {
     if (erro instanceof ChaveInvalida) {

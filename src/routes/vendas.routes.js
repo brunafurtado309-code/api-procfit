@@ -11,6 +11,8 @@ router.get('/por-loja', controller.porLoja);
 router.get('/por-origem', controller.porOrigem);
 router.get('/por-vendedor', controller.porVendedor);
 router.get('/vendedores/:vendedor/notas', controller.notasDoVendedor);
+router.get('/por-operador', controller.porOperador);
+router.get('/operadores/:operador/cupons', controller.cuponsDoOperador);
 router.get('/top-produtos', controller.topProdutos);
 
 module.exports = router;

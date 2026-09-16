@@ -354,18 +354,16 @@ input {
   overflow: auto;
 }
 
-.tabela--notas { min-width: 52rem; }
-.tabela--notas thead th {
+.tabela--detalhe { min-width: 56rem; }
+.tabela--detalhe thead th {
   position: sticky;
   top: 0;
   background: var(--fundo);
 }
-.tabela--notas th:nth-child(2),
-.tabela--notas td:nth-child(2),
-.tabela--notas th:nth-child(6),
-.tabela--notas td:nth-child(6) { text-align: left; }
-.tabela--notas td:first-child { white-space: nowrap; }
-.tabela--notas .fantasia {
+.tabela--detalhe th.esquerda,
+.tabela--detalhe td.esquerda { text-align: left; }
+.tabela--detalhe td.sem-quebra { white-space: nowrap; }
+.tabela--detalhe .fantasia {
   display: block;
   font-size: 0.8rem;
   color: var(--tinta-suave);

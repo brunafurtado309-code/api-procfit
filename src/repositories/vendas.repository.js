@@ -264,6 +264,113 @@ async function notasDoVendedor(filtros, vendedor) {
   return recordset;
 }
 
+// ===== Caixa (PDV) por operador =====
+// - O operador de verdade está em PDV_VENDAS.OPERADOR (o VENDEDOR do cupom é quem atendeu).
+// - Ligação: VENDAS_ANALITICAS (EMPRESA, CAIXA, VENDA) = PDV_VENDAS (EMPRESA, CAIXA, VENDA).
+// - Nome do operador: OPERADORES.VENDEDOR -> VENDEDORES.NOME.
+//   SEGURANÇA: da tabela OPERADORES só usamos OPERADOR e VENDEDOR (ela guarda senhas).
+// - Nº impresso do cupom = DOCUMENTO_NUMERO (= PDV_VENDAS.ECF_CUPOM).
+// - Cupom sem registro em PDV_VENDAS fica como operador 0 ("sem operador informado").
+const BASE_CAIXA = `
+  WITH CUPONS AS (
+    SELECT
+      VA.EMPRESA, VA.CAIXA, VA.VENDA, VA.DOCUMENTO_NUMERO,
+      CASE WHEN VA.DOCUMENTO_TIPO = 14 THEN 'DEVOLUCAO_CAIXA' ELSE 'CAIXA' END AS CATEGORIA,
+      MIN(VA.MOVIMENTO)  AS MOVIMENTO,
+      MAX(VA.CLIENTE)    AS CLIENTE,
+      MAX(VA.VENDEDOR)   AS VENDEDOR,
+      MAX(CASE WHEN VA.DOCUMENTO_TIPO IN (2, 10, 19) THEN 1 ELSE 0 END) AS TEM_CANCELAMENTO,
+      SUM(VA.VENDA_LIQUIDA) AS LIQUIDA
+    FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
+    WHERE VA.MOVIMENTO BETWEEN CAST(@inicio AS date) AND CAST(@fim AS date)
+      AND (@empresa IS NULL OR VA.EMPRESA = @empresa)
+      AND VA.DOCUMENTO_TIPO IN (1, 2, 9, 10, 14, 18, 19)
+    GROUP BY VA.EMPRESA, VA.CAIXA, VA.VENDA, VA.DOCUMENTO_NUMERO,
+             CASE WHEN VA.DOCUMENTO_TIPO = 14 THEN 'DEVOLUCAO_CAIXA' ELSE 'CAIXA' END
+  ),
+  CUPONS_OPERADOR AS (
+    SELECT
+      C.*,
+      ISNULL(PV.OPERADOR, 0) AS OPERADOR,
+      PV.DATA_HORA,
+      PV.NFCE_SERIE
+    FROM CUPONS C
+    OUTER APPLY (
+      SELECT TOP 1 P.OPERADOR, P.DATA_HORA, P.NFCE_SERIE
+      FROM PDV_VENDAS P WITH (NOLOCK)
+      WHERE P.EMPRESA = C.EMPRESA AND P.CAIXA = C.CAIXA AND P.VENDA = C.VENDA
+      ORDER BY P.DATA_HORA DESC
+    ) PV
+  )
+`;
+
+async function porOperador(filtros) {
+  const request = await criarRequest(filtros);
+  const { recordset } = await request.query(`
+    ${BASE_CAIXA}
+    SELECT
+      CO.OPERADOR                                              AS operador,
+      COALESCE(LTRIM(RTRIM(V.NOME)), 'Sem operador informado') AS nome,
+      SUM(CASE WHEN CO.CATEGORIA = 'CAIXA' THEN CO.LIQUIDA ELSE 0 END)                       AS caixa_valor,
+      SUM(CASE WHEN CO.CATEGORIA = 'CAIXA' AND CO.LIQUIDA > 0 THEN 1 ELSE 0 END)             AS caixa_qtd,
+      SUM(CASE WHEN CO.CATEGORIA = 'DEVOLUCAO_CAIXA' THEN CO.LIQUIDA ELSE 0 END)             AS devolucoes_caixa_valor,
+      SUM(CASE WHEN CO.CATEGORIA = 'DEVOLUCAO_CAIXA' AND CO.LIQUIDA < 0 THEN 1 ELSE 0 END)   AS devolucoes_caixa_qtd,
+      SUM(CO.LIQUIDA)                                          AS liquido
+    FROM CUPONS_OPERADOR CO
+    LEFT JOIN OPERADORES O WITH (NOLOCK) ON O.OPERADOR = CO.OPERADOR
+    LEFT JOIN VENDEDORES V WITH (NOLOCK) ON V.VENDEDOR = O.VENDEDOR
+    GROUP BY CO.OPERADOR, V.NOME
+    ORDER BY liquido DESC
+  `);
+  return recordset;
+}
+
+async function cuponsDoOperador(filtros, operador) {
+  const request = await criarRequest(filtros);
+  request.input('operador', sql.Int, operador);
+  request.input('limite', sql.Int, LIMITE_NOTAS);
+  const { recordset } = await request.query(`
+    ${BASE_CAIXA}
+    SELECT TOP (@limite)
+      CONVERT(varchar(10), CO.MOVIMENTO, 23)  AS data,
+      CONVERT(varchar(5), CO.DATA_HORA, 108)  AS hora,
+      CASE
+        WHEN CO.CATEGORIA = 'DEVOLUCAO_CAIXA' THEN 'Devolução'
+        WHEN CO.TEM_CANCELAMENTO = 1 AND ABS(CO.LIQUIDA) < 0.01 THEN 'Cancelado'
+        ELSE 'Emitido'
+      END                                     AS situacao,
+      CO.CAIXA                                AS caixa,
+      CO.DOCUMENTO_NUMERO                     AS cupom,
+      CO.NFCE_SERIE                           AS serie,
+      CO.VENDEDOR                             AS codigo_vendedor,
+      LTRIM(RTRIM(VV.NOME))                   AS vendedor,
+      CO.CLIENTE                              AS codigo_cliente,
+      LTRIM(RTRIM(E.NOME))                    AS cliente,
+      LTRIM(RTRIM(E.NOME_FANTASIA))           AS fantasia,
+      CO.LIQUIDA                              AS valor
+    FROM CUPONS_OPERADOR CO
+    LEFT JOIN VENDEDORES VV WITH (NOLOCK) ON VV.VENDEDOR = CO.VENDEDOR
+    LEFT JOIN ENTIDADES E WITH (NOLOCK)   ON E.ENTIDADE = CO.CLIENTE
+    WHERE CO.OPERADOR = @operador
+    ORDER BY CO.MOVIMENTO, CO.DATA_HORA, CO.DOCUMENTO_NUMERO
+  `);
+  return recordset;
+}
+
+async function nomeDoOperador(operador) {
+  const pool = await getPool();
+  const { recordset } = await pool
+    .request()
+    .input('operador', sql.Int, operador)
+    .query(`
+      SELECT LTRIM(RTRIM(V.NOME)) AS nome
+      FROM OPERADORES O WITH (NOLOCK)
+      JOIN VENDEDORES V WITH (NOLOCK) ON V.VENDEDOR = O.VENDEDOR
+      WHERE O.OPERADOR = @operador
+    `);
+  return recordset[0]?.nome ?? null;
+}
+
 async function nomeDoVendedor(vendedor) {
   const pool = await getPool();
   const { recordset } = await pool
@@ -299,6 +406,7 @@ async function topProdutos(filtros, limite) {
 }
 
 module.exports = {
-  resumo, porDia, porLoja, porOrigem, porVendedor, notasDoVendedor, nomeDoVendedor, topProdutos,
+  resumo, porDia, porLoja, porOrigem, porVendedor, notasDoVendedor, nomeDoVendedor,
+  porOperador, cuponsDoOperador, nomeDoOperador, topProdutos,
   LIMITE_NOTAS,
 };
