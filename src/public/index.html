@@ -96,6 +96,7 @@
 
       <section class="bloco" aria-labelledby="titulo-vendedores">
         <h2 id="titulo-vendedores">Vendas por vendedor</h2>
+        <p class="bloco__descricao">Notas faturadas e notas de devolução, pelo vendedor informado na nota.</p>
         <div class="tabela-rolagem">
           <table class="tabela">
             <thead>
@@ -103,13 +104,30 @@
                 <th scope="col">Vendedor</th>
                 <th scope="col">Notas faturadas</th>
                 <th scope="col">Devoluções</th>
-                <th scope="col">Notas menos devoluções</th>
-                <th scope="col">Caixa</th>
                 <th scope="col">Total líquido</th>
               </tr>
             </thead>
             <tbody id="vendedores"></tbody>
             <tfoot id="vendedores-total"></tfoot>
+          </table>
+        </div>
+      </section>
+
+      <section class="bloco" aria-labelledby="titulo-caixa">
+        <h2 id="titulo-caixa">Caixa por operador</h2>
+        <p class="bloco__descricao">Cupons e devoluções feitos no caixa das lojas.</p>
+        <div class="tabela-rolagem">
+          <table class="tabela">
+            <thead>
+              <tr>
+                <th scope="col">Operador</th>
+                <th scope="col">Cupons</th>
+                <th scope="col">Devoluções no caixa</th>
+                <th scope="col">Total líquido</th>
+              </tr>
+            </thead>
+            <tbody id="caixa"></tbody>
+            <tfoot id="caixa-total"></tfoot>
           </table>
         </div>
       </section>

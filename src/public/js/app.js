@@ -139,9 +139,10 @@ function mostrarComposicao(total) {
   escreverValor(el('total-caixa'), total.caixa_valor);
   el('total-caixa-qtd').textContent = contar(total.caixa_qtd, 'cupom', 'cupons');
 
-  escreverValor(el('total-devolucoes'), total.devolucoes_valor);
+  // Devoluções = notas de devolução + devoluções no caixa
+  escreverValor(el('total-devolucoes'), total.devolucoes_valor + total.devolucoes_caixa_valor);
   el('total-devolucoes-qtd').textContent =
-    contar(total.devolucoes_qtd, 'nota de devolução', 'notas de devolução');
+    contar(total.devolucoes_qtd + total.devolucoes_caixa_qtd, 'devolução', 'devoluções');
 
   escreverValor(el('total-liquido'), total.liquido);
 }
@@ -163,43 +164,72 @@ function celulaValor(valor, textoQtd, classeExtra) {
   return td;
 }
 
-function linhaVendedor(v, ehTotal = false) {
+// Colunas de cada tabela: de onde vem o valor e o texto de quantidade
+const TABELA_VENDEDORES = {
+  corpo: 'vendedores',
+  rodape: 'vendedores-total',
+  vazio: 'Nenhuma nota faturada no período.',
+  semNome: 'Sem vendedor informado',
+  participa: (v) => v.notas_qtd > 0 || v.devolucoes_qtd > 0,
+  total: (v) => (v.notas_valor ?? 0) + (v.devolucoes_valor ?? 0),
+  colunas: [
+    { valor: (v) => v.notas_valor, qtd: (v) => contar(v.notas_qtd, 'nota', 'notas') },
+    { valor: (v) => v.devolucoes_valor, qtd: (v) => contar(v.devolucoes_qtd, 'devolução', 'devoluções') },
+  ],
+};
+
+const TABELA_CAIXA = {
+  corpo: 'caixa',
+  rodape: 'caixa-total',
+  vazio: 'Nenhuma venda no caixa no período.',
+  semNome: 'Sem operador informado',
+  participa: (v) => v.caixa_qtd > 0 || v.devolucoes_caixa_qtd > 0,
+  total: (v) => (v.caixa_valor ?? 0) + (v.devolucoes_caixa_valor ?? 0),
+  colunas: [
+    { valor: (v) => v.caixa_valor, qtd: (v) => contar(v.caixa_qtd, 'cupom', 'cupons') },
+    { valor: (v) => v.devolucoes_caixa_valor, qtd: (v) => contar(v.devolucoes_caixa_qtd, 'devolução', 'devoluções') },
+  ],
+};
+
+function montarLinha(tabela, item, nome, ehTotal = false) {
   const tr = document.createElement('tr');
 
-  const nome = document.createElement(ehTotal ? 'td' : 'th');
-  if (!ehTotal) nome.scope = 'row';
-  nome.textContent = ehTotal ? 'Total' : v.nome;
+  const celulaNome = document.createElement(ehTotal ? 'td' : 'th');
+  if (!ehTotal) celulaNome.scope = 'row';
+  celulaNome.textContent = nome;
+  tr.append(celulaNome);
 
-  const notasMenosDevolucoes = (v.notas_valor ?? 0) + (v.devolucoes_valor ?? 0);
-
-  tr.append(
-    nome,
-    celulaValor(v.notas_valor, contar(v.notas_qtd, 'nota', 'notas')),
-    celulaValor(v.devolucoes_valor, contar(v.devolucoes_qtd, 'devolução', 'devoluções')),
-    celulaValor(notasMenosDevolucoes),
-    celulaValor(v.caixa_valor, contar(v.caixa_qtd, 'cupom', 'cupons')),
-    celulaValor(v.liquido, null, 'coluna-final'),
-  );
+  for (const coluna of tabela.colunas) {
+    tr.append(celulaValor(coluna.valor(item), coluna.qtd(item)));
+  }
+  tr.append(celulaValor(tabela.total(item), null, 'coluna-final'));
   return tr;
 }
 
-function mostrarVendedores({ vendedores, total }) {
-  const corpo = el('vendedores');
+function mostrarTabela(tabela, { vendedores, total }) {
+  const corpo = el(tabela.corpo);
+  const rodape = el(tabela.rodape);
 
-  if (vendedores.length === 0) {
+  // Cada tabela mostra só quem participou daquele tipo de venda, do maior para o menor
+  const linhas = vendedores
+    .filter(tabela.participa)
+    .sort((a, b) => tabela.total(b) - tabela.total(a));
+
+  if (linhas.length === 0) {
     const tr = document.createElement('tr');
     const td = document.createElement('td');
-    td.colSpan = 6;
+    td.colSpan = tabela.colunas.length + 2;
     td.className = 'vazio';
-    td.textContent = 'Nenhuma venda no período. Escolha outras datas e clique em Atualizar.';
+    td.textContent = tabela.vazio;
     tr.append(td);
     corpo.replaceChildren(tr);
-    el('vendedores-total').replaceChildren();
+    rodape.replaceChildren();
     return;
   }
 
-  corpo.replaceChildren(...vendedores.map((v) => linhaVendedor(v)));
-  el('vendedores-total').replaceChildren(linhaVendedor(total, true));
+  const nomeDe = (v) => (v.vendedor ? v.nome : tabela.semNome);
+  corpo.replaceChildren(...linhas.map((v) => montarLinha(tabela, v, nomeDe(v))));
+  rodape.replaceChildren(montarLinha(tabela, total, 'Total', true));
 }
 
 async function carregar() {
@@ -216,7 +246,8 @@ async function carregar() {
     mostrarResumo(resumo);
     mostrarOrigens(origens);
     mostrarComposicao(porVendedor.total);
-    mostrarVendedores(porVendedor);
+    mostrarTabela(TABELA_VENDEDORES, porVendedor);
+    mostrarTabela(TABELA_CAIXA, porVendedor);
     mostrarStatus(`Atualizado às ${new Date().toLocaleTimeString('pt-BR')}`);
   } catch (erro) {
     if (erro instanceof ChaveInvalida) {

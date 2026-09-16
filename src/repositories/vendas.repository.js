@@ -14,7 +14,8 @@
 //   zerados e quem identifica é DOCUMENTO_NUMERO (+ SERIE_NF).
 // - DOCUMENTO_TIPO (tabela TIPOS_DOCUMENTOS_VENDAS_ANALITICAS) define o grupo:
 //     CAIXA     = 1, 2, 9, 10, 18, 19 (PDV e vendas manuais, com cancelamentos)
-//     DEVOLUCAO = 12, 13, 14, 16      (notas de devolução e devolução no caixa)
+//     DEVOLUCAO       = 12, 13, 16   (notas de devolução)
+//     DEVOLUCAO_CAIXA = 14           (devolução no caixa das lojas)
 //     NOTA      = demais              (notas emitidas, canceladas e estornadas)
 //     20 (importação de demanda) não é venda e fica fora de tudo.
 // - Margem: calculada SÓ sobre as vendas que têm custo. O campo cobertura_custo_pct
@@ -39,7 +40,8 @@ const BASE = `
       VA.PRODUTO,
       VA.VENDEDOR,
       CASE
-        WHEN VA.DOCUMENTO_TIPO IN (12, 13, 14, 16)       THEN 'DEVOLUCAO'
+        WHEN VA.DOCUMENTO_TIPO = 14                      THEN 'DEVOLUCAO_CAIXA'
+        WHEN VA.DOCUMENTO_TIPO IN (12, 13, 16)           THEN 'DEVOLUCAO'
         WHEN VA.DOCUMENTO_TIPO IN (1, 2, 9, 10, 18, 19)  THEN 'CAIXA'
         ELSE 'NOTA'
       END AS CATEGORIA,
@@ -175,13 +177,15 @@ async function porVendedor(filtros) {
     )
     SELECT
       D.VENDEDOR                          AS vendedor,
-      COALESCE(V.NOME, 'Sem vendedor')    AS nome,
+      COALESCE(LTRIM(RTRIM(V.NOME)), 'Sem vendedor') AS nome,
       SUM(CASE WHEN D.CATEGORIA = 'NOTA' THEN D.LIQUIDA ELSE 0 END)                     AS notas_valor,
       SUM(CASE WHEN D.CATEGORIA = 'NOTA' AND D.LIQUIDA > 0 THEN 1 ELSE 0 END)           AS notas_qtd,
       SUM(CASE WHEN D.CATEGORIA = 'DEVOLUCAO' THEN D.LIQUIDA ELSE 0 END)                AS devolucoes_valor,
       SUM(CASE WHEN D.CATEGORIA = 'DEVOLUCAO' AND D.LIQUIDA < 0 THEN 1 ELSE 0 END)      AS devolucoes_qtd,
       SUM(CASE WHEN D.CATEGORIA = 'CAIXA' THEN D.LIQUIDA ELSE 0 END)                    AS caixa_valor,
       SUM(CASE WHEN D.CATEGORIA = 'CAIXA' AND D.LIQUIDA > 0 THEN 1 ELSE 0 END)          AS caixa_qtd,
+      SUM(CASE WHEN D.CATEGORIA = 'DEVOLUCAO_CAIXA' THEN D.LIQUIDA ELSE 0 END)          AS devolucoes_caixa_valor,
+      SUM(CASE WHEN D.CATEGORIA = 'DEVOLUCAO_CAIXA' AND D.LIQUIDA < 0 THEN 1 ELSE 0 END) AS devolucoes_caixa_qtd,
       SUM(D.LIQUIDA)                      AS liquido
     FROM DOCS D
     LEFT JOIN VENDEDORES V WITH (NOLOCK)

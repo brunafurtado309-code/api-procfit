@@ -63,6 +63,7 @@ const COLUNAS_SOMADAS = [
   'notas_valor', 'notas_qtd',
   'devolucoes_valor', 'devolucoes_qtd',
   'caixa_valor', 'caixa_qtd',
+  'devolucoes_caixa_valor', 'devolucoes_caixa_qtd',
   'liquido',
 ];
 const arredondar = (n) => Math.round(n * 100) / 100;

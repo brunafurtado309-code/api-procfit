@@ -243,6 +243,10 @@ input {
   line-height: 1.3;
 }
 .bloco .numeros { margin-top: 0.75rem; }
+.bloco__descricao {
+  margin: 0.2rem 0 0;
+  color: var(--tinta-suave);
+}
 
 .negativo { color: var(--alerta); }
 
@@ -253,7 +257,7 @@ input {
 }
 .tabela {
   width: 100%;
-  min-width: 46rem;
+  min-width: 34rem;
   border-collapse: collapse;
   font-variant-numeric: tabular-nums;
 }
