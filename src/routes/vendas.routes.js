@@ -1,4 +1,4 @@
-// URLs de vendas. Todas ficam sob /vendas (definido no server.js).
+﻿// URLs de vendas. Todas ficam sob /vendas (definido no server.js).
 
 const { Router } = require('express');
 const controller = require('../controllers/vendas.controller');
@@ -13,4 +13,3 @@ router.get('/por-vendedor', controller.porVendedor);
 router.get('/top-produtos', controller.topProdutos);
 
 module.exports = router;
-code src/routes/vendas.routes.js

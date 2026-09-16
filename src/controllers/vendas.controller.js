@@ -1,4 +1,4 @@
-// Recebe a requisição, chama o service e devolve a resposta.
+﻿// Recebe a requisição, chama o service e devolve a resposta.
 
 const service = require('../services/vendas.service');
 
@@ -16,5 +16,6 @@ module.exports = {
   porDia: acao(service.porDia),
   porLoja: acao(service.porLoja),
   porOrigem: acao(service.porOrigem),
+  porVendedor: acao(service.porVendedor),
   topProdutos: acao(service.topProdutos),
 };
