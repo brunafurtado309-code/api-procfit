@@ -96,7 +96,7 @@
 
       <section class="bloco" aria-labelledby="titulo-vendedores">
         <h2 id="titulo-vendedores">Vendas por vendedor</h2>
-        <p class="bloco__descricao">Notas faturadas e notas de devolução, pelo vendedor informado na nota.</p>
+        <p class="bloco__descricao">Notas faturadas e notas de devolução, pelo vendedor informado na nota. Clique no nome para ver as notas.</p>
         <div class="tabela-rolagem">
           <table class="tabela">
             <thead>
@@ -133,5 +133,36 @@
       </section>
     </div>
   </main>
+
+  <!-- Detalhe do vendedor: abre ao clicar no nome -->
+  <dialog id="detalhe" class="detalhe" aria-labelledby="detalhe-titulo">
+    <header class="detalhe__topo">
+      <div>
+        <h2 id="detalhe-titulo">Notas do vendedor</h2>
+        <p id="detalhe-resumo" class="detalhe__resumo"></p>
+      </div>
+      <button id="detalhe-fechar" type="button" class="botao-secundario">Fechar</button>
+    </header>
+
+    <p id="detalhe-status" class="status" role="status" aria-live="polite"></p>
+
+    <div class="tabela-rolagem detalhe__corpo">
+      <table class="tabela tabela--notas">
+        <thead>
+          <tr>
+            <th scope="col">Data</th>
+            <th scope="col">Situação</th>
+            <th scope="col">Nº da nota</th>
+            <th scope="col">Nº do pedido</th>
+            <th scope="col">Cód. cliente</th>
+            <th scope="col">Cliente</th>
+            <th scope="col">Valor</th>
+          </tr>
+        </thead>
+        <tbody id="detalhe-notas"></tbody>
+        <tfoot id="detalhe-total"></tfoot>
+      </table>
+    </div>
+  </dialog>
 </body>
 </html>

@@ -77,9 +77,43 @@ async function porVendedor(query) {
   return { vendedores, total };
 }
 
+// Notas de um vendedor, com totais por situação.
+async function notasDoVendedor(query, params) {
+  const filtros = montarFiltros(query);
+  const codigo = Number(params.vendedor);
+  if (!Number.isInteger(codigo) || codigo < 0) {
+    throw new AppError('Código de vendedor inválido');
+  }
+
+  const [notas, nome] = await Promise.all([
+    repo.notasDoVendedor(filtros, codigo),
+    codigo === 0 ? Promise.resolve(null) : repo.nomeDoVendedor(codigo),
+  ]);
+
+  const contarSituacao = (situacao) => notas.filter((n) => n.situacao === situacao).length;
+  const somarSituacao = (situacao) =>
+    arredondar(notas.filter((n) => n.situacao === situacao).reduce((s, n) => s + Number(n.valor || 0), 0));
+
+  return {
+    vendedor: { codigo, nome: codigo === 0 ? 'Sem vendedor informado' : nome ?? `Vendedor ${codigo}` },
+    periodo: { inicio: filtros.inicio, fim: filtros.fim },
+    limite_atingido: notas.length >= repo.LIMITE_NOTAS,
+    total: {
+      faturadas_qtd: contarSituacao('Faturada'),
+      faturadas_valor: somarSituacao('Faturada'),
+      canceladas_qtd: contarSituacao('Cancelada'),
+      devolucoes_qtd: contarSituacao('Devolução'),
+      devolucoes_valor: somarSituacao('Devolução'),
+      valor: arredondar(notas.reduce((s, n) => s + Number(n.valor || 0), 0)),
+    },
+    notas,
+  };
+}
+
 const topProdutos = (query) =>
   repo.topProdutos(montarFiltros(query), montarLimite(query.limite));
 
 module.exports = {
-  resumo, porDia, porLoja, porOrigem, porVendedor, topProdutos, montarFiltros, montarLimite,
+  resumo, porDia, porLoja, porOrigem, porVendedor, notasDoVendedor, topProdutos,
+  montarFiltros, montarLimite,
 };

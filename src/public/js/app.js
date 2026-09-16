@@ -166,6 +166,7 @@ function celulaValor(valor, textoQtd, classeExtra) {
 
 // Colunas de cada tabela: de onde vem o valor e o texto de quantidade
 const TABELA_VENDEDORES = {
+  clicavel: true,
   corpo: 'vendedores',
   rodape: 'vendedores-total',
   vazio: 'Nenhuma nota faturada no período.',
@@ -196,7 +197,18 @@ function montarLinha(tabela, item, nome, ehTotal = false) {
 
   const celulaNome = document.createElement(ehTotal ? 'td' : 'th');
   if (!ehTotal) celulaNome.scope = 'row';
-  celulaNome.textContent = nome;
+
+  if (tabela.clicavel && !ehTotal) {
+    // O nome vira um botão que abre as notas do vendedor
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    botao.className = 'nome-botao';
+    botao.textContent = nome;
+    botao.addEventListener('click', () => abrirDetalhe(item.vendedor || 0, nome));
+    celulaNome.append(botao);
+  } else {
+    celulaNome.textContent = nome;
+  }
   tr.append(celulaNome);
 
   for (const coluna of tabela.colunas) {
@@ -230,6 +242,113 @@ function mostrarTabela(tabela, { vendedores, total }) {
   const nomeDe = (v) => (v.vendedor ? v.nome : tabela.semNome);
   corpo.replaceChildren(...linhas.map((v) => montarLinha(tabela, v, nomeDe(v))));
   rodape.replaceChildren(montarLinha(tabela, total, 'Total', true));
+}
+
+// ===== Detalhe do vendedor =====
+const dataBR = (iso) => (iso ? iso.split('-').reverse().join('/') : '—');
+const SITUACAO_CLASSE = { Faturada: 'faturada', Cancelada: 'cancelada', 'Devolução': 'devolucao' };
+
+function celulaTexto(texto, classe) {
+  const td = document.createElement('td');
+  td.textContent = texto ?? '—';
+  if (classe) td.className = classe;
+  return td;
+}
+
+function linhaNota(n) {
+  const tr = document.createElement('tr');
+  if (n.situacao === 'Cancelada') tr.className = 'linha-cancelada';
+
+  const situacao = document.createElement('td');
+  const selo = document.createElement('span');
+  selo.className = `situacao situacao--${SITUACAO_CLASSE[n.situacao] || 'faturada'}`;
+  selo.textContent = n.situacao;
+  situacao.append(selo);
+
+  const cliente = document.createElement('td');
+  cliente.textContent = n.cliente || '—';
+  if (n.fantasia && n.fantasia !== n.cliente) {
+    const fantasia = document.createElement('span');
+    fantasia.className = 'fantasia';
+    fantasia.textContent = n.fantasia;
+    cliente.append(fantasia);
+  }
+
+  tr.append(
+    celulaTexto(dataBR(n.data)),
+    situacao,
+    celulaTexto(n.nota),
+    celulaTexto(n.pedido),
+    celulaTexto(n.codigo_cliente),
+    cliente,
+    celulaValor(n.valor),
+  );
+  return tr;
+}
+
+function mostrarDetalhe(dados) {
+  const t = dados.total;
+  el('detalhe-titulo').textContent = dados.vendedor.nome;
+
+  const partes = [
+    contar(t.faturadas_qtd, 'nota faturada', 'notas faturadas'),
+    contar(t.canceladas_qtd, 'cancelada', 'canceladas'),
+    contar(t.devolucoes_qtd, 'devolução', 'devoluções'),
+  ];
+  el('detalhe-resumo').textContent =
+    `${dataBR(dados.periodo.inicio)} a ${dataBR(dados.periodo.fim)}: ${partes.join(', ')}. Total ${moeda.format(t.valor)}`;
+
+  const corpo = el('detalhe-notas');
+  if (dados.notas.length === 0) {
+    const tr = document.createElement('tr');
+    const td = celulaTexto('Nenhuma nota deste vendedor no período.', 'vazio');
+    td.colSpan = 7;
+    tr.append(td);
+    corpo.replaceChildren(tr);
+    el('detalhe-total').replaceChildren();
+  } else {
+    corpo.replaceChildren(...dados.notas.map(linhaNota));
+    const tr = document.createElement('tr');
+    const rotulo = celulaTexto('Total');
+    rotulo.colSpan = 6;
+    tr.append(rotulo, celulaValor(t.valor));
+    el('detalhe-total').replaceChildren(tr);
+  }
+
+  mostrarStatusDetalhe(
+    dados.limite_atingido ? 'Mostrando só as primeiras notas. Diminua o período para ver todas.' : '',
+    dados.limite_atingido,
+  );
+}
+
+function mostrarStatusDetalhe(texto, erro = false) {
+  el('detalhe-status').textContent = texto;
+  el('detalhe-status').classList.toggle('status--erro', erro);
+}
+
+async function abrirDetalhe(codigo, nome) {
+  el('detalhe-titulo').textContent = nome;
+  el('detalhe-resumo').textContent = '';
+  el('detalhe-notas').replaceChildren();
+  el('detalhe-total').replaceChildren();
+  mostrarStatusDetalhe('Carregando notas…');
+  el('detalhe').showModal();
+
+  try {
+    const filtros = { inicio: el('inicio').value, fim: el('fim').value };
+    const dados = await buscar(`vendedores/${encodeURIComponent(codigo)}/notas`, filtros);
+    mostrarDetalhe(dados);
+  } catch (erro) {
+    if (erro instanceof ChaveInvalida) {
+      el('detalhe').close();
+      chave.apagar();
+      mostrarEntrada();
+      alert('Chave de acesso inválida. Informe a chave novamente.');
+      return;
+    }
+    console.error(erro);
+    mostrarStatusDetalhe(erro.message, true);
+  }
 }
 
 async function carregar() {
@@ -279,6 +398,8 @@ document.addEventListener('DOMContentLoaded', () => {
     evento.preventDefault();
     carregar();
   });
+
+  el('detalhe-fechar').addEventListener('click', () => el('detalhe').close());
 
   el('trocar-chave').addEventListener('click', () => {
     chave.apagar();

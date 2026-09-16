@@ -196,6 +196,83 @@ async function porVendedor(filtros) {
   return recordset;
 }
 
+// Notas de um vendedor (faturadas, canceladas e devoluções).
+// - A nota cancelada (tipo 11) usa o MESMO número da original: agrupando pelo número,
+//   ela zera a nota e vira situação "Cancelada".
+// - O vínculo com NF_FATURAMENTO é o REG_MASTER_ORIGEM da nota original (não do cancelamento).
+// - Nº impresso = DOCUMENTO_NUMERO (= NF_FATURAMENTO.NF_NUMERO). Pedido = NF_FATURAMENTO.PEDIDO_CLIENTE.
+// - vendedor 0 = notas sem vendedor informado.
+const LIMITE_NOTAS = 5000;
+
+async function notasDoVendedor(filtros, vendedor) {
+  const request = await criarRequest(filtros);
+  request.input('vendedor', sql.Int, vendedor);
+  request.input('limite', sql.Int, LIMITE_NOTAS);
+  const { recordset } = await request.query(`
+    WITH ITENS AS (
+      SELECT
+        VA.EMPRESA,
+        VA.MOVIMENTO,
+        VA.DOCUMENTO_NUMERO,
+        VA.DOCUMENTO_TIPO,
+        VA.REG_MASTER_ORIGEM,
+        VA.CLIENTE,
+        VA.QUANTIDADE,
+        VA.VENDA_LIQUIDA,
+        CASE WHEN VA.DOCUMENTO_TIPO IN (12, 13, 16) THEN 'DEVOLUCAO' ELSE 'NOTA' END AS CATEGORIA
+      FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
+      WHERE VA.MOVIMENTO BETWEEN CAST(@inicio AS date) AND CAST(@fim AS date)
+        AND (@empresa IS NULL OR VA.EMPRESA = @empresa)
+        AND ISNULL(VA.VENDEDOR, 0) = @vendedor
+        AND ISNULL(VA.DOCUMENTO_TIPO, 0) NOT IN (1, 2, 9, 10, 14, 18, 19, 20)
+    ),
+    DOCS AS (
+      SELECT
+        EMPRESA, CATEGORIA, DOCUMENTO_NUMERO,
+        MIN(MOVIMENTO)     AS MOVIMENTO,
+        MAX(CLIENTE)       AS CLIENTE,
+        MAX(CASE WHEN DOCUMENTO_TIPO NOT IN (4, 6, 11, 13, 17) THEN REG_MASTER_ORIGEM END) AS NF_ID,
+        MAX(CASE WHEN DOCUMENTO_TIPO IN (4, 6, 11, 17) THEN 1 ELSE 0 END) AS TEM_CANCELAMENTO,
+        SUM(QUANTIDADE)    AS QUANTIDADE,
+        SUM(VENDA_LIQUIDA) AS LIQUIDA
+      FROM ITENS
+      GROUP BY EMPRESA, CATEGORIA, DOCUMENTO_NUMERO
+    )
+    SELECT TOP (@limite)
+      CONVERT(varchar(10), D.MOVIMENTO, 23) AS data,
+      CASE
+        WHEN D.CATEGORIA = 'DEVOLUCAO' THEN 'Devolução'
+        WHEN D.TEM_CANCELAMENTO = 1 AND ABS(D.LIQUIDA) < 0.01 THEN 'Cancelada'
+        ELSE 'Faturada'
+      END                                   AS situacao,
+      D.DOCUMENTO_NUMERO                    AS nota,
+      NF.NF_SERIE                           AS serie,
+      NF.PEDIDO_CLIENTE                     AS pedido,
+      D.CLIENTE                             AS codigo_cliente,
+      LTRIM(RTRIM(E.NOME))                  AS cliente,
+      LTRIM(RTRIM(E.NOME_FANTASIA))         AS fantasia,
+      E.INSCRICAO_FEDERAL                   AS cnpj_cpf,
+      D.QUANTIDADE                          AS quantidade,
+      D.LIQUIDA                             AS valor
+    FROM DOCS D
+    LEFT JOIN NF_FATURAMENTO NF WITH (NOLOCK)
+      ON D.CATEGORIA = 'NOTA' AND NF.NF_FATURAMENTO = D.NF_ID
+    LEFT JOIN ENTIDADES E WITH (NOLOCK)
+      ON E.ENTIDADE = D.CLIENTE
+    ORDER BY D.MOVIMENTO, D.DOCUMENTO_NUMERO
+  `);
+  return recordset;
+}
+
+async function nomeDoVendedor(vendedor) {
+  const pool = await getPool();
+  const { recordset } = await pool
+    .request()
+    .input('vendedor', sql.Int, vendedor)
+    .query('SELECT LTRIM(RTRIM(NOME)) AS nome FROM VENDEDORES WITH (NOLOCK) WHERE VENDEDOR = @vendedor');
+  return recordset[0]?.nome ?? null;
+}
+
 // Produtos mais vendidos (por valor líquido)
 async function topProdutos(filtros, limite) {
   const request = await criarRequest(filtros);
@@ -221,4 +298,7 @@ async function topProdutos(filtros, limite) {
   return recordset;
 }
 
-module.exports = { resumo, porDia, porLoja, porOrigem, porVendedor, topProdutos };
+module.exports = {
+  resumo, porDia, porLoja, porOrigem, porVendedor, notasDoVendedor, nomeDoVendedor, topProdutos,
+  LIMITE_NOTAS,
+};

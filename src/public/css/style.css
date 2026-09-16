@@ -295,6 +295,95 @@ input {
 .tabela .coluna-final { font-weight: 700; color: var(--acai); }
 .tabela .vazio { text-align: left; color: var(--tinta-suave); }
 
+/* ===== Nome clicável na tabela ===== */
+.nome-botao {
+  padding: 0;
+  background: none;
+  color: var(--tinta);
+  font-weight: 600;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: var(--acai-claro);
+  text-underline-offset: 3px;
+}
+.nome-botao:hover {
+  background: none;
+  color: var(--acai);
+  text-decoration-color: var(--acai);
+}
+
+.botao-secundario {
+  background: var(--superficie);
+  color: var(--acai);
+  border: 1px solid var(--linha);
+}
+.botao-secundario:hover { background: var(--fundo); }
+
+/* ===== Janela de detalhe ===== */
+.detalhe {
+  width: min(72rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  padding: 0;
+  border: 0;
+  border-radius: var(--raio);
+  background: var(--fundo);
+  color: var(--tinta);
+  box-shadow: 0 20px 60px rgba(42, 21, 51, 0.35);
+}
+.detalhe[open] {
+  display: flex;
+  flex-direction: column;
+}
+.detalhe::backdrop { background: rgba(42, 21, 51, 0.45); }
+
+.detalhe__topo {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem 0.5rem;
+  border-bottom: 1px solid var(--linha);
+}
+.detalhe__topo h2 { margin: 0; font-size: 1.35rem; line-height: 1.25; }
+.detalhe__resumo { margin: 0.25rem 0 0.5rem; color: var(--tinta-suave); }
+.detalhe .status { padding: 0 1.5rem; }
+.detalhe__corpo {
+  flex: 1;
+  margin: 0;
+  padding: 0 1.5rem 1.25rem;
+  overflow: auto;
+}
+
+.tabela--notas { min-width: 52rem; }
+.tabela--notas thead th {
+  position: sticky;
+  top: 0;
+  background: var(--fundo);
+}
+.tabela--notas th:nth-child(2),
+.tabela--notas td:nth-child(2),
+.tabela--notas th:nth-child(6),
+.tabela--notas td:nth-child(6) { text-align: left; }
+.tabela--notas td:first-child { white-space: nowrap; }
+.tabela--notas .fantasia {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--tinta-suave);
+}
+
+.situacao {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.situacao--faturada { background: var(--folha-clara); color: #24502F; }
+.situacao--cancelada { background: var(--outros-claro); color: #4B4450; }
+.situacao--devolucao { background: #F3D9C4; color: #7A3F12; }
+.linha-cancelada td:last-child { text-decoration: line-through; color: var(--tinta-suave); }
+
 /* ===== Celular ===== */
 @media (max-width: 560px) {
   .numeros { grid-template-columns: 1fr 1fr; }
