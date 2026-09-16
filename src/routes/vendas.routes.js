@@ -9,6 +9,8 @@ router.get('/resumo', controller.resumo);
 router.get('/por-dia', controller.porDia);
 router.get('/por-loja', controller.porLoja);
 router.get('/por-origem', controller.porOrigem);
+router.get('/por-vendedor', controller.porVendedor);
 router.get('/top-produtos', controller.topProdutos);
 
 module.exports = router;
+code src/routes/vendas.routes.js
