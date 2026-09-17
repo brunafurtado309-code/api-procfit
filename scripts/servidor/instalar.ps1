@@ -79,16 +79,23 @@ if ((Test-Path $arquivoGit) -and (GitHubAcessivel)) {
         GuardarCredencial $(if ($usuario) { $usuario } else { 'x-access-token' }) $token
         $funcionou = GitHubAcessivel
     }
-    # 2a tentativa: pede o token (copie do gerenciador de senhas e cole com clique direito)
+    # 2a tentativa: le o token da area de transferencia (o AnyDesk nao cola em campo protegido)
     $tentativa = 0
     while (-not $funcionou -and $tentativa -lt 3) {
         $tentativa++
-        Aviso "Cole o token do GitHub 'servidor-api-procfit' (clique direito) e aperte Enter. Tentativa $tentativa de 3."
-        $seguro = Read-Host '   Token' -AsSecureString
-        $token = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($seguro))
-        GuardarCredencial 'x-access-token' $token.Trim()
+        Aviso "No NOTEBOOK, copie o token 'servidor-api-procfit' do gerenciador de senhas. (Tentativa $tentativa de 3)"
+        Read-Host '   Depois clique nesta janela e aperte Enter (NAO cole nada aqui)' | Out-Null
+        $token = [string](Get-Clipboard -Raw)
+        $token = $token.Trim()
+        if ($token -notmatch '^(github_pat_|ghp_)[A-Za-z0-9_]+$') {
+            Aviso "A area de transferencia nao tem um token do GitHub (tem $($token.Length) caracteres). Copie de novo."
+            continue
+        }
+        GuardarCredencial 'x-access-token' $token
+        Set-Clipboard -Value ' '   # tira o token da area de transferencia
         $funcionou = GitHubAcessivel
-        if (-not $funcionou) { Aviso 'O GitHub recusou esse token.' }
+        if ($funcionou) { Certo "Token lido ($($token.Length) caracteres) e aceito pelo GitHub" }
+        else { Aviso 'O GitHub recusou esse token (vencido, revogado ou sem acesso ao api-procfit).' }
     }
     Remove-Variable token, saida -ErrorAction SilentlyContinue
     if (-not $funcionou) {
