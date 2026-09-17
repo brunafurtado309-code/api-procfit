@@ -44,19 +44,22 @@ try {
     }
 
     # ---------- 2. Atualizacao ----------
-    $temCredencial = Test-Path $arquivoGit
-    if (-not $temCredencial -and -not $Agora) { return }   # automatica desligada: falta o token
+    # Sem token guardado, usa o acesso ao GitHub do usuario que roda a tarefa
+    # (o mesmo do git pull). PrepararGit garante que nenhuma janela de login abra.
     PrepararGit
-    $semAjudante = @('-c', 'credential.helper=')
-    if (-not $temCredencial) {
-        # Rodando a mao, como administrador: usa o acesso ao GitHub guardado no Windows (o mesmo do git pull)
-        $semAjudante = @()
-        Remove-Item Env:GCM_INTERACTIVE, Env:GIT_TERMINAL_PROMPT -ErrorAction SilentlyContinue
-    }
+    $semAjudante = if (Test-Path $arquivoGit) { @('-c', 'credential.helper=') } else { @() }
     & $git @semAjudante fetch --quiet origin main
     if ($LASTEXITCODE -ne 0) {
-        Registrar 'Nao foi possivel consultar o GitHub (rede ou credencial). Tento de novo na proxima rodada.'
-        exit 1
+        # Nao enche o log: avisa no maximo uma vez por hora
+        $avisoGit = Join-Path $pastaDados 'aviso-github.txt'
+        $ultimo = [datetime]::MinValue
+        if (Test-Path $avisoGit) { try { $ultimo = [datetime](Get-Content $avisoGit -Raw) } catch { } }
+        if ($Agora -or ((Get-Date) - $ultimo).TotalMinutes -ge 60) {
+            New-Item -ItemType Directory -Path $pastaDados -Force | Out-Null
+            Set-Content -Path $avisoGit -Value (Get-Date).ToString('o')
+            Registrar 'Nao foi possivel consultar o GitHub (rede ou credencial). A API continua no ar.'
+        }
+        return
     }
 
     $atual = (& $git rev-parse HEAD).Trim()
