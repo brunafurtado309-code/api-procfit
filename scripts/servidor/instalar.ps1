@@ -134,7 +134,6 @@ Register-ScheduledTask -TaskName $tarefaApi -Action $acaoApi -Trigger (New-Sched
     -Principal $conta -Settings $opcoesApi -Force | Out-Null
 Certo "'$tarefaApi': mantem a API no ar e sobe com o Windows"
 
-$contaManut = $conta
 if ($automatico) {
     $tentativa = 0
     while ($tentativa -lt 3) {
@@ -144,17 +143,17 @@ if ($automatico) {
         $senhaSegura = Read-Host '   Senha' -AsSecureString
         $senhaTexto = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($senhaSegura))
         try {
-            $contaManut = New-ScheduledTaskPrincipal -UserId $usuarioManutencao -LogonType Password -RunLevel Highest
             $senhaDaTarefa = $senhaTexto
-            # Confere a senha registrando uma tarefa de teste
+            # Confere a senha registrando uma tarefa de teste.
+            # Aqui NAO se usa -Principal: com -User/-Password, quem define o nivel e o -RunLevel.
             Register-ScheduledTask -TaskName 'API PROCFIT - teste de senha' -Action $acaoApi `
-                -Principal $contaManut -User $usuarioManutencao -Password $senhaDaTarefa -Force -ErrorAction Stop | Out-Null
+                -User $usuarioManutencao -Password $senhaDaTarefa -RunLevel Highest -Force -ErrorAction Stop | Out-Null
             Unregister-ScheduledTask -TaskName 'API PROCFIT - teste de senha' -Confirm:$false
             Certo 'Senha aceita pelo Windows'
             break
         } catch {
-            Aviso 'O Windows recusou essa senha.'
-            $contaManut = $conta; $senhaDaTarefa = $null
+            Aviso "O Windows recusou: $($_.Exception.Message)"
+            $senhaDaTarefa = $null
             if ($tentativa -eq 3) {
                 Aviso 'Sem a senha, a manutencao roda como SYSTEM: a vigia funciona, a atualizacao automatica nao.'
                 $automatico = $false
@@ -175,7 +174,7 @@ $opcoesManut = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIf
     -ExecutionTimeLimit (New-TimeSpan -Minutes 15) -StartWhenAvailable -MultipleInstances IgnoreNew
 if ($automatico -and $senhaDaTarefa) {
     Register-ScheduledTask -TaskName $tarefaManut -Action $acaoManut -Trigger $gatilhos `
-        -Principal $contaManut -Settings $opcoesManut -User $usuarioManutencao -Password $senhaDaTarefa -Force | Out-Null
+        -Settings $opcoesManut -User $usuarioManutencao -Password $senhaDaTarefa -RunLevel Highest -Force | Out-Null
     Certo "'$tarefaManut': a cada 5 minutos confere a API e atualiza pelo GitHub (como $usuarioManutencao)"
 } else {
     Register-ScheduledTask -TaskName $tarefaManut -Action $acaoManut -Trigger $gatilhos `
