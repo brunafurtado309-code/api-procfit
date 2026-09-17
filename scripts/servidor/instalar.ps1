@@ -6,6 +6,11 @@
 # Cria duas tarefas agendadas (rodam como SYSTEM, sem ninguem logado):
 #   "API PROCFIT"              mantem a API rodando (sobe com o Windows, reinicia se cair)
 #   "API PROCFIT - manutencao" a cada 5 min: reinicia se travar e atualiza pelo GitHub
+#
+# Opcao -SemToken: instala sem configurar o token do GitHub (atualizacoes manuais).
+#   powershell -ExecutionPolicy Bypass -File scripts\servidor\instalar.ps1 -SemToken
+
+param([switch]$SemToken)
 
 . "$PSScriptRoot\comum.ps1"
 Set-Location $raiz
@@ -91,8 +96,10 @@ if ((Test-Path $arquivoGit) -and (GitHubAcessivel)) {
     }
     # 2a tentativa: recebe o token do notebook pela rede (opcional)
     $tentativa = 0
+    if ($SemToken) { $tentativa = 3 }   # pulou pela opcao do comando
     while (-not $funcionou -and $tentativa -lt 3) {
         $tentativa++
+        try { $Host.UI.RawUI.FlushInputBuffer() } catch { }   # descarta teclas guardadas (ex.: Enter extra ao colar)
         Aviso 'Sem o token, a API fica no ar do mesmo jeito; so as atualizacoes deixam de ser automaticas.'
         $resposta = Read-Host '   Aperte Enter para enviar o token pelo notebook, ou digite P e Enter para pular'
         if ($resposta.Trim().ToUpper() -eq 'P') { break }
