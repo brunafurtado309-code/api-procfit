@@ -96,6 +96,7 @@ async function baixarArquivo(rota, filtros, nomePadrao, botao) {
 }
 
 function pedirChaveDeNovo() {
+  pararAtualizacao();
   if (el('detalhe').open) el('detalhe').close();
   chave.apagar();
   mostrarEntrada();
@@ -875,9 +876,87 @@ async function baixarPainel() {
   }
 }
 
-async function carregar() {
-  const filtros = { inicio: el('inicio').value, fim: el('fim').value };
-  mostrarStatus('Carregando…');
+// ===== Atualização automática =====
+// O PROCFIT grava as vendas ao longo do dia (venda por venda),
+// então o painel busca os números de novo sozinho enquanto o período incluir hoje.
+const INTERVALO_ATUALIZACAO_MS = 2 * 60 * 1000; // 2 minutos
+
+let timerAtualizacao = null;
+let atualizacaoPendente = false; // chegou a hora, mas a janela de detalhe estava aberta
+let filtrosCarregados = null;    // período que está na tela agora
+let diaDaUltimaCarga = null;     // para perceber a virada da meia-noite
+let cargaAtual = 0;              // número da carga mais recente
+let carregando = false;
+
+const hojeISO = () => formatarData(new Date());
+const horaBR = (data) => data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+function periodoIncluiHoje(filtros) {
+  const hoje = hojeISO();
+  return Boolean(filtros) && filtros.inicio <= hoje && filtros.fim >= hoje;
+}
+
+function pararAtualizacao() {
+  clearTimeout(timerAtualizacao);
+  timerAtualizacao = null;
+  atualizacaoPendente = false;
+}
+
+// Agenda a próxima rodada. Devolve a hora prevista, ou null se não agendou.
+function agendarAtualizacao() {
+  clearTimeout(timerAtualizacao);
+  timerAtualizacao = null;
+  if (!chave.ler() || !periodoIncluiHoje(filtrosCarregados)) return null;
+  timerAtualizacao = setTimeout(atualizarSozinho, INTERVALO_ATUALIZACAO_MS);
+  return new Date(Date.now() + INTERVALO_ATUALIZACAO_MS);
+}
+
+// Passou da meia-noite: quem olhava "até hoje" continua olhando "até hoje".
+// Se virou o mês e o início era o dia 1, o início vai para o dia 1 do mês novo.
+function acompanharVirada() {
+  const hoje = hojeISO();
+  if (!diaDaUltimaCarga || diaDaUltimaCarga === hoje || !filtrosCarregados) return;
+  if (filtrosCarregados.fim !== diaDaUltimaCarga) return;
+
+  filtrosCarregados.fim = hoje;
+  const mesAnterior = diaDaUltimaCarga.slice(0, 7);
+  if (mesAnterior !== hoje.slice(0, 7) && filtrosCarregados.inicio === `${mesAnterior}-01`) {
+    filtrosCarregados.inicio = `${hoje.slice(0, 7)}-01`;
+  }
+}
+
+function atualizarSozinho() {
+  timerAtualizacao = null;
+  // Não mexe na tela enquanto alguém usa a janela de detalhe; atualiza ao fechar
+  if (el('detalhe').open) {
+    atualizacaoPendente = true;
+    return;
+  }
+  if (carregando) {
+    agendarAtualizacao(); // a carga anterior ainda não terminou: tenta na próxima rodada
+    return;
+  }
+  acompanharVirada();
+  // Volta os campos para o período que está na tela (caso alguém tenha mexido sem clicar em Atualizar)
+  el('inicio').value = filtrosCarregados.inicio;
+  el('fim').value = filtrosCarregados.fim;
+  carregar({ automatico: true });
+}
+
+// "08:43" se for de hoje; "16/09 às 18:20" se for de outro dia
+function textoUltimoRegistro(ultimo) {
+  if (!ultimo) return null;
+  const [data, hora] = ultimo.split(' ');
+  const quando = data === hojeISO() ? hora : `${dataBR(data).slice(0, 5)} às ${hora}`;
+  return `última venda recebida: ${quando}`;
+}
+
+async function carregar({ automatico = false } = {}) {
+  const filtros = filtrosAtuais();
+  const minhaCarga = ++cargaAtual;
+  carregando = true;
+  clearTimeout(timerAtualizacao);
+  mostrarStatus(automatico ? 'Atualizando…' : 'Carregando…');
 
   try {
     // As consultas rodam ao mesmo tempo
@@ -887,14 +966,29 @@ async function carregar() {
       buscar('por-vendedor', filtros),
       buscar('por-operador', filtros),
     ]);
+    // Se outra carga começou depois desta (ex.: clicou em Atualizar com outras datas), ignora esta
+    if (minhaCarga !== cargaAtual) return;
+
     mostrarResumo(resumo);
     mostrarOrigens(origens);
     mostrarComposicao(porVendedor.total);
     mostrarTabela(TABELA_VENDEDORES, porVendedor.vendedores, porVendedor.total);
     mostrarTabela(TABELA_CAIXA, porOperador.operadores, porOperador.total);
-    mostrarStatus(`Atualizado às ${new Date().toLocaleTimeString('pt-BR')}`);
+
+    filtrosCarregados = { ...filtros };
+    diaDaUltimaCarga = hojeISO();
+    const proxima = agendarAtualizacao();
+    const partes = [`Atualizado às ${horaBR(new Date())}`];
+    const ultimo = textoUltimoRegistro(resumo.ultimo_registro);
+    if (ultimo) partes.push(ultimo);
+    partes.push(proxima
+      ? `próxima atualização às ${horaBR(proxima)}`
+      : 'atualização automática só quando o período inclui hoje');
+    mostrarStatus(partes.join(' · '));
   } catch (erro) {
+    if (minhaCarga !== cargaAtual) return;
     if (erro instanceof ChaveInvalida) {
+      pararAtualizacao();
       chave.apagar();
       mostrarEntrada();
       mostrarStatus('');
@@ -902,7 +996,14 @@ async function carregar() {
       return;
     }
     console.error(erro);
-    mostrarStatus(erro.message, true);
+    // Os números da última carga continuam na tela; tenta de novo na próxima rodada
+    if (!filtrosCarregados) filtrosCarregados = { ...filtros };
+    const proxima = agendarAtualizacao();
+    mostrarStatus(proxima
+      ? `${erro.message} Nova tentativa às ${horaBR(proxima)}.`
+      : erro.message, true);
+  } finally {
+    if (minhaCarga === cargaAtual) carregando = false;
   }
 }
 
@@ -925,6 +1026,12 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   el('detalhe-fechar').addEventListener('click', () => el('detalhe').close());
+  // Ao fechar a janela (botão ou Esc), faz a atualização que ficou esperando
+  el('detalhe').addEventListener('close', () => {
+    if (!atualizacaoPendente) return;
+    atualizacaoPendente = false;
+    atualizarSozinho();
+  });
   el('detalhe-baixar').addEventListener('click', baixarDetalhe);
   el('detalhe-busca').addEventListener('input', aoDigitarBusca);
   el('detalhe-situacao').addEventListener('change', aplicarFiltroDetalhe);
@@ -940,6 +1047,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   el('trocar-chave').addEventListener('click', () => {
+    pararAtualizacao();
     chave.apagar();
     mostrarEntrada();
   });

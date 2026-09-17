@@ -35,6 +35,7 @@ const BASE = `
       -- Devolução no caixa (tipo 14): o código da devolução identifica o documento
       CASE WHEN VA.DOCUMENTO_TIPO = 14 THEN VA.REG_MASTER_ORIGEM ELSE VA.VENDA END AS VENDA,
       VA.MOVIMENTO,
+      VA.DATA AS PROCESSADO, -- quando o PROCFIT gravou a linha
       VA.ESPECIE_FISCAL,
       VA.DOCUMENTO_NUMERO,
       VA.SERIE_NF,
@@ -69,7 +70,8 @@ const BASE = `
       SUM(VENDA_LIQUIDA) AS LIQUIDA,
       SUM(CUSTO)         AS CUSTO,
       SUM(LIQUIDA_COM_CUSTO) AS LIQUIDA_COM_CUSTO,
-      SUM(SEM_CUSTO)     AS ITENS_SEM_CUSTO
+      SUM(SEM_CUSTO)     AS ITENS_SEM_CUSTO,
+      MAX(PROCESSADO)    AS PROCESSADO
     FROM ITENS
     GROUP BY EMPRESA, MOVIMENTO, ESPECIE_FISCAL, CAIXA, VENDA, DOCUMENTO_NUMERO, SERIE_NF
   )
@@ -172,7 +174,9 @@ async function resumo(filtros) {
       ${INDICADORES},
       SUM(QTD_ITENS) AS qtd_itens,
       SUM(BRUTA)     AS venda_bruta,
-      SUM(DESCONTOS) AS desconto
+      SUM(DESCONTOS) AS desconto,
+      -- Última linha gravada pelo PROCFIT no período (mostra se os dados estão chegando)
+      CONVERT(varchar(16), MAX(PROCESSADO), 120) AS ultimo_registro
     FROM VENDAS
   `);
   return recordset[0];
