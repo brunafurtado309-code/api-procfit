@@ -1,21 +1,21 @@
 # Roda no NOTEBOOK. Envia o token do GitHub para o servidor, pela rede interna,
 # enquanto o instalar.ps1 do servidor mostra "CODIGO: ......".
-# O token e lido da area de transferencia DESTE notebook (copie do gerenciador de senhas).
+# O token e colado aqui, num campo protegido (aparecem so asteriscos).
 # Uso, na pasta do projeto:
 #   powershell -ExecutionPolicy Bypass -File scripts\enviar-token.ps1
 
 param([string]$Servidor = '192.168.1.3')
 
-Write-Host "Copie o token 'servidor-api-procfit' no gerenciador de senhas." -ForegroundColor Yellow
-Read-Host 'Depois aperte Enter aqui' | Out-Null
-$token = ([string](Get-Clipboard -Raw)).Trim()
+Write-Host "Abra o gerenciador de senhas e copie o token 'servidor-api-procfit' (comeca com github_pat_)." -ForegroundColor Yellow
+$seguro = Read-Host 'Cole o token aqui com Ctrl+V e aperte Enter' -AsSecureString
+$token = ([Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($seguro))).Trim()
 
 if ($token -notmatch '^(github_pat_|ghp_)[A-Za-z0-9_]+$') {
-    Write-Host "A area de transferencia nao tem um token do GitHub (tem $($token.Length) caracteres)." -ForegroundColor Red
-    Write-Host 'Copie o token de novo e rode este script outra vez (o codigo do servidor continua valendo).'
+    Write-Host "Isso nao e um token do GitHub (tem $($token.Length) caracteres; comeca com github_pat_: $($token.StartsWith('github_pat_')))." -ForegroundColor Red
+    Write-Host 'Copie o token certo e rode este script outra vez (o codigo do servidor continua valendo).'
     exit 1
 }
-Write-Host "Token encontrado ($($token.Length) caracteres)." -ForegroundColor Green
+Write-Host "Token reconhecido ($($token.Length) caracteres)." -ForegroundColor Green
 
 $codigo = (Read-Host 'Codigo de 6 digitos que aparece no servidor').Trim()
 $bytes = [Text.Encoding]::UTF8.GetBytes($token)
@@ -40,5 +40,5 @@ try {
     exit 1
 } finally {
     Set-Clipboard -Value ' '   # tira o token da area de transferencia
-    Remove-Variable token, bytes -ErrorAction SilentlyContinue
+    Remove-Variable token, bytes, seguro -ErrorAction SilentlyContinue
 }
