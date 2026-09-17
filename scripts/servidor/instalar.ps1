@@ -60,7 +60,17 @@ Certo "Projeto em $raiz ($(& $git log -1 --format='%h %s'))"
 $script:trava = ObterTrava 300
 if (-not $script:trava) { Parar 'Outra manutencao esta rodando ha mais de 5 minutos.' }
 
-Etapa '2. Acesso ao GitHub para as atualizacoes automaticas'
+Etapa '2. Firewall (porta 3000 so para a rede interna)'
+$regra = 'API PROCFIT - porta 3000 (rede interna)'
+if (-not (Get-NetFirewallRule -DisplayName $regra -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -DisplayName $regra -Direction Inbound -Protocol TCP -LocalPort $porta `
+        -RemoteAddress LocalSubnet -Action Allow -Profile Any | Out-Null
+    Certo 'Regra criada'
+} else {
+    Certo 'Regra ja existia'
+}
+
+Etapa '3. Acesso ao GitHub para as atualizacoes automaticas'
 $pastaGit = $raiz -replace '\\', '/'
 if (-not (@(& $git config --system --get-all safe.directory) -contains $pastaGit)) {
     & $git config --system --add safe.directory $pastaGit
@@ -79,23 +89,18 @@ if ((Test-Path $arquivoGit) -and (GitHubAcessivel)) {
         GuardarCredencial $(if ($usuario) { $usuario } else { 'x-access-token' }) $token
         $funcionou = GitHubAcessivel
     }
-    # 2a tentativa: le o token da area de transferencia (o AnyDesk nao cola em campo protegido)
+    # 2a tentativa: recebe o token do notebook pela rede (o AnyDesk nao repassa o que vem do gerenciador de senhas)
     $tentativa = 0
     while (-not $funcionou -and $tentativa -lt 3) {
         $tentativa++
-        Aviso "No NOTEBOOK, copie o token 'servidor-api-procfit' do gerenciador de senhas. (Tentativa $tentativa de 3)"
-        Read-Host '   Depois clique nesta janela e aperte Enter (NAO cole nada aqui)' | Out-Null
-        $token = [string](Get-Clipboard -Raw)
-        $token = $token.Trim()
-        if ($token -notmatch '^(github_pat_|ghp_)[A-Za-z0-9_]+$') {
-            Aviso "A area de transferencia nao tem um token do GitHub (tem $($token.Length) caracteres). Copie de novo."
-            continue
-        }
-        GuardarCredencial 'x-access-token' $token
-        Set-Clipboard -Value ' '   # tira o token da area de transferencia
+        Aviso "Vamos receber o token do GitHub pelo notebook. (Tentativa $tentativa de 3)"
+        PararApi
+        New-Item -ItemType Directory -Path $pastaDados -Force | Out-Null
+        icacls $pastaDados /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
+        & $node (Join-Path $PSScriptRoot 'receber-env.js') token $arquivoGit
+        if ($LASTEXITCODE -ne 0) { continue }
         $funcionou = GitHubAcessivel
-        if ($funcionou) { Certo "Token lido ($($token.Length) caracteres) e aceito pelo GitHub" }
-        else { Aviso 'O GitHub recusou esse token (vencido, revogado ou sem acesso ao api-procfit).' }
+        if (-not $funcionou) { Aviso 'O GitHub recusou esse token (vencido, revogado ou sem acesso ao api-procfit).' }
     }
     Remove-Variable token, saida -ErrorAction SilentlyContinue
     if (-not $funcionou) {
@@ -103,16 +108,6 @@ if ((Test-Path $arquivoGit) -and (GitHubAcessivel)) {
         Parar 'Sem acesso ao GitHub. Confira o token (repositorio api-procfit, Contents: Read-only, dentro da validade).'
     }
     Certo 'Credencial guardada em local protegido (so SYSTEM e administradores)'
-}
-
-Etapa '3. Firewall (porta 3000 so para a rede interna)'
-$regra = 'API PROCFIT - porta 3000 (rede interna)'
-if (-not (Get-NetFirewallRule -DisplayName $regra -ErrorAction SilentlyContinue)) {
-    New-NetFirewallRule -DisplayName $regra -Direction Inbound -Protocol TCP -LocalPort $porta `
-        -RemoteAddress LocalSubnet -Action Allow -Profile Any | Out-Null
-    Certo 'Regra criada'
-} else {
-    Certo 'Regra ja existia'
 }
 
 Etapa '4. Arquivo .env'
