@@ -3,6 +3,8 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 const helmet = require('helmet');
 const { getPool } = require('./config/db');
 const exigirChave = require('./middlewares/auth');
@@ -10,6 +12,23 @@ const errorHandler = require('./middlewares/errorHandler');
 const vendasRoutes = require('./routes/vendas.routes');
 
 const app = express();
+
+// Versão do painel: muda sempre que algum arquivo de src/public muda.
+// As telas abertas comparam esse valor e recarregam sozinhas depois de uma atualização.
+function calcularVersao(pasta) {
+  const hash = crypto.createHash('sha1');
+  const percorrer = (dir) => {
+    const itens = fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+    for (const item of itens) {
+      const caminho = path.join(dir, item.name);
+      if (item.isDirectory()) percorrer(caminho);
+      else hash.update(item.name).update(fs.readFileSync(caminho));
+    }
+  };
+  percorrer(pasta);
+  return hash.digest('hex').slice(0, 12);
+}
+const VERSAO_PAINEL = calcularVersao(path.join(__dirname, 'public'));
 
 app.use(helmet({
   // Permite abrir o painel pela rede (http) sem forçar https
@@ -25,10 +44,10 @@ app.get('/health', async (req, res) => {
       .request()
       .query('SELECT DB_NAME() AS banco, GETDATE() AS agora');
 
-    res.json({ status: 'ok', ...result.recordset[0] });
+    res.json({ status: 'ok', ...result.recordset[0], versao: VERSAO_PAINEL });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ status: 'erro', mensagem: 'Falha ao conectar no banco' });
+    res.status(500).json({ status: 'erro', mensagem: 'Falha ao conectar no banco', versao: VERSAO_PAINEL });
   }
 });
 

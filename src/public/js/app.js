@@ -41,6 +41,7 @@ function mostrarEntrada() {
 }
 
 function mostrarPainel() {
+  painelFoiAtualizado(); // guarda a versão que está aberta
   el('form-chave').hidden = true;
   el('painel').hidden = false;
   el('trocar-chave').hidden = false;
@@ -951,7 +952,31 @@ function textoUltimoRegistro(ultimo) {
   return `última venda recebida: ${quando}`;
 }
 
+// ===== Versão do painel =====
+// Se o painel foi atualizado no servidor, a tela recarrega sozinha (a chave continua guardada na aba).
+let versaoPainel = null;
+
+async function painelFoiAtualizado() {
+  try {
+    const resposta = await fetch('/health', { cache: 'no-store' });
+    const { versao } = await resposta.json();
+    if (!versao) return false;
+    if (!versaoPainel) {
+      versaoPainel = versao; // primeira vez: só guarda
+      return false;
+    }
+    return versao !== versaoPainel;
+  } catch {
+    return false; // API fora do ar: a própria carga mostra o aviso
+  }
+}
+
 async function carregar({ automatico = false } = {}) {
+  if (automatico && await painelFoiAtualizado() && !el('detalhe').open) {
+    mostrarStatus('Painel atualizado. Recarregando…');
+    window.location.reload();
+    return;
+  }
   const filtros = filtrosAtuais();
   const minhaCarga = ++cargaAtual;
   carregando = true;
