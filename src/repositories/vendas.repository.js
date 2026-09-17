@@ -32,7 +32,8 @@ const BASE = `
     SELECT
       VA.EMPRESA,
       VA.CAIXA,
-      VA.VENDA,
+      -- Devolução no caixa (tipo 14): o código da devolução identifica o documento
+      CASE WHEN VA.DOCUMENTO_TIPO = 14 THEN VA.REG_MASTER_ORIGEM ELSE VA.VENDA END AS VENDA,
       VA.MOVIMENTO,
       VA.ESPECIE_FISCAL,
       VA.DOCUMENTO_NUMERO,
@@ -225,6 +226,8 @@ async function porVendedor(filtros) {
 //   ela zera a nota e vira situação "Cancelada".
 // - O vínculo com NF_FATURAMENTO é o REG_MASTER_ORIGEM da nota original (não do cancelamento).
 // - Nº impresso = DOCUMENTO_NUMERO (= NF_FATURAMENTO.NF_NUMERO). Pedido = NF_FATURAMENTO.PEDIDO_CLIENTE.
+// - Devolução por nota: DOCUMENTO_NUMERO é a NOTA ORIGINAL. A nota de devolução, o pedido
+//   e a observação vêm de NF_FATURAMENTO_DEVOLUCOES (ligada pelo REG_MASTER_ORIGEM).
 // - vendedor 0 = notas sem vendedor informado; vendedor null = todos (exportação).
 const LIMITE_NOTAS = 5000;
 
@@ -280,9 +283,12 @@ async function notasDoVendedor(filtros, vendedor, limite = LIMITE_NOTAS, termo =
         WHEN D.TEM_CANCELAMENTO = 1 AND ABS(D.LIQUIDA) < 0.01 THEN 'Cancelada'
         ELSE 'Faturada'
       END                                   AS situacao,
-      D.DOCUMENTO_NUMERO                    AS nota,
-      NF.NF_SERIE                           AS serie,
-      NF.PEDIDO_CLIENTE                     AS pedido,
+      COALESCE(DV.NF_NUMERO, D.DOCUMENTO_NUMERO) AS nota,
+      D.DOCUMENTO_NUMERO                    AS numero_documento,
+      CASE WHEN D.CATEGORIA = 'DEVOLUCAO' THEN D.DOCUMENTO_NUMERO END AS nota_origem,
+      COALESCE(NF.NF_SERIE, DV.NF_SERIE)    AS serie,
+      COALESCE(NF.PEDIDO_CLIENTE, NFO.PEDIDO_CLIENTE) AS pedido,
+      LTRIM(RTRIM(OBS.TEXTO))               AS observacao,
       D.VENDEDOR                            AS codigo_vendedor,
       LTRIM(RTRIM(V.NOME))                  AS vendedor,
       D.CLIENTE                             AS codigo_cliente,
@@ -298,6 +304,17 @@ async function notasDoVendedor(filtros, vendedor, limite = LIMITE_NOTAS, termo =
     FROM DOCS D
     LEFT JOIN NF_FATURAMENTO NF WITH (NOLOCK)
       ON D.CATEGORIA = 'NOTA' AND NF.NF_FATURAMENTO = D.NF_ID
+    -- Devolução por nota: número da nota de devolução, nota/pedido de origem e observação
+    LEFT JOIN NF_FATURAMENTO_DEVOLUCOES DV WITH (NOLOCK)
+      ON D.CATEGORIA = 'DEVOLUCAO' AND DV.NF_FATURAMENTO_DEVOLUCAO = D.NF_ID
+    LEFT JOIN NF_FATURAMENTO NFO WITH (NOLOCK)
+      ON NFO.NF_FATURAMENTO = DV.NF_FATURAMENTO_ORIGEM
+    OUTER APPLY (
+      SELECT TOP 1 CAST(OB.OBSERVACAO_ADICIONAL AS nvarchar(1000)) AS TEXTO
+      FROM NF_FATURAMENTO_DEVOLUCOES_OBSERVACOES OB WITH (NOLOCK)
+      WHERE OB.NF_FATURAMENTO_DEVOLUCAO = DV.NF_FATURAMENTO_DEVOLUCAO
+      ORDER BY OB.NF_DEVOLUCAO_OBSERVACAO DESC
+    ) OBS
     LEFT JOIN ENTIDADES E WITH (NOLOCK)
       ON E.ENTIDADE = D.CLIENTE
     LEFT JOIN VENDEDORES V WITH (NOLOCK)
@@ -308,6 +325,8 @@ async function notasDoVendedor(filtros, vendedor, limite = LIMITE_NOTAS, termo =
         @busca IS NULL
         OR CAST(D.DOCUMENTO_NUMERO AS varchar(20)) = @busca
         OR LTRIM(RTRIM(NF.PEDIDO_CLIENTE)) = @busca
+        OR CAST(DV.NF_NUMERO AS varchar(20)) = @busca
+        OR LTRIM(RTRIM(NFO.PEDIDO_CLIENTE)) = @busca
         OR CAST(D.CLIENTE AS varchar(20)) = @busca
         OR E.NOME COLLATE Latin1_General_CI_AI LIKE @buscaLike
         OR E.NOME_FANTASIA COLLATE Latin1_General_CI_AI LIKE @buscaLike
@@ -325,10 +344,13 @@ async function notasDoVendedor(filtros, vendedor, limite = LIMITE_NOTAS, termo =
 //   SEGURANÇA: da tabela OPERADORES só usamos OPERADOR e VENDEDOR (ela guarda senhas).
 // - Nº impresso do cupom = DOCUMENTO_NUMERO (= PDV_VENDAS.ECF_CUPOM).
 // - Cupom sem registro em PDV_VENDAS fica como operador 0 ("sem operador informado").
+// - Devolução no caixa (tipo 14): pode ter vários lançamentos com VENDA diferente;
+//   o documento é identificado pelo REG_MASTER_ORIGEM (= DEV_PRODUTOS.DEVOLUCAO_PRODUTO).
 const BASE_CAIXA = `
   WITH CUPONS AS (
     SELECT
-      VA.EMPRESA, VA.CAIXA, VA.VENDA, VA.DOCUMENTO_NUMERO,
+      VA.EMPRESA, VA.CAIXA, VA.DOCUMENTO_NUMERO,
+      CASE WHEN VA.DOCUMENTO_TIPO = 14 THEN VA.REG_MASTER_ORIGEM ELSE VA.VENDA END AS VENDA,
       CASE WHEN VA.DOCUMENTO_TIPO = 14 THEN 'DEVOLUCAO_CAIXA' ELSE 'CAIXA' END AS CATEGORIA,
       MIN(VA.MOVIMENTO)  AS MOVIMENTO,
       MAX(VA.CLIENTE)    AS CLIENTE,
@@ -341,22 +363,40 @@ const BASE_CAIXA = `
     WHERE VA.MOVIMENTO BETWEEN CAST(@inicio AS date) AND CAST(@fim AS date)
       AND (@empresa IS NULL OR VA.EMPRESA = @empresa)
       AND VA.DOCUMENTO_TIPO IN (1, 2, 9, 10, 14, 18, 19)
-    GROUP BY VA.EMPRESA, VA.CAIXA, VA.VENDA, VA.DOCUMENTO_NUMERO,
+    GROUP BY VA.EMPRESA, VA.CAIXA, VA.DOCUMENTO_NUMERO,
+             CASE WHEN VA.DOCUMENTO_TIPO = 14 THEN VA.REG_MASTER_ORIGEM ELSE VA.VENDA END,
              CASE WHEN VA.DOCUMENTO_TIPO = 14 THEN 'DEVOLUCAO_CAIXA' ELSE 'CAIXA' END
   ),
   CUPONS_OPERADOR AS (
     SELECT
       C.*,
-      ISNULL(PV.OPERADOR, 0) AS OPERADOR,
+      COALESCE(PV.OPERADOR, DEVOP.OPERADOR, 0) AS OPERADOR,
       PV.DATA_HORA,
-      PV.NFCE_SERIE
+      PV.NFCE_SERIE,
+      DEVOBS.TEXTO AS OBSERVACAO
     FROM CUPONS C
+    -- Cupom: operador e hora vêm da tabela do caixa
     OUTER APPLY (
       SELECT TOP 1 P.OPERADOR, P.DATA_HORA, P.NFCE_SERIE
       FROM PDV_VENDAS P WITH (NOLOCK)
-      WHERE P.EMPRESA = C.EMPRESA AND P.CAIXA = C.CAIXA AND P.VENDA = C.VENDA
+      WHERE C.CATEGORIA = 'CAIXA'
+        AND P.EMPRESA = C.EMPRESA AND P.CAIXA = C.CAIXA AND P.VENDA = C.VENDA
       ORDER BY P.DATA_HORA DESC
     ) PV
+    -- Devolução no caixa: operador = quem lançou a devolução (DEV_PRODUTOS.VENDEDOR)
+    OUTER APPLY (
+      SELECT TOP 1 O2.OPERADOR
+      FROM DEV_PRODUTOS DP WITH (NOLOCK)
+      JOIN OPERADORES O2 WITH (NOLOCK) ON O2.VENDEDOR = DP.VENDEDOR
+      WHERE C.CATEGORIA = 'DEVOLUCAO_CAIXA' AND DP.DEVOLUCAO_PRODUTO = C.VENDA
+    ) DEVOP
+    OUTER APPLY (
+      SELECT TOP 1 COALESCE(NULLIF(LTRIM(RTRIM(OB.OBSERVACAO)), ''),
+                            CAST(OB.OBSERVACAO_ADICIONAL AS nvarchar(1000))) AS TEXTO
+      FROM DEV_PRODUTOS_OBSERVACOES OB WITH (NOLOCK)
+      WHERE C.CATEGORIA = 'DEVOLUCAO_CAIXA' AND OB.DEVOLUCAO_PRODUTO = C.VENDA
+      ORDER BY OB.DEVOLUCAO_OBS DESC
+    ) DEVOBS
   )
 `;
 
@@ -403,6 +443,8 @@ async function cuponsDoOperador(filtros, operador, limite = LIMITE_NOTAS, termo 
       END                                     AS situacao,
       CO.CAIXA                                AS caixa,
       CO.DOCUMENTO_NUMERO                     AS cupom,
+      CO.DOCUMENTO_NUMERO                     AS numero_documento,
+      LTRIM(RTRIM(CO.OBSERVACAO))             AS observacao,
       CO.NFCE_SERIE                           AS serie,
       CO.OPERADOR                             AS codigo_operador,
       LTRIM(RTRIM(VO.NOME))                   AS operador,
@@ -456,7 +498,8 @@ async function itensDoDocumento(filtros, doc) {
     ? `VA.DOCUMENTO_NUMERO = @numero
        AND ISNULL(VA.DOCUMENTO_TIPO, 0) NOT IN (1, 2, 9, 10, 14, 18, 19, 20)
        AND (CASE WHEN VA.DOCUMENTO_TIPO IN (12, 13, 16) THEN 'DEVOLUCAO' ELSE 'NOTA' END) = @categoria`
-    : `VA.CAIXA = @caixa AND VA.VENDA = @venda AND VA.DOCUMENTO_NUMERO = @numero
+    : `VA.CAIXA = @caixa AND VA.DOCUMENTO_NUMERO = @numero
+       AND (CASE WHEN VA.DOCUMENTO_TIPO = 14 THEN VA.REG_MASTER_ORIGEM ELSE VA.VENDA END) = @venda
        AND VA.DOCUMENTO_TIPO IN (1, 2, 9, 10, 14, 18, 19)
        AND (CASE WHEN VA.DOCUMENTO_TIPO = 14 THEN 'DEVOLUCAO_CAIXA' ELSE 'CAIXA' END) = @categoria`;
 

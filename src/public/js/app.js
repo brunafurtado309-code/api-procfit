@@ -328,6 +328,12 @@ function celulaCliente(linha) {
     fantasia.textContent = linha.fantasia;
     td.append(fantasia);
   }
+  if (linha.observacao) {
+    const observacao = document.createElement('span');
+    observacao.className = 'observacao';
+    observacao.textContent = `Obs.: ${linha.observacao}`;
+    td.append(observacao);
+  }
   return td;
 }
 
@@ -339,7 +345,8 @@ function parametrosItens(linha) {
   const params = {
     tipo: ehNota ? 'nota' : 'cupom',
     empresa: linha.empresa,
-    numero: ehNota ? linha.nota : linha.cupom,
+    // Na devolução por nota, os itens estão com o número da nota original
+    numero: linha.numero_documento ?? (ehNota ? linha.nota : linha.cupom),
     categoria: linha.categoria,
   };
   if (!ehNota) {
@@ -426,9 +433,21 @@ async function alternarItens(botao, linha, trDocumento, quantidadeColunas) {
     if (!linha._itens) {
       linha._itens = await buscar('itens', { ...detalheAberto.filtros, ...parametrosItens(linha) });
     }
-    td.replaceChildren(
-      linha._itens.itens.length ? tabelaItens(linha._itens) : 'Nenhum produto encontrado para este documento no período.',
-    );
+    const conteudo = [];
+    if (linha.observacao || linha.nota_origem) {
+      const info = document.createElement('p');
+      info.className = 'info-documento';
+      const partes = [];
+      if (linha.nota_origem) partes.push(`Nota original: ${linha.nota_origem}`);
+      if (linha.pedido) partes.push(`Pedido: ${linha.pedido}`);
+      if (linha.observacao) partes.push(`Observação: ${linha.observacao}`);
+      info.textContent = partes.join('  •  ');
+      conteudo.push(info);
+    }
+    conteudo.push(linha._itens.itens.length
+      ? tabelaItens(linha._itens)
+      : 'Nenhum produto encontrado para este documento no período.');
+    td.replaceChildren(...conteudo);
   } catch (erro) {
     if (erro instanceof ChaveInvalida) return pedirChaveDeNovo();
     td.textContent = erro.message;
@@ -447,6 +466,18 @@ function celulaExpandir(linha, trDocumento, quantidadeColunas) {
   botao.setAttribute('aria-label', `Ver produtos do ${linha.tipo === 'Nota' ? 'documento' : 'cupom'} ${linha.documento ?? ''}`);
   botao.addEventListener('click', () => alternarItens(botao, linha, trDocumento, quantidadeColunas));
   td.append(botao);
+  return td;
+}
+
+// Nº do documento; na devolução por nota mostra também a nota original
+function celulaDocumento(linha) {
+  const td = celulaTexto(linha.documento ?? linha.nota);
+  if (linha.nota_origem) {
+    const origem = document.createElement('span');
+    origem.className = 'origem';
+    origem.textContent = `origem: NF ${linha.nota_origem}`;
+    td.append(origem);
+  }
   return td;
 }
 
@@ -470,7 +501,7 @@ const DETALHES = {
     carregando: 'Carregando notas…',
     situacoes: ['Faturada', 'Cancelada', 'Devolução'],
     dicaBusca: 'Nº da nota, nº do pedido, cliente, CNPJ/CPF ou código',
-    busca: (n) => [n.nota, n.pedido, n.codigo_cliente, n.cliente, n.fantasia, n.cnpj_cpf],
+    busca: (n) => [n.nota, n.nota_origem, n.pedido, n.codigo_cliente, n.cliente, n.fantasia, n.cnpj_cpf, n.observacao],
     vazio: 'Nenhuma nota deste vendedor no período.',
     resumo: (t) => [
       contar(t.faturadas_qtd, 'nota faturada', 'notas faturadas'),
@@ -481,7 +512,7 @@ const DETALHES = {
       COLUNA_EXPANDIR,
       { titulo: 'Data', celula: (n) => celulaTexto(dataBR(n.data), 'sem-quebra') },
       { titulo: 'Situação', esquerda: true, celula: (n) => celulaSituacao(n.situacao) },
-      { titulo: 'Nº da nota', celula: (n) => celulaTexto(n.nota) },
+      { titulo: 'Nº da nota', celula: celulaDocumento },
       { titulo: 'Nº do pedido', celula: (n) => celulaTexto(n.pedido) },
       { titulo: 'Cód. cliente', celula: (n) => celulaTexto(n.codigo_cliente) },
       { titulo: 'Cliente', esquerda: true, celula: celulaCliente },
@@ -496,7 +527,7 @@ const DETALHES = {
     carregando: 'Carregando cupons…',
     situacoes: ['Emitido', 'Cancelado', 'Devolução'],
     dicaBusca: 'Nº do cupom, caixa, vendedor, cliente ou código',
-    busca: (c) => [c.cupom, c.caixa, c.vendedor, c.codigo_cliente, c.cliente, c.fantasia],
+    busca: (c) => [c.cupom, c.caixa, c.vendedor, c.codigo_cliente, c.cliente, c.fantasia, c.observacao],
     vazio: 'Nenhum cupom deste operador no período.',
     resumo: (t) => [
       contar(t.emitidos_qtd, 'cupom emitido', 'cupons emitidos'),
@@ -541,7 +572,8 @@ function listaMista({ rota, titulo, carregando, vazio, situacoes }) {
     vazio,
     situacoes,
     dicaBusca: 'Refinar: número, pedido, cliente, vendedor…',
-    busca: (l) => [l.tipo, l.documento, l.pedido, l.vendedor, l.codigo_cliente, l.cliente, l.fantasia, l.cnpj_cpf],
+    busca: (l) => [l.tipo, l.documento, l.nota_origem, l.pedido, l.vendedor, l.codigo_cliente,
+      l.cliente, l.fantasia, l.cnpj_cpf, l.observacao],
     resumo: (t) => {
       const partes = [];
       if (t.notas_qtd) partes.push(contar(t.notas_qtd, 'nota', 'notas'));
@@ -555,7 +587,7 @@ function listaMista({ rota, titulo, carregando, vazio, situacoes }) {
       { titulo: 'Tipo', esquerda: true, celula: celulaTipo },
       { titulo: 'Data', celula: (l) => celulaTexto(dataBR(l.data), 'sem-quebra') },
       { titulo: 'Situação', esquerda: true, celula: (l) => celulaSituacao(l.situacao) },
-      { titulo: 'Nº documento', celula: (l) => celulaTexto(l.documento) },
+      { titulo: 'Nº documento', celula: celulaDocumento },
       { titulo: 'Nº do pedido', celula: (l) => celulaTexto(l.pedido) },
       { titulo: 'Vendedor', esquerda: true, celula: (l) => celulaTexto(l.vendedor || 'Não informado', 'esquerda coluna-pessoa') },
       { titulo: 'Cliente', esquerda: true, celula: celulaCliente },

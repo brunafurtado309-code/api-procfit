@@ -568,6 +568,22 @@ select:focus { background: var(--superficie); border-color: var(--verde-medio); 
 .tabela--detalhe td.sem-quebra { white-space: nowrap; }
 .tabela--detalhe td.coluna-cliente { min-width: 13rem; }
 .tabela--detalhe td.coluna-pessoa { min-width: 8.5rem; }
+.tabela--detalhe .observacao,
+.tabela--detalhe .origem {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  color: var(--alerta);
+}
+.tabela--detalhe .origem { color: var(--tinta-suave); white-space: nowrap; }
+.info-documento {
+  margin: 0.25rem 0 0.6rem;
+  padding: 0.5rem 0.75rem;
+  border-left: 4px solid var(--alerta);
+  border-radius: 6px;
+  background: var(--superficie);
+  font-size: 0.88rem;
+}
 .tabela--detalhe .fantasia {
   display: block;
   font-size: 0.8rem;
