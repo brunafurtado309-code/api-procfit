@@ -22,12 +22,36 @@ const config = {
   },
 };
 
-let pool;
+let pool = null;
+let conectando = null;
 
 async function getPool() {
-  // Cria o pool só na primeira vez; depois reaproveita.
-  if (!pool) pool = await sql.connect(config);
-  return pool;
+  // Já conectado: reaproveita
+  if (pool && pool.connected) return pool;
+
+  // Várias requisições ao mesmo tempo esperam a MESMA tentativa de conexão
+  if (!conectando) {
+    conectando = (async () => {
+      try {
+        // Se havia um pool quebrado, fecha antes de abrir outro
+        if (pool) await pool.close().catch(() => {});
+        const novo = new sql.ConnectionPool(config);
+        // Erro no pool (ex.: rede caiu) não pode derrubar a API: só registra.
+        // Na próxima requisição, getPool() percebe e reconecta.
+        novo.on('error', (err) => {
+          console.error(`[${new Date().toLocaleString('pt-BR')}] Erro na conexão com o banco:`, err.message);
+        });
+        pool = await novo.connect();
+        return pool;
+      } catch (err) {
+        pool = null;
+        throw err;
+      } finally {
+        conectando = null;
+      }
+    })();
+  }
+  return conectando;
 }
 
 module.exports = { sql, getPool };

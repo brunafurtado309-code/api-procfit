@@ -45,4 +45,26 @@ app.use((req, res) => res.status(404).json({ erro: 'Rota não encontrada' }));
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`API rodando na porta ${PORT}`));
+const servidor = app.listen(PORT, () => console.log(`API rodando na porta ${PORT}`));
+
+// Porta ocupada: explica o que fazer em vez de mostrar só o erro técnico
+servidor.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\nA porta ${PORT} já está em uso: provavelmente a API já está rodando em outro terminal.`);
+    console.error('Feche a outra instância (ou encerre o processo node da porta) e tente de novo.\n');
+    process.exit(1);
+  }
+  throw err;
+});
+
+// Rede de segurança: um erro que escapou não derruba a API; fica registrado no terminal.
+const agora = () => new Date().toLocaleString('pt-BR');
+process.on('unhandledRejection', (motivo) => {
+  console.error(`[${agora()}] Erro não tratado (a API continua no ar):`, motivo);
+});
+process.on('uncaughtException', (err) => {
+  console.error(`[${agora()}] Erro inesperado:`, err);
+  // Depois de um erro assim o processo pode ficar instável: encerra para ser reiniciado limpo
+  // (quem reinicia é o PM2, que vamos configurar).
+  process.exit(1);
+});
