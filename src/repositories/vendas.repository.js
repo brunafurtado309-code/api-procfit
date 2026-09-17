@@ -337,6 +337,8 @@ async function notasDoVendedor(filtros, vendedor, limite = LIMITE_NOTAS, termo =
       LTRIM(RTRIM(E.NOME))                  AS cliente,
       LTRIM(RTRIM(E.NOME_FANTASIA))         AS fantasia,
       E.INSCRICAO_FEDERAL                   AS cnpj_cpf,
+      CONVERT(varchar(10), ORIG.MOVIMENTO, 23) AS data_origem,
+      ORIG.VALOR                            AS valor_origem,
       D.QUANTIDADE                          AS quantidade,
       D.EMPRESA                             AS empresa,
       D.CATEGORIA                           AS categoria,
@@ -344,6 +346,17 @@ async function notasDoVendedor(filtros, vendedor, limite = LIMITE_NOTAS, termo =
       D.DESCONTOS                           AS desconto,
       D.LIQUIDA                             AS valor
     FROM DOCS D
+    -- Devolução por nota: valor e data da nota original.
+    -- Soma só as linhas tipo 8 (nota emitida), sem os cancelamentos.
+    -- Sem filtro de data: a nota original pode ser de antes do período.
+    OUTER APPLY (
+      SELECT MIN(VAO.MOVIMENTO) AS MOVIMENTO, SUM(VAO.VENDA_LIQUIDA) AS VALOR
+      FROM VENDAS_ANALITICAS VAO WITH (NOLOCK)
+      WHERE D.CATEGORIA = 'DEVOLUCAO'
+        AND VAO.EMPRESA = D.EMPRESA
+        AND VAO.DOCUMENTO_NUMERO = D.DOCUMENTO_NUMERO
+        AND VAO.DOCUMENTO_TIPO = 8
+    ) ORIG
     LEFT JOIN NF_FATURAMENTO NF WITH (NOLOCK)
       ON D.CATEGORIA = 'NOTA' AND NF.NF_FATURAMENTO = D.NF_ID
     -- Devolução por nota: número da nota de devolução, nota/pedido de origem e observação
@@ -503,15 +516,44 @@ async function cuponsDoOperador(filtros, operador, limite = LIMITE_NOTAS, termo 
       E.INSCRICAO_FEDERAL                     AS cnpj_cpf,
       CO.EMPRESA                              AS empresa,
       CO.VENDA                                AS venda,
-      CO.PREVENDA                             AS pedido,
+      COALESCE(CO.PREVENDA, ORIG.PREVENDA)    AS pedido,
+      LTRIM(RTRIM(ORIG.ECF_CUPOM))            AS cupom_origem,
+      ORIG.CAIXA                              AS caixa_origem,
+      CONVERT(varchar(10), ORIG.MOVIMENTO, 23) AS data_origem,
+      ORIG_VALOR.VALOR                        AS valor_origem,
       PP.GRUPO_PRECO                          AS grupo_preco,
       CO.CATEGORIA                            AS categoria,
       CO.BRUTA                                AS bruto,
       CO.DESCONTOS                            AS desconto,
       CO.LIQUIDA                              AS valor
     FROM CUPONS_OPERADOR CO
+    -- Devolução no caixa: cupom de origem.
+    -- DEV_PRODUTOS.REG_MASTER_ORIGEM_RELACIONADO = PDV_VENDAS.REG_MASTER_ORIGEM do cupom.
+    -- Alguns itens vêm com 0 (lançados sem ligação): usamos os que têm ligação.
+    -- Não dá para usar só o nº do cupom: ele se repete entre caixas.
+    OUTER APPLY (
+      SELECT TOP 1 P.CAIXA, P.VENDA, P.ECF_CUPOM, P.MOVIMENTO, NULLIF(P.PREVENDA, 0) AS PREVENDA
+      FROM DEV_PRODUTOS DP WITH (NOLOCK)
+      JOIN PDV_VENDAS P WITH (NOLOCK)
+        ON P.REG_MASTER_ORIGEM = DP.REG_MASTER_ORIGEM_RELACIONADO
+       AND P.EMPRESA = CO.EMPRESA
+      WHERE CO.CATEGORIA = 'DEVOLUCAO_CAIXA'
+        AND DP.DEVOLUCAO_PRODUTO = CO.VENDA
+        AND DP.REG_MASTER_ORIGEM_RELACIONADO > 0
+    ) ORIG
+    -- Valor do cupom de origem: linhas de venda (1, 9, 18), sem cancelamentos e sem a devolução
+    OUTER APPLY (
+      SELECT SUM(VAO.VENDA_LIQUIDA) AS VALOR
+      FROM VENDAS_ANALITICAS VAO WITH (NOLOCK)
+      WHERE ORIG.VENDA IS NOT NULL
+        AND VAO.EMPRESA = CO.EMPRESA
+        AND VAO.CAIXA = ORIG.CAIXA
+        AND VAO.VENDA = ORIG.VENDA
+        AND VAO.DOCUMENTO_NUMERO = TRY_CAST(ORIG.ECF_CUPOM AS int)
+        AND VAO.DOCUMENTO_TIPO IN (1, 9, 18)
+    ) ORIG_VALOR
     LEFT JOIN VENDEDORES VV WITH (NOLOCK) ON VV.VENDEDOR = CO.VENDEDOR
-    LEFT JOIN PEDIDOS_PREVENDAS PP WITH (NOLOCK) ON PP.PEDIDO_PREVENDA = CO.PREVENDA
+    LEFT JOIN PEDIDOS_PREVENDAS PP WITH (NOLOCK) ON PP.PEDIDO_PREVENDA = COALESCE(CO.PREVENDA, ORIG.PREVENDA)
     LEFT JOIN ENTIDADES E WITH (NOLOCK)   ON E.ENTIDADE = CO.CLIENTE
     LEFT JOIN OPERADORES O WITH (NOLOCK)  ON O.OPERADOR = CO.OPERADOR
     LEFT JOIN VENDEDORES VO WITH (NOLOCK) ON VO.VENDEDOR = O.VENDEDOR
@@ -521,7 +563,8 @@ async function cuponsDoOperador(filtros, operador, limite = LIMITE_NOTAS, termo 
       AND (
         @busca IS NULL
         OR CAST(CO.DOCUMENTO_NUMERO AS varchar(20)) = @busca
-        OR CAST(CO.PREVENDA AS varchar(20)) = @busca
+        OR CAST(COALESCE(CO.PREVENDA, ORIG.PREVENDA) AS varchar(20)) = @busca
+        OR LTRIM(RTRIM(ORIG.ECF_CUPOM)) = @busca
         OR CAST(CO.CLIENTE AS varchar(20)) = @busca
         OR E.NOME COLLATE Latin1_General_CI_AI LIKE @buscaLike
         OR E.NOME_FANTASIA COLLATE Latin1_General_CI_AI LIKE @buscaLike

@@ -484,17 +484,29 @@ function celulaTabela(linha) {
   return td;
 }
 
-// Nº do documento; na devolução por nota mostra também a nota original
+// Nº do documento; na devolução mostra também o documento original
 function celulaDocumento(linha) {
   const td = celulaTexto(linha.documento ?? linha.nota);
-  if (linha.nota_origem) {
+  let textoOrigem = null;
+  if (linha.nota_origem) textoOrigem = `origem: NF ${linha.nota_origem}`;
+  else if (linha.cupom_origem) textoOrigem = `origem: cupom ${linha.cupom_origem} (caixa ${linha.caixa_origem})`;
+  if (textoOrigem) {
     const origem = document.createElement('span');
     origem.className = 'origem';
-    origem.textContent = `origem: NF ${linha.nota_origem}`;
+    origem.textContent = textoOrigem;
     td.append(origem);
   }
   return td;
 }
+
+// Valor da nota ou do cupom original (só na lista de devoluções), com a data embaixo
+const COLUNA_VALOR_ORIGINAL = {
+  titulo: 'Valor original',
+  soma: 'valor_origem',
+  celula: (l) => (l.valor_origem === null || l.valor_origem === undefined
+    ? celulaTexto('Não informado')
+    : celulaValor(l.valor_origem, l.data_origem ? `de ${dataBR(l.data_origem)}` : null)),
+};
 
 // Colunas usadas em todas as listas
 const COLUNA_EXPANDIR = { titulo: '', expandir: true };
@@ -577,7 +589,8 @@ function celulaTipo(linha) {
   return td;
 }
 
-function listaMista({ rota, titulo, carregando, vazio, situacoes }) {
+// colunasExtras: entram antes dos valores; tituloValor: troca o nome da coluna "Valor"
+function listaMista({ rota, titulo, carregando, vazio, situacoes, colunasExtras = [], tituloValor = null }) {
   return {
     rota: () => rota,
     rotaExcel: null,
@@ -590,7 +603,7 @@ function listaMista({ rota, titulo, carregando, vazio, situacoes }) {
     vazio,
     situacoes,
     dicaBusca: 'Refinar: número, pedido, cliente, vendedor, atacado ou varejo…',
-    busca: (l) => [l.tipo, l.documento, l.nota_origem, l.pedido, l.tabela_preco, l.vendedor, l.codigo_cliente,
+    busca: (l) => [l.tipo, l.documento, l.nota_origem, l.cupom_origem, l.pedido, l.tabela_preco, l.vendedor, l.codigo_cliente,
       l.cliente, l.fantasia, l.cnpj_cpf, l.observacao],
     resumo: (t) => {
       const partes = [];
@@ -610,7 +623,8 @@ function listaMista({ rota, titulo, carregando, vazio, situacoes }) {
       { titulo: 'Tabela', esquerda: true, celula: celulaTabela },
       { titulo: 'Vendedor', esquerda: true, celula: (l) => celulaTexto(l.vendedor || 'Não informado', 'esquerda coluna-pessoa') },
       { titulo: 'Cliente', esquerda: true, celula: celulaCliente },
-      ...COLUNAS_VALORES,
+      ...colunasExtras,
+      ...COLUNAS_VALORES.map((c) => (c.soma === 'valor' && tituloValor ? { ...c, titulo: tituloValor } : c)),
     ],
   };
 }
@@ -645,6 +659,8 @@ DETALHES.devolucoes = listaMista({
   carregando: 'Carregando devoluções…',
   vazio: 'Nenhuma devolução no período.',
   situacoes: ['Devolução'],
+  colunasExtras: [COLUNA_VALOR_ORIGINAL],
+  tituloValor: 'Valor devolvido',
 });
 
 DETALHES.descontos = listaMista({
