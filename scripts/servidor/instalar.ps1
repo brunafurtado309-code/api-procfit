@@ -89,25 +89,29 @@ if ((Test-Path $arquivoGit) -and (GitHubAcessivel)) {
         GuardarCredencial $(if ($usuario) { $usuario } else { 'x-access-token' }) $token
         $funcionou = GitHubAcessivel
     }
-    # 2a tentativa: recebe o token do notebook pela rede (o AnyDesk nao repassa o que vem do gerenciador de senhas)
+    # 2a tentativa: recebe o token do notebook pela rede (opcional)
     $tentativa = 0
     while (-not $funcionou -and $tentativa -lt 3) {
         $tentativa++
-        Aviso "Vamos receber o token do GitHub pelo notebook. (Tentativa $tentativa de 3)"
+        Aviso 'Sem o token, a API fica no ar do mesmo jeito; so as atualizacoes deixam de ser automaticas.'
+        $resposta = Read-Host '   Aperte Enter para enviar o token pelo notebook, ou digite P e Enter para pular'
+        if ($resposta.Trim().ToUpper() -eq 'P') { break }
         PararApi
         New-Item -ItemType Directory -Path $pastaDados -Force | Out-Null
         icacls $pastaDados /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
         & $node (Join-Path $PSScriptRoot 'receber-env.js') token $arquivoGit
         if ($LASTEXITCODE -ne 0) { continue }
         $funcionou = GitHubAcessivel
-        if (-not $funcionou) { Aviso 'O GitHub recusou esse token (vencido, revogado ou sem acesso ao api-procfit).' }
+        if (-not $funcionou) { Aviso 'O GitHub recusou esse token (vencido, revogado ou incompleto).' }
     }
     Remove-Variable token, saida -ErrorAction SilentlyContinue
-    if (-not $funcionou) {
+    if ($funcionou) {
+        Certo 'Credencial guardada em local protegido (so SYSTEM e administradores)'
+    } else {
         Remove-Item $arquivoGit -ErrorAction SilentlyContinue
-        Parar 'Sem acesso ao GitHub. Confira o token (repositorio api-procfit, Contents: Read-only, dentro da validade).'
+        Aviso 'Atualizacao automatica DESLIGADA por enquanto. A instalacao continua.'
+        Aviso 'Para atualizar: scripts\servidor\atualizar.ps1. Para ligar depois: rode este instalador de novo.'
     }
-    Certo 'Credencial guardada em local protegido (so SYSTEM e administradores)'
 }
 
 Etapa '4. Arquivo .env'
@@ -174,5 +178,9 @@ Write-Host ''
 Write-Host 'Instalacao concluida.' -ForegroundColor Green
 Write-Host "   Painel:        http://${ip}:$porta/painel"
 Write-Host "   Logs:          $pastaLogs"
-Write-Host '   Atualizacoes:  automaticas a cada 5 minutos (ou agora: scripts\servidor\atualizar.ps1)'
+if (Test-Path $arquivoGit) {
+    Write-Host '   Atualizacoes:  automaticas a cada 5 minutos (ou agora: scripts\servidor\atualizar.ps1)'
+} else {
+    Write-Host '   Atualizacoes:  manuais, com scripts\servidor\atualizar.ps1 (automaticas desligadas: falta o token)' -ForegroundColor Yellow
+}
 Write-Host '   API_KEY:       scripts\servidor\copiar-chave.ps1 copia a chave para a area de transferencia'

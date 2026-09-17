@@ -44,8 +44,16 @@ try {
     }
 
     # ---------- 2. Atualizacao ----------
+    $temCredencial = Test-Path $arquivoGit
+    if (-not $temCredencial -and -not $Agora) { return }   # automatica desligada: falta o token
     PrepararGit
-    & $git -c credential.helper= fetch --quiet origin main 2>$null
+    $semAjudante = @('-c', 'credential.helper=')
+    if (-not $temCredencial) {
+        # Rodando a mao, como administrador: usa o acesso ao GitHub guardado no Windows (o mesmo do git pull)
+        $semAjudante = @()
+        Remove-Item Env:GCM_INTERACTIVE, Env:GIT_TERMINAL_PROMPT -ErrorAction SilentlyContinue
+    }
+    & $git @semAjudante fetch --quiet origin main
     if ($LASTEXITCODE -ne 0) {
         Registrar 'Nao foi possivel consultar o GitHub (rede ou credencial). Tento de novo na proxima rodada.'
         exit 1
