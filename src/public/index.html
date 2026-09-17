@@ -62,20 +62,23 @@
       <section class="bloco" aria-labelledby="titulo-composicao">
         <h2 id="titulo-composicao">Como a venda se forma</h2>
         <dl class="numeros">
-          <div class="numero">
+          <div class="numero numero--clicavel">
             <dt>Notas faturadas</dt>
             <dd id="total-notas">—</dd>
             <dd id="total-notas-qtd" class="nota"></dd>
+            <dd><button type="button" class="ver-detalhes" data-detalhe="todasNotas">Ver notas</button></dd>
           </div>
-          <div class="numero">
+          <div class="numero numero--clicavel">
             <dt>Vendas no caixa</dt>
             <dd id="total-caixa">—</dd>
             <dd id="total-caixa-qtd" class="nota"></dd>
+            <dd><button type="button" class="ver-detalhes" data-detalhe="todosCupons">Ver cupons</button></dd>
           </div>
-          <div class="numero">
+          <div class="numero numero--clicavel">
             <dt>Devoluções</dt>
             <dd id="total-devolucoes">—</dd>
             <dd id="total-devolucoes-qtd" class="nota"></dd>
+            <dd><button type="button" class="ver-detalhes" data-detalhe="devolucoes">Ver devoluções</button></dd>
           </div>
           <div class="numero">
             <dt>Venda líquida</dt>
@@ -93,9 +96,10 @@
           <dt>Ticket médio</dt>
           <dd id="ticket">—</dd>
         </div>
-        <div class="numero">
+        <div class="numero numero--clicavel">
           <dt>Descontos</dt>
           <dd id="desconto">—</dd>
+          <dd><button type="button" class="ver-detalhes" data-detalhe="descontos">Ver descontos</button></dd>
         </div>
         <div class="numero">
           <dt>Margem bruta</dt>

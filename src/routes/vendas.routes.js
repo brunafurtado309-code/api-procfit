@@ -16,6 +16,13 @@ router.get('/operadores/:operador/cupons', controller.cuponsDoOperador);
 router.get('/top-produtos', controller.topProdutos);
 router.get('/pesquisa', controller.pesquisar);
 
+// Listas dos cartões e produtos de cada documento
+router.get('/notas', controller.todasNotas);
+router.get('/cupons', controller.todosCupons);
+router.get('/devolucoes', controller.listaDevolucoes);
+router.get('/descontos', controller.listaDescontos);
+router.get('/itens', controller.itensDoDocumento);
+
 // Downloads em Excel
 router.get('/exportar/excel', controller.exportarPainel);
 router.get('/vendedores/:vendedor/notas/excel', controller.exportarNotas);

@@ -156,6 +156,95 @@ async function cuponsDoOperador(query, params) {
   };
 }
 
+// ===== Listas dos cartões (todas as notas, cupons, descontos, devoluções) =====
+const somarValores = (lista, campo = 'valor') =>
+  arredondar(lista.reduce((s, item) => s + Number(item[campo] || 0), 0));
+
+function totaisMistos(notas, cupons) {
+  const todos = [...notas, ...cupons];
+  return {
+    notas_qtd: notas.length,
+    cupons_qtd: cupons.length,
+    bruto: somarValores(todos, 'bruto'),
+    desconto: somarValores(todos, 'desconto'),
+    valor: somarValores(todos),
+  };
+}
+
+async function listaMista(query, { titulo, notas: opcoesNotas, cupons: opcoesCupons }) {
+  const filtros = montarFiltros(query);
+  const limite = repo.LIMITE_NOTAS;
+  const [notas, cupons] = await Promise.all([
+    opcoesNotas ? repo.notasDoVendedor(filtros, null, limite, null, opcoesNotas) : [],
+    opcoesCupons ? repo.cuponsDoOperador(filtros, null, limite, null, opcoesCupons) : [],
+  ]);
+  return {
+    titulo,
+    periodo: { inicio: filtros.inicio, fim: filtros.fim },
+    limite_atingido: notas.length >= limite || cupons.length >= limite,
+    total: totaisMistos(notas, cupons),
+    notas,
+    cupons,
+  };
+}
+
+const todasNotas = (query) =>
+  listaMista(query, { titulo: 'Notas fiscais do período', notas: { categoria: 'NOTA' } });
+const todosCupons = (query) =>
+  listaMista(query, { titulo: 'Cupons do período', cupons: { categoria: 'CAIXA' } });
+const listaDevolucoes = (query) =>
+  listaMista(query, {
+    titulo: 'Devoluções do período',
+    notas: { categoria: 'DEVOLUCAO' },
+    cupons: { categoria: 'DEVOLUCAO_CAIXA' },
+  });
+const listaDescontos = (query) =>
+  listaMista(query, {
+    titulo: 'Vendas com desconto',
+    notas: { categoria: 'NOTA', comDesconto: true },
+    cupons: { categoria: 'CAIXA', comDesconto: true },
+  });
+
+// Produtos de uma nota ou cupom
+const CATEGORIAS = { nota: ['NOTA', 'DEVOLUCAO'], cupom: ['CAIXA', 'DEVOLUCAO_CAIXA'] };
+
+function inteiroPositivo(valor, nome, { zero = false } = {}) {
+  const numero = Number(valor);
+  if (!Number.isInteger(numero) || numero < (zero ? 0 : 1)) {
+    throw new AppError(`"${nome}" inválido`);
+  }
+  return numero;
+}
+
+async function itensDoDocumento(query) {
+  const filtros = montarFiltros(query);
+  const tipo = query.tipo;
+  if (!CATEGORIAS[tipo]) throw new AppError('"tipo" deve ser nota ou cupom');
+  if (!CATEGORIAS[tipo].includes(query.categoria)) throw new AppError('"categoria" inválida');
+
+  const doc = {
+    tipo,
+    categoria: query.categoria,
+    empresa: inteiroPositivo(query.empresa, 'empresa'),
+    numero: inteiroPositivo(query.numero, 'numero', { zero: true }),
+    original: query.original === '1',
+  };
+  if (tipo === 'cupom') {
+    doc.caixa = inteiroPositivo(query.caixa, 'caixa', { zero: true });
+    doc.venda = inteiroPositivo(query.venda, 'venda', { zero: true });
+  }
+
+  const itens = await repo.itensDoDocumento(filtros, doc);
+  return {
+    itens,
+    total: {
+      bruto: somarValores(itens, 'bruto'),
+      desconto: somarValores(itens, 'desconto'),
+      valor: somarValores(itens),
+    },
+  };
+}
+
 // Pesquisa de notas e cupons no período
 const LIMITE_PESQUISA = 200;
 
@@ -178,11 +267,7 @@ async function pesquisar(query) {
     periodo: { inicio: filtros.inicio, fim: filtros.fim },
     limite: LIMITE_PESQUISA,
     limite_atingido: notas.length >= LIMITE_PESQUISA || cupons.length >= LIMITE_PESQUISA,
-    total: {
-      notas_qtd: notas.length,
-      cupons_qtd: cupons.length,
-      valor: arredondar(somar(notas) + somar(cupons)),
-    },
+    total: { ...totaisMistos(notas, cupons), valor: arredondar(somar(notas) + somar(cupons)) },
     notas,
     cupons,
   };
@@ -194,5 +279,6 @@ const topProdutos = (query) =>
 module.exports = {
   resumo, porDia, porLoja, porOrigem, porVendedor, notasDoVendedor,
   porOperador, cuponsDoOperador, pesquisar, topProdutos,
+  todasNotas, todosCupons, listaDevolucoes, listaDescontos, itensDoDocumento,
   montarFiltros, montarLimite,
 };

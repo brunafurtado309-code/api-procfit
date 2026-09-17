@@ -312,6 +312,25 @@ select:focus { background: var(--superficie); border-color: var(--verde-medio); 
 }
 .numero .nota--alerta { color: var(--alerta); }
 
+/* Cartões que abrem listas */
+.numero--clicavel {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid transparent;
+  transition: border-color 0.15s ease;
+}
+.numero--clicavel:hover { border-color: var(--verde-claro); }
+.numero--clicavel dd:last-child { margin-top: auto; padding-top: 0.6rem; }
+.ver-detalhes {
+  padding: 0.3rem 0.8rem;
+  font-size: 0.8rem;
+  background: var(--superficie);
+  color: var(--verde);
+  border: 1px solid var(--verde-claro);
+}
+.ver-detalhes::after { content: " →"; }
+.ver-detalhes:hover { background: var(--verde); color: #fff; border-color: var(--verde); }
+
 /* ===== Blocos de conteúdo ===== */
 .destaque,
 .bloco { margin-top: 1.25rem; }
@@ -396,7 +415,7 @@ select:focus { background: var(--superficie); border-color: var(--verde-medio); 
 
 /* ===== Janela de detalhe ===== */
 .detalhe {
-  width: min(76rem, calc(100vw - 2rem));
+  width: min(88rem, calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
   padding: 0;
   border: 0;
@@ -483,7 +502,62 @@ select:focus { background: var(--superficie); border-color: var(--verde-medio); 
   overflow: auto;
 }
 
-.tabela--detalhe { min-width: 56rem; }
+.tabela--detalhe { min-width: 62rem; }
+
+/* Botão ▸ que abre os produtos de cada documento */
+.tabela--detalhe .coluna-expandir {
+  width: 2.5rem;
+  padding-left: 0.4rem;
+  padding-right: 0;
+  text-align: left;
+}
+.botao-expandir {
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  font-size: 0.8rem;
+  line-height: 1;
+  background: var(--verde-suave);
+  color: var(--verde);
+}
+.botao-expandir:hover,
+.botao-expandir[aria-expanded="true"] { background: var(--verde); color: #fff; }
+
+.linha-itens > td {
+  padding: 0.25rem 0.85rem 1rem 2.9rem;
+  background: var(--verde-suave);
+  text-align: left;
+}
+.tabela--detalhe tbody tr.linha-itens:hover { background: var(--verde-suave); }
+
+.tabela--itens {
+  min-width: 0;
+  background: var(--superficie);
+  border-radius: var(--raio);
+  overflow: hidden;
+}
+.tabela--itens th,
+.tabela--itens td { padding: 0.5rem 0.75rem; font-size: 0.88rem; }
+.tabela--itens thead th {
+  position: static;
+  background: var(--superficie);
+  border-bottom: 1px solid var(--linha);
+  border-radius: 0;
+}
+.tabela--itens tbody tr:hover { background: transparent; }
+.tabela--itens tfoot td { border-top: 1px solid var(--verde); }
+.tabela--itens .esquerda { text-align: left; }
+.codigo-produto {
+  display: inline-block;
+  min-width: 3.5rem;
+  color: var(--tinta-suave);
+  font-size: 0.8rem;
+}
+.item-com-desconto { background: #FFF6EC; }
+.tabela--itens tbody tr.item-com-desconto:hover { background: #FFF6EC; }
+.desconto-destaque { color: var(--alerta); font-weight: 700; }
+.tabela--detalhe th,
+.tabela--detalhe td { padding-left: 0.6rem; padding-right: 0.6rem; }
 .tabela--detalhe thead th {
   position: sticky;
   top: 0;
@@ -492,6 +566,8 @@ select:focus { background: var(--superficie); border-color: var(--verde-medio); 
 .tabela--detalhe th.esquerda,
 .tabela--detalhe td.esquerda { text-align: left; }
 .tabela--detalhe td.sem-quebra { white-space: nowrap; }
+.tabela--detalhe td.coluna-cliente { min-width: 13rem; }
+.tabela--detalhe td.coluna-pessoa { min-width: 8.5rem; }
 .tabela--detalhe .fantasia {
   display: block;
   font-size: 0.8rem;

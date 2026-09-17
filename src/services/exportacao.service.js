@@ -24,6 +24,8 @@ const COL_NOTAS = [
   { titulo: 'Nome fantasia', chave: 'fantasia', largura: 28 },
   { titulo: 'CNPJ/CPF', chave: 'cnpj_cpf', largura: 20 },
   { titulo: 'Qtd. itens', chave: 'quantidade', tipo: 'inteiro', largura: 10, somar: true },
+  { titulo: 'Valor bruto', chave: 'bruto', tipo: 'moeda', largura: 16, somar: true },
+  { titulo: 'Desconto', chave: 'desconto', tipo: 'moeda', largura: 14, somar: true },
   { titulo: 'Valor', chave: 'valor', tipo: 'moeda', largura: 16, somar: true },
 ];
 
@@ -41,6 +43,8 @@ const COL_CUPONS = [
   { titulo: 'Cód. cliente', chave: 'codigo_cliente', tipo: 'codigo', largura: 12 },
   { titulo: 'Cliente', chave: 'cliente', largura: 40 },
   { titulo: 'Nome fantasia', chave: 'fantasia', largura: 28 },
+  { titulo: 'Valor bruto', chave: 'bruto', tipo: 'moeda', largura: 16, somar: true },
+  { titulo: 'Desconto', chave: 'desconto', tipo: 'moeda', largura: 14, somar: true },
   { titulo: 'Valor', chave: 'valor', tipo: 'moeda', largura: 16, somar: true },
 ];
 

@@ -228,10 +228,14 @@ async function porVendedor(filtros) {
 // - vendedor 0 = notas sem vendedor informado; vendedor null = todos (exportação).
 const LIMITE_NOTAS = 5000;
 
-async function notasDoVendedor(filtros, vendedor, limite = LIMITE_NOTAS, termo = null) {
+// opcoes.categoria: 'NOTA' ou 'DEVOLUCAO' (null = as duas)
+// opcoes.comDesconto: true = só notas que tiveram desconto
+async function notasDoVendedor(filtros, vendedor, limite = LIMITE_NOTAS, termo = null, opcoes = {}) {
   const request = await criarRequest(filtros);
   request.input('vendedor', sql.Int, vendedor ?? null);
   request.input('limite', sql.Int, limite);
+  request.input('categoria', sql.VarChar(20), opcoes.categoria ?? null);
+  request.input('comDesconto', sql.Int, opcoes.comDesconto ? 1 : 0);
   adicionarBusca(request, termo);
   const { recordset } = await request.query(`
     WITH ITENS AS (
@@ -244,6 +248,8 @@ async function notasDoVendedor(filtros, vendedor, limite = LIMITE_NOTAS, termo =
         VA.CLIENTE,
         ISNULL(VA.VENDEDOR, 0) AS VENDEDOR,
         VA.QUANTIDADE,
+        VA.VENDA_BRUTA,
+        VA.DESCONTO,
         VA.VENDA_LIQUIDA,
         CASE WHEN VA.DOCUMENTO_TIPO IN (12, 13, 16) THEN 'DEVOLUCAO' ELSE 'NOTA' END AS CATEGORIA
       FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
@@ -261,6 +267,8 @@ async function notasDoVendedor(filtros, vendedor, limite = LIMITE_NOTAS, termo =
         MAX(CASE WHEN DOCUMENTO_TIPO NOT IN (4, 6, 11, 13, 17) THEN REG_MASTER_ORIGEM END) AS NF_ID,
         MAX(CASE WHEN DOCUMENTO_TIPO IN (4, 6, 11, 17) THEN 1 ELSE 0 END) AS TEM_CANCELAMENTO,
         SUM(QUANTIDADE)    AS QUANTIDADE,
+        SUM(VENDA_BRUTA)   AS BRUTA,
+        SUM(DESCONTO)      AS DESCONTOS,
         SUM(VENDA_LIQUIDA) AS LIQUIDA
       FROM ITENS
       GROUP BY EMPRESA, CATEGORIA, DOCUMENTO_NUMERO
@@ -282,6 +290,10 @@ async function notasDoVendedor(filtros, vendedor, limite = LIMITE_NOTAS, termo =
       LTRIM(RTRIM(E.NOME_FANTASIA))         AS fantasia,
       E.INSCRICAO_FEDERAL                   AS cnpj_cpf,
       D.QUANTIDADE                          AS quantidade,
+      D.EMPRESA                             AS empresa,
+      D.CATEGORIA                           AS categoria,
+      D.BRUTA                               AS bruto,
+      D.DESCONTOS                           AS desconto,
       D.LIQUIDA                             AS valor
     FROM DOCS D
     LEFT JOIN NF_FATURAMENTO NF WITH (NOLOCK)
@@ -290,13 +302,17 @@ async function notasDoVendedor(filtros, vendedor, limite = LIMITE_NOTAS, termo =
       ON E.ENTIDADE = D.CLIENTE
     LEFT JOIN VENDEDORES V WITH (NOLOCK)
       ON V.VENDEDOR = D.VENDEDOR
-    WHERE @busca IS NULL
-       OR CAST(D.DOCUMENTO_NUMERO AS varchar(20)) = @busca
-       OR LTRIM(RTRIM(NF.PEDIDO_CLIENTE)) = @busca
-       OR CAST(D.CLIENTE AS varchar(20)) = @busca
-       OR E.NOME COLLATE Latin1_General_CI_AI LIKE @buscaLike
-       OR E.NOME_FANTASIA COLLATE Latin1_General_CI_AI LIKE @buscaLike
-       OR (@buscaDigitos IS NOT NULL AND ${SEM_PONTUACAO('E.INSCRICAO_FEDERAL')} LIKE @buscaDigitos)
+    WHERE (@categoria IS NULL OR D.CATEGORIA = @categoria)
+      AND (@comDesconto = 0 OR D.DESCONTOS > 0)
+      AND (
+        @busca IS NULL
+        OR CAST(D.DOCUMENTO_NUMERO AS varchar(20)) = @busca
+        OR LTRIM(RTRIM(NF.PEDIDO_CLIENTE)) = @busca
+        OR CAST(D.CLIENTE AS varchar(20)) = @busca
+        OR E.NOME COLLATE Latin1_General_CI_AI LIKE @buscaLike
+        OR E.NOME_FANTASIA COLLATE Latin1_General_CI_AI LIKE @buscaLike
+        OR (@buscaDigitos IS NOT NULL AND ${SEM_PONTUACAO('E.INSCRICAO_FEDERAL')} LIKE @buscaDigitos)
+      )
     ORDER BY D.MOVIMENTO, D.DOCUMENTO_NUMERO
   `);
   return recordset;
@@ -318,6 +334,8 @@ const BASE_CAIXA = `
       MAX(VA.CLIENTE)    AS CLIENTE,
       MAX(VA.VENDEDOR)   AS VENDEDOR,
       MAX(CASE WHEN VA.DOCUMENTO_TIPO IN (2, 10, 19) THEN 1 ELSE 0 END) AS TEM_CANCELAMENTO,
+      SUM(VA.VENDA_BRUTA)   AS BRUTA,
+      SUM(VA.DESCONTO)      AS DESCONTOS,
       SUM(VA.VENDA_LIQUIDA) AS LIQUIDA
     FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
     WHERE VA.MOVIMENTO BETWEEN CAST(@inicio AS date) AND CAST(@fim AS date)
@@ -364,10 +382,14 @@ async function porOperador(filtros) {
 }
 
 // operador null = todos (exportação)
-async function cuponsDoOperador(filtros, operador, limite = LIMITE_NOTAS, termo = null) {
+// opcoes.categoria: 'CAIXA' ou 'DEVOLUCAO_CAIXA' (null = as duas)
+// opcoes.comDesconto: true = só cupons que tiveram desconto
+async function cuponsDoOperador(filtros, operador, limite = LIMITE_NOTAS, termo = null, opcoes = {}) {
   const request = await criarRequest(filtros);
   request.input('operador', sql.Int, operador ?? null);
   request.input('limite', sql.Int, limite);
+  request.input('categoria', sql.VarChar(20), opcoes.categoria ?? null);
+  request.input('comDesconto', sql.Int, opcoes.comDesconto ? 1 : 0);
   adicionarBusca(request, termo);
   const { recordset } = await request.query(`
     ${BASE_CAIXA}
@@ -390,6 +412,11 @@ async function cuponsDoOperador(filtros, operador, limite = LIMITE_NOTAS, termo 
       LTRIM(RTRIM(E.NOME))                    AS cliente,
       LTRIM(RTRIM(E.NOME_FANTASIA))           AS fantasia,
       E.INSCRICAO_FEDERAL                     AS cnpj_cpf,
+      CO.EMPRESA                              AS empresa,
+      CO.VENDA                                AS venda,
+      CO.CATEGORIA                            AS categoria,
+      CO.BRUTA                                AS bruto,
+      CO.DESCONTOS                            AS desconto,
       CO.LIQUIDA                              AS valor
     FROM CUPONS_OPERADOR CO
     LEFT JOIN VENDEDORES VV WITH (NOLOCK) ON VV.VENDEDOR = CO.VENDEDOR
@@ -397,6 +424,8 @@ async function cuponsDoOperador(filtros, operador, limite = LIMITE_NOTAS, termo 
     LEFT JOIN OPERADORES O WITH (NOLOCK)  ON O.OPERADOR = CO.OPERADOR
     LEFT JOIN VENDEDORES VO WITH (NOLOCK) ON VO.VENDEDOR = O.VENDEDOR
     WHERE (@operador IS NULL OR CO.OPERADOR = @operador)
+      AND (@categoria IS NULL OR CO.CATEGORIA = @categoria)
+      AND (@comDesconto = 0 OR CO.DESCONTOS > 0)
       AND (
         @busca IS NULL
         OR CAST(CO.DOCUMENTO_NUMERO AS varchar(20)) = @busca
@@ -406,6 +435,47 @@ async function cuponsDoOperador(filtros, operador, limite = LIMITE_NOTAS, termo 
         OR (@buscaDigitos IS NOT NULL AND ${SEM_PONTUACAO('E.INSCRICAO_FEDERAL')} LIKE @buscaDigitos)
       )
     ORDER BY CO.MOVIMENTO, CO.DATA_HORA, CO.DOCUMENTO_NUMERO
+  `);
+  return recordset;
+}
+
+// ===== Produtos de um documento (nota ou cupom) =====
+// doc: { tipo: 'nota'|'cupom', empresa, numero, categoria, caixa, venda, original }
+// original = true: mostra os produtos da venda original, sem os lançamentos de cancelamento
+const TIPOS_CANCELAMENTO = '2, 4, 6, 10, 11, 13, 17, 19';
+
+async function itensDoDocumento(filtros, doc) {
+  const request = await criarRequest({ ...filtros, empresa: doc.empresa });
+  request.input('numero', sql.Int, doc.numero);
+  request.input('categoria', sql.VarChar(20), doc.categoria);
+  request.input('caixa', sql.Int, doc.caixa ?? null);
+  request.input('venda', sql.Int, doc.venda ?? null);
+  request.input('original', sql.Int, doc.original ? 1 : 0);
+
+  const filtroDocumento = doc.tipo === 'nota'
+    ? `VA.DOCUMENTO_NUMERO = @numero
+       AND ISNULL(VA.DOCUMENTO_TIPO, 0) NOT IN (1, 2, 9, 10, 14, 18, 19, 20)
+       AND (CASE WHEN VA.DOCUMENTO_TIPO IN (12, 13, 16) THEN 'DEVOLUCAO' ELSE 'NOTA' END) = @categoria`
+    : `VA.CAIXA = @caixa AND VA.VENDA = @venda AND VA.DOCUMENTO_NUMERO = @numero
+       AND VA.DOCUMENTO_TIPO IN (1, 2, 9, 10, 14, 18, 19)
+       AND (CASE WHEN VA.DOCUMENTO_TIPO = 14 THEN 'DEVOLUCAO_CAIXA' ELSE 'CAIXA' END) = @categoria`;
+
+  const { recordset } = await request.query(`
+    SELECT
+      VA.PRODUTO                   AS produto,
+      LTRIM(RTRIM(P.DESCRICAO))    AS descricao,
+      SUM(VA.QUANTIDADE)           AS quantidade,
+      SUM(VA.VENDA_BRUTA)          AS bruto,
+      SUM(VA.DESCONTO)             AS desconto,
+      SUM(VA.VENDA_LIQUIDA)        AS valor
+    FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
+    LEFT JOIN PRODUTOS P WITH (NOLOCK) ON P.PRODUTO = VA.PRODUTO
+    WHERE VA.MOVIMENTO BETWEEN CAST(@inicio AS date) AND CAST(@fim AS date)
+      AND VA.EMPRESA = @empresa
+      AND ${filtroDocumento}
+      AND (@original = 0 OR VA.DOCUMENTO_TIPO NOT IN (${TIPOS_CANCELAMENTO}))
+    GROUP BY VA.PRODUTO, P.DESCRICAO
+    ORDER BY ABS(SUM(VA.VENDA_LIQUIDA)) DESC
   `);
   return recordset;
 }
@@ -460,6 +530,6 @@ async function topProdutos(filtros, limite) {
 
 module.exports = {
   resumo, porDia, porLoja, porOrigem, porVendedor, notasDoVendedor, nomeDoVendedor,
-  porOperador, cuponsDoOperador, nomeDoOperador, topProdutos,
+  porOperador, cuponsDoOperador, nomeDoOperador, itensDoDocumento, topProdutos,
   LIMITE_NOTAS,
 };

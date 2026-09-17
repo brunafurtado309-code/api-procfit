@@ -320,7 +320,7 @@ function celulaSituacao(situacao) {
 
 function celulaCliente(linha) {
   const td = document.createElement('td');
-  td.className = 'esquerda';
+  td.className = 'esquerda coluna-cliente';
   td.textContent = linha.cliente || 'Não identificado';
   if (linha.fantasia && linha.fantasia !== linha.cliente) {
     const fantasia = document.createElement('span');
@@ -331,13 +331,142 @@ function celulaCliente(linha) {
   return td;
 }
 
+// ===== Produtos de cada documento (botão ▸) =====
+const QTD_COLUNAS_ITENS = 6;
+
+function parametrosItens(linha) {
+  const ehNota = linha.tipo === 'Nota';
+  const params = {
+    tipo: ehNota ? 'nota' : 'cupom',
+    empresa: linha.empresa,
+    numero: ehNota ? linha.nota : linha.cupom,
+    categoria: linha.categoria,
+  };
+  if (!ehNota) {
+    params.caixa = linha.caixa;
+    params.venda = linha.venda;
+  }
+  if (SITUACAO_CLASSE[linha.situacao] === 'cancelada') params.original = 1;
+  return params;
+}
+
+function tabelaItens(dados) {
+  const tabela = document.createElement('table');
+  tabela.className = 'tabela tabela--itens';
+
+  const cab = document.createElement('tr');
+  for (const [titulo, esquerda] of [['Produto', true], ['Qtd.'], ['Preço unit.'], ['Bruto'], ['Desconto'], ['Valor']]) {
+    const th = document.createElement('th');
+    th.scope = 'col';
+    th.textContent = titulo;
+    if (esquerda) th.className = 'esquerda';
+    cab.append(th);
+  }
+  const thead = document.createElement('thead');
+  thead.append(cab);
+
+  const tbody = document.createElement('tbody');
+  for (const item of dados.itens) {
+    const tr = document.createElement('tr');
+    if (Number(item.desconto) > 0) tr.className = 'item-com-desconto';
+
+    const produto = document.createElement('td');
+    produto.className = 'esquerda';
+    const codigo = document.createElement('span');
+    codigo.className = 'codigo-produto';
+    codigo.textContent = item.produto;
+    produto.append(codigo, ` ${item.descricao || 'Produto sem cadastro'}`);
+
+    const quantidade = Number(item.quantidade) || 0;
+    const unitario = quantidade ? Number(item.bruto) / quantidade : null;
+
+    tr.append(
+      produto,
+      celulaTexto(inteiro.format(quantidade)),
+      unitario === null ? celulaTexto('—') : celulaValor(unitario),
+      celulaValor(item.bruto),
+      celulaValor(item.desconto, null, Number(item.desconto) > 0 ? 'desconto-destaque' : null),
+      celulaValor(item.valor),
+    );
+    tbody.append(tr);
+  }
+
+  const total = document.createElement('tr');
+  const rotulo = celulaTexto('Total dos produtos', 'esquerda');
+  rotulo.colSpan = 3;
+  total.append(rotulo, celulaValor(dados.total.bruto), celulaValor(dados.total.desconto), celulaValor(dados.total.valor));
+  const tfoot = document.createElement('tfoot');
+  tfoot.append(total);
+
+  tabela.append(thead, tbody, tfoot);
+  return tabela;
+}
+
+async function alternarItens(botao, linha, trDocumento, quantidadeColunas) {
+  const aberto = botao.getAttribute('aria-expanded') === 'true';
+  const proxima = trDocumento.nextElementSibling;
+  if (aberto) {
+    if (proxima?.classList.contains('linha-itens')) proxima.remove();
+    botao.setAttribute('aria-expanded', 'false');
+    botao.textContent = '▸';
+    return;
+  }
+
+  botao.setAttribute('aria-expanded', 'true');
+  botao.textContent = '▾';
+  const trItens = document.createElement('tr');
+  trItens.className = 'linha-itens';
+  const td = document.createElement('td');
+  td.colSpan = quantidadeColunas;
+  td.textContent = 'Carregando produtos…';
+  trItens.append(td);
+  trDocumento.after(trItens);
+
+  try {
+    if (!linha._itens) {
+      linha._itens = await buscar('itens', { ...detalheAberto.filtros, ...parametrosItens(linha) });
+    }
+    td.replaceChildren(
+      linha._itens.itens.length ? tabelaItens(linha._itens) : 'Nenhum produto encontrado para este documento no período.',
+    );
+  } catch (erro) {
+    if (erro instanceof ChaveInvalida) return pedirChaveDeNovo();
+    td.textContent = erro.message;
+    td.classList.add('status--erro');
+  }
+}
+
+function celulaExpandir(linha, trDocumento, quantidadeColunas) {
+  const td = document.createElement('td');
+  td.className = 'coluna-expandir';
+  const botao = document.createElement('button');
+  botao.type = 'button';
+  botao.className = 'botao-expandir';
+  botao.textContent = '▸';
+  botao.setAttribute('aria-expanded', 'false');
+  botao.setAttribute('aria-label', `Ver produtos do ${linha.tipo === 'Nota' ? 'documento' : 'cupom'} ${linha.documento ?? ''}`);
+  botao.addEventListener('click', () => alternarItens(botao, linha, trDocumento, quantidadeColunas));
+  td.append(botao);
+  return td;
+}
+
+// Colunas usadas em todas as listas
+const COLUNA_EXPANDIR = { titulo: '', expandir: true };
+const COLUNAS_VALORES = [
+  { titulo: 'Bruto', soma: 'bruto', celula: (l) => celulaValor(l.bruto) },
+  { titulo: 'Desconto', soma: 'desconto', celula: (l) => celulaValor(l.desconto, null, Number(l.desconto) > 0 ? 'desconto-destaque' : null) },
+  { titulo: 'Valor', soma: 'valor', celula: (l) => celulaValor(l.valor) },
+];
+
+const comTipo = (tipo, campoDocumento) => (item) => ({ ...item, tipo, documento: item[campoDocumento] });
+
 // Cada tipo de detalhe: rota, colunas e textos
 const DETALHES = {
   notas: {
     rota: (codigo) => `vendedores/${encodeURIComponent(codigo)}/notas`,
     rotaExcel: (codigo) => `vendedores/${encodeURIComponent(codigo)}/notas/excel`,
     pessoa: (d) => d.vendedor,
-    linhas: (d) => d.notas,
+    linhas: (d) => d.notas.map(comTipo('Nota', 'nota')),
     carregando: 'Carregando notas…',
     situacoes: ['Faturada', 'Cancelada', 'Devolução'],
     dicaBusca: 'Nº da nota, nº do pedido, cliente, CNPJ/CPF ou código',
@@ -349,20 +478,21 @@ const DETALHES = {
       contar(t.devolucoes_qtd, 'devolução', 'devoluções'),
     ],
     colunas: [
+      COLUNA_EXPANDIR,
       { titulo: 'Data', celula: (n) => celulaTexto(dataBR(n.data), 'sem-quebra') },
       { titulo: 'Situação', esquerda: true, celula: (n) => celulaSituacao(n.situacao) },
       { titulo: 'Nº da nota', celula: (n) => celulaTexto(n.nota) },
       { titulo: 'Nº do pedido', celula: (n) => celulaTexto(n.pedido) },
       { titulo: 'Cód. cliente', celula: (n) => celulaTexto(n.codigo_cliente) },
       { titulo: 'Cliente', esquerda: true, celula: celulaCliente },
-      { titulo: 'Valor', celula: (n) => celulaValor(n.valor) },
+      ...COLUNAS_VALORES,
     ],
   },
   cupons: {
     rota: (codigo) => `operadores/${encodeURIComponent(codigo)}/cupons`,
     rotaExcel: (codigo) => `operadores/${encodeURIComponent(codigo)}/cupons/excel`,
     pessoa: (d) => d.operador,
-    linhas: (d) => d.cupons,
+    linhas: (d) => d.cupons.map(comTipo('Cupom', 'cupom')),
     carregando: 'Carregando cupons…',
     situacoes: ['Emitido', 'Cancelado', 'Devolução'],
     dicaBusca: 'Nº do cupom, caixa, vendedor, cliente ou código',
@@ -374,20 +504,20 @@ const DETALHES = {
       contar(t.devolucoes_qtd, 'devolução', 'devoluções'),
     ],
     colunas: [
+      COLUNA_EXPANDIR,
       { titulo: 'Data', celula: (c) => celulaTexto(dataBR(c.data), 'sem-quebra') },
       { titulo: 'Hora', celula: (c) => celulaTexto(c.hora) },
       { titulo: 'Situação', esquerda: true, celula: (c) => celulaSituacao(c.situacao) },
       { titulo: 'Caixa', celula: (c) => celulaTexto(c.caixa) },
       { titulo: 'Nº do cupom', celula: (c) => celulaTexto(c.cupom) },
-      { titulo: 'Vendedor', esquerda: true, celula: (c) => celulaTexto(c.vendedor || 'Não informado', 'esquerda') },
-      { titulo: 'Cód. cliente', celula: (c) => celulaTexto(c.codigo_cliente) },
+      { titulo: 'Vendedor', esquerda: true, celula: (c) => celulaTexto(c.vendedor || 'Não informado', 'esquerda coluna-pessoa') },
       { titulo: 'Cliente', esquerda: true, celula: celulaCliente },
-      { titulo: 'Valor', celula: (c) => celulaValor(c.valor) },
+      ...COLUNAS_VALORES,
     ],
   },
 };
 
-// Pesquisa na tela principal: notas e cupons juntos
+// Pesquisa e cartões: notas e cupons juntos na mesma lista
 function celulaTipo(linha) {
   const td = document.createElement('td');
   td.className = 'esquerda';
@@ -398,35 +528,81 @@ function celulaTipo(linha) {
   return td;
 }
 
-DETALHES.pesquisa = {
-  rota: () => 'pesquisa',
-  rotaExcel: null,
-  pessoa: (d) => ({ nome: `Resultado para "${d.termo}"` }),
-  linhas: (d) => [
-    ...d.notas.map((n) => ({ ...n, tipo: 'Nota', documento: n.nota })),
-    ...d.cupons.map((c) => ({ ...c, tipo: 'Cupom', documento: c.cupom, pedido: null })),
-  ].sort((a, b) => (a.data || '').localeCompare(b.data || '') || (a.documento ?? 0) - (b.documento ?? 0)),
+function listaMista({ rota, titulo, carregando, vazio, situacoes }) {
+  return {
+    rota: () => rota,
+    rotaExcel: null,
+    pessoa: (d) => ({ nome: titulo(d) }),
+    linhas: (d) => [
+      ...d.notas.map(comTipo('Nota', 'nota')),
+      ...d.cupons.map((c) => ({ ...comTipo('Cupom', 'cupom')(c), pedido: null })),
+    ].sort((a, b) => (a.data || '').localeCompare(b.data || '') || (a.documento ?? 0) - (b.documento ?? 0)),
+    carregando,
+    vazio,
+    situacoes,
+    dicaBusca: 'Refinar: número, pedido, cliente, vendedor…',
+    busca: (l) => [l.tipo, l.documento, l.pedido, l.vendedor, l.codigo_cliente, l.cliente, l.fantasia, l.cnpj_cpf],
+    resumo: (t) => {
+      const partes = [];
+      if (t.notas_qtd) partes.push(contar(t.notas_qtd, 'nota', 'notas'));
+      if (t.cupons_qtd) partes.push(contar(t.cupons_qtd, 'cupom', 'cupons'));
+      if (!partes.length) partes.push('nenhum documento');
+      if (Number(t.desconto) > 0) partes.push(`${moeda.format(t.desconto)} em descontos`);
+      return partes;
+    },
+    colunas: [
+      COLUNA_EXPANDIR,
+      { titulo: 'Tipo', esquerda: true, celula: celulaTipo },
+      { titulo: 'Data', celula: (l) => celulaTexto(dataBR(l.data), 'sem-quebra') },
+      { titulo: 'Situação', esquerda: true, celula: (l) => celulaSituacao(l.situacao) },
+      { titulo: 'Nº documento', celula: (l) => celulaTexto(l.documento) },
+      { titulo: 'Nº do pedido', celula: (l) => celulaTexto(l.pedido) },
+      { titulo: 'Vendedor', esquerda: true, celula: (l) => celulaTexto(l.vendedor || 'Não informado', 'esquerda coluna-pessoa') },
+      { titulo: 'Cliente', esquerda: true, celula: celulaCliente },
+      ...COLUNAS_VALORES,
+    ],
+  };
+}
+
+DETALHES.pesquisa = listaMista({
+  rota: 'pesquisa',
+  titulo: (d) => `Resultado para "${d.termo}"`,
   carregando: 'Pesquisando…',
   vazio: 'Nenhuma nota ou cupom encontrado no período. Confira o que foi digitado ou amplie as datas.',
   situacoes: ['Faturada', 'Emitido', 'Cancelada', 'Cancelado', 'Devolução'],
-  dicaBusca: 'Refinar: número, cliente, vendedor…',
-  busca: (l) => [l.tipo, l.documento, l.pedido, l.vendedor, l.codigo_cliente, l.cliente, l.fantasia, l.cnpj_cpf],
-  resumo: (t) => [
-    contar(t.notas_qtd, 'nota', 'notas'),
-    contar(t.cupons_qtd, 'cupom', 'cupons'),
-  ],
-  colunas: [
-    { titulo: 'Tipo', esquerda: true, celula: celulaTipo },
-    { titulo: 'Data', celula: (l) => celulaTexto(dataBR(l.data), 'sem-quebra') },
-    { titulo: 'Situação', esquerda: true, celula: (l) => celulaSituacao(l.situacao) },
-    { titulo: 'Nº documento', celula: (l) => celulaTexto(l.documento) },
-    { titulo: 'Nº do pedido', celula: (l) => celulaTexto(l.pedido) },
-    { titulo: 'Vendedor', esquerda: true, celula: (l) => celulaTexto(l.vendedor || 'Não informado', 'esquerda') },
-    { titulo: 'Cód. cliente', celula: (l) => celulaTexto(l.codigo_cliente) },
-    { titulo: 'Cliente', esquerda: true, celula: celulaCliente },
-    { titulo: 'Valor', celula: (l) => celulaValor(l.valor) },
-  ],
-};
+});
+
+DETALHES.todasNotas = listaMista({
+  rota: 'notas',
+  titulo: () => 'Notas fiscais do período',
+  carregando: 'Carregando notas…',
+  vazio: 'Nenhuma nota fiscal no período.',
+  situacoes: ['Faturada', 'Cancelada'],
+});
+
+DETALHES.todosCupons = listaMista({
+  rota: 'cupons',
+  titulo: () => 'Cupons do período',
+  carregando: 'Carregando cupons…',
+  vazio: 'Nenhum cupom no período.',
+  situacoes: ['Emitido', 'Cancelado'],
+});
+
+DETALHES.devolucoes = listaMista({
+  rota: 'devolucoes',
+  titulo: () => 'Devoluções do período',
+  carregando: 'Carregando devoluções…',
+  vazio: 'Nenhuma devolução no período.',
+  situacoes: ['Devolução'],
+});
+
+DETALHES.descontos = listaMista({
+  rota: 'descontos',
+  titulo: () => 'Vendas com desconto',
+  carregando: 'Carregando vendas com desconto…',
+  vazio: 'Nenhuma venda com desconto no período.',
+  situacoes: ['Faturada', 'Emitido'],
+});
 
 function montarCabecalho(config) {
   const tr = document.createElement('tr');
@@ -435,6 +611,10 @@ function montarCabecalho(config) {
     th.scope = 'col';
     th.textContent = coluna.titulo;
     if (coluna.esquerda) th.className = 'esquerda';
+    if (coluna.expandir) {
+      th.className = 'coluna-expandir';
+      th.setAttribute('aria-label', 'Produtos');
+    }
     tr.append(th);
   }
   el('detalhe-cabecalho').replaceChildren(tr);
@@ -443,7 +623,11 @@ function montarCabecalho(config) {
 function montarLinhaDetalhe(config, linha) {
   const tr = document.createElement('tr');
   if (SITUACAO_CLASSE[linha.situacao] === 'cancelada') tr.className = 'linha-cancelada';
-  for (const coluna of config.colunas) tr.append(coluna.celula(linha));
+  for (const coluna of config.colunas) {
+    tr.append(coluna.expandir
+      ? celulaExpandir(linha, tr, config.colunas.length)
+      : coluna.celula(linha));
+  }
   return tr;
 }
 
@@ -513,12 +697,20 @@ function aplicarFiltroDetalhe() {
 
   corpo.replaceChildren(...visiveis.map((linha) => montarLinhaDetalhe(config, linha)));
 
-  // Total do que está visível
-  const soma = visiveis.reduce((s, linha) => s + Number(linha.valor || 0), 0);
+  // Total do que está visível (cada coluna com "soma")
   const tr = document.createElement('tr');
+  const primeiraSoma = config.colunas.findIndex((c) => c.soma);
   const rotulo = celulaTexto(filtrando ? 'Total filtrado' : 'Total', 'esquerda');
-  rotulo.colSpan = quantidadeColunas - 1;
-  tr.append(rotulo, celulaValor(Math.round(soma * 100) / 100));
+  rotulo.colSpan = primeiraSoma;
+  tr.append(rotulo);
+  config.colunas.slice(primeiraSoma).forEach((coluna) => {
+    if (!coluna.soma) {
+      tr.append(document.createElement('td'));
+      return;
+    }
+    const soma = visiveis.reduce((total, linha) => total + Number(linha[coluna.soma] || 0), 0);
+    tr.append(celulaValor(Math.round(soma * 100) / 100));
+  });
   el('detalhe-total').replaceChildren(tr);
 }
 
@@ -671,6 +863,14 @@ document.addEventListener('DOMContentLoaded', () => {
   el('detalhe-situacao').addEventListener('change', aplicarFiltroDetalhe);
   el('baixar-painel').addEventListener('click', baixarPainel);
   el('form-pesquisa').addEventListener('submit', pesquisarNaTelaPrincipal);
+
+  // Cartões que abrem listas
+  document.querySelectorAll('[data-detalhe]').forEach((cartao) => {
+    cartao.addEventListener('click', () => {
+      const titulo = cartao.closest('.numero')?.querySelector('dt')?.textContent || 'Detalhe';
+      abrirDetalhe(cartao.dataset.detalhe, null, titulo);
+    });
+  });
 
   el('trocar-chave').addEventListener('click', () => {
     chave.apagar();
