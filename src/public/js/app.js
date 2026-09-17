@@ -469,6 +469,21 @@ function celulaExpandir(linha, trDocumento, quantidadeColunas) {
   return td;
 }
 
+// Tabela de preço do pedido (Atacado, Varejo...)
+function celulaTabela(linha) {
+  const td = document.createElement('td');
+  td.className = 'esquerda';
+  if (!linha.tabela_preco) {
+    td.textContent = '—';
+    return td;
+  }
+  const selo = document.createElement('span');
+  selo.className = `tabela-preco tabela-preco--${normalizar(linha.tabela_preco).replace(/[^a-z]/g, '')}`;
+  selo.textContent = linha.tabela_preco;
+  td.append(selo);
+  return td;
+}
+
 // Nº do documento; na devolução por nota mostra também a nota original
 function celulaDocumento(linha) {
   const td = celulaTexto(linha.documento ?? linha.nota);
@@ -501,7 +516,7 @@ const DETALHES = {
     carregando: 'Carregando notas…',
     situacoes: ['Faturada', 'Cancelada', 'Devolução'],
     dicaBusca: 'Nº da nota, nº do pedido, cliente, CNPJ/CPF ou código',
-    busca: (n) => [n.nota, n.nota_origem, n.pedido, n.codigo_cliente, n.cliente, n.fantasia, n.cnpj_cpf, n.observacao],
+    busca: (n) => [n.nota, n.nota_origem, n.pedido, n.tabela_preco, n.codigo_cliente, n.cliente, n.fantasia, n.cnpj_cpf, n.observacao],
     vazio: 'Nenhuma nota deste vendedor no período.',
     resumo: (t) => [
       contar(t.faturadas_qtd, 'nota faturada', 'notas faturadas'),
@@ -514,6 +529,7 @@ const DETALHES = {
       { titulo: 'Situação', esquerda: true, celula: (n) => celulaSituacao(n.situacao) },
       { titulo: 'Nº da nota', celula: celulaDocumento },
       { titulo: 'Nº do pedido', celula: (n) => celulaTexto(n.pedido) },
+      { titulo: 'Tabela', esquerda: true, celula: celulaTabela },
       { titulo: 'Cód. cliente', celula: (n) => celulaTexto(n.codigo_cliente) },
       { titulo: 'Cliente', esquerda: true, celula: celulaCliente },
       ...COLUNAS_VALORES,
@@ -527,7 +543,7 @@ const DETALHES = {
     carregando: 'Carregando cupons…',
     situacoes: ['Emitido', 'Cancelado', 'Devolução'],
     dicaBusca: 'Nº do cupom, caixa, vendedor, cliente ou código',
-    busca: (c) => [c.cupom, c.caixa, c.vendedor, c.codigo_cliente, c.cliente, c.fantasia, c.observacao],
+    busca: (c) => [c.cupom, c.pedido, c.tabela_preco, c.caixa, c.vendedor, c.codigo_cliente, c.cliente, c.fantasia, c.observacao],
     vazio: 'Nenhum cupom deste operador no período.',
     resumo: (t) => [
       contar(t.emitidos_qtd, 'cupom emitido', 'cupons emitidos'),
@@ -541,6 +557,8 @@ const DETALHES = {
       { titulo: 'Situação', esquerda: true, celula: (c) => celulaSituacao(c.situacao) },
       { titulo: 'Caixa', celula: (c) => celulaTexto(c.caixa) },
       { titulo: 'Nº do cupom', celula: (c) => celulaTexto(c.cupom) },
+      { titulo: 'Nº do pedido', celula: (c) => celulaTexto(c.pedido) },
+      { titulo: 'Tabela', esquerda: true, celula: celulaTabela },
       { titulo: 'Vendedor', esquerda: true, celula: (c) => celulaTexto(c.vendedor || 'Não informado', 'esquerda coluna-pessoa') },
       { titulo: 'Cliente', esquerda: true, celula: celulaCliente },
       ...COLUNAS_VALORES,
@@ -566,13 +584,13 @@ function listaMista({ rota, titulo, carregando, vazio, situacoes }) {
     pessoa: (d) => ({ nome: titulo(d) }),
     linhas: (d) => [
       ...d.notas.map(comTipo('Nota', 'nota')),
-      ...d.cupons.map((c) => ({ ...comTipo('Cupom', 'cupom')(c), pedido: null })),
+      ...d.cupons.map(comTipo('Cupom', 'cupom')),
     ].sort((a, b) => (a.data || '').localeCompare(b.data || '') || (a.documento ?? 0) - (b.documento ?? 0)),
     carregando,
     vazio,
     situacoes,
-    dicaBusca: 'Refinar: número, pedido, cliente, vendedor…',
-    busca: (l) => [l.tipo, l.documento, l.nota_origem, l.pedido, l.vendedor, l.codigo_cliente,
+    dicaBusca: 'Refinar: número, pedido, cliente, vendedor, atacado ou varejo…',
+    busca: (l) => [l.tipo, l.documento, l.nota_origem, l.pedido, l.tabela_preco, l.vendedor, l.codigo_cliente,
       l.cliente, l.fantasia, l.cnpj_cpf, l.observacao],
     resumo: (t) => {
       const partes = [];
@@ -589,6 +607,7 @@ function listaMista({ rota, titulo, carregando, vazio, situacoes }) {
       { titulo: 'Situação', esquerda: true, celula: (l) => celulaSituacao(l.situacao) },
       { titulo: 'Nº documento', celula: celulaDocumento },
       { titulo: 'Nº do pedido', celula: (l) => celulaTexto(l.pedido) },
+      { titulo: 'Tabela', esquerda: true, celula: celulaTabela },
       { titulo: 'Vendedor', esquerda: true, celula: (l) => celulaTexto(l.vendedor || 'Não informado', 'esquerda coluna-pessoa') },
       { titulo: 'Cliente', esquerda: true, celula: celulaCliente },
       ...COLUNAS_VALORES,

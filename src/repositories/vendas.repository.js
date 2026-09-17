@@ -113,6 +113,47 @@ function adicionarBusca(request, termo) {
 const SEM_PONTUACAO = (coluna) =>
   `REPLACE(REPLACE(REPLACE(${coluna}, '.', ''), '/', ''), '-', '')`;
 
+// ===== Tabela de preço (grupo de preço do pedido) =====
+// A tabela de preço fica no pedido: PEDIDOS_PREVENDAS.GRUPO_PRECO -> GRUPOS_PRECOS.
+// Os nomes são lidos uma vez e guardados por 10 minutos.
+const CACHE_GRUPOS_MS = 10 * 60 * 1000;
+let cacheGrupos = { quando: 0, nomes: new Map() };
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-/i;
+
+// "GRUPO DE PREÇOS ATACADO" -> "Atacado"
+function nomeCurto(texto) {
+  const limpo = String(texto).replace(/^\s*GRUPOS?\s+DE\s+PRE[ÇC]OS?\s*/i, '').trim() || String(texto).trim();
+  return limpo.charAt(0).toUpperCase() + limpo.slice(1).toLowerCase();
+}
+
+async function nomesDosGrupos() {
+  if (Date.now() - cacheGrupos.quando < CACHE_GRUPOS_MS) return cacheGrupos.nomes;
+  const pool = await getPool();
+  const { recordset } = await pool.request().query('SELECT * FROM GRUPOS_PRECOS WITH (NOLOCK)');
+  const nomes = new Map();
+  for (const linha of recordset) {
+    // Descrição: a coluna DESCRICAO, ou o primeiro texto que não seja um código GUID
+    const descricao = linha.DESCRICAO ?? Object.values(linha).find(
+      (v) => typeof v === 'string' && v.trim().length > 2 && !UUID.test(v),
+    );
+    nomes.set(Number(linha.GRUPO_PRECO), descricao ? nomeCurto(descricao) : `Grupo ${linha.GRUPO_PRECO}`);
+  }
+  cacheGrupos = { quando: Date.now(), nomes };
+  return nomes;
+}
+
+async function nomearTabelas(linhas) {
+  if (!linhas.some((l) => l.grupo_preco != null)) return linhas;
+  const nomes = await nomesDosGrupos();
+  for (const linha of linhas) {
+    linha.tabela_preco = linha.grupo_preco == null
+      ? null
+      : nomes.get(Number(linha.grupo_preco)) ?? `Grupo ${linha.grupo_preco}`;
+  }
+  return linhas;
+}
+
 async function criarRequest({ inicio, fim, empresa }) {
   const pool = await getPool();
   return pool
@@ -288,6 +329,7 @@ async function notasDoVendedor(filtros, vendedor, limite = LIMITE_NOTAS, termo =
       CASE WHEN D.CATEGORIA = 'DEVOLUCAO' THEN D.DOCUMENTO_NUMERO END AS nota_origem,
       COALESCE(NF.NF_SERIE, DV.NF_SERIE)    AS serie,
       COALESCE(NF.PEDIDO_CLIENTE, NFO.PEDIDO_CLIENTE) AS pedido,
+      PP.GRUPO_PRECO                        AS grupo_preco,
       LTRIM(RTRIM(OBS.TEXTO))               AS observacao,
       D.VENDEDOR                            AS codigo_vendedor,
       LTRIM(RTRIM(V.NOME))                  AS vendedor,
@@ -319,6 +361,9 @@ async function notasDoVendedor(filtros, vendedor, limite = LIMITE_NOTAS, termo =
       ON E.ENTIDADE = D.CLIENTE
     LEFT JOIN VENDEDORES V WITH (NOLOCK)
       ON V.VENDEDOR = D.VENDEDOR
+    -- Pedido (pré-venda) da nota, para saber a tabela de preço
+    LEFT JOIN PEDIDOS_PREVENDAS PP WITH (NOLOCK)
+      ON PP.PEDIDO_PREVENDA = TRY_CAST(LTRIM(RTRIM(COALESCE(NF.PEDIDO_CLIENTE, NFO.PEDIDO_CLIENTE))) AS numeric(18, 0))
     WHERE (@categoria IS NULL OR D.CATEGORIA = @categoria)
       AND (@comDesconto = 0 OR D.DESCONTOS > 0)
       AND (
@@ -334,7 +379,7 @@ async function notasDoVendedor(filtros, vendedor, limite = LIMITE_NOTAS, termo =
       )
     ORDER BY D.MOVIMENTO, D.DOCUMENTO_NUMERO
   `);
-  return recordset;
+  return nomearTabelas(recordset);
 }
 
 // ===== Caixa (PDV) por operador =====
@@ -343,6 +388,7 @@ async function notasDoVendedor(filtros, vendedor, limite = LIMITE_NOTAS, termo =
 // - Nome do operador: OPERADORES.VENDEDOR -> VENDEDORES.NOME.
 //   SEGURANÇA: da tabela OPERADORES só usamos OPERADOR e VENDEDOR (ela guarda senhas).
 // - Nº impresso do cupom = DOCUMENTO_NUMERO (= PDV_VENDAS.ECF_CUPOM).
+// - Pedido do cupom = PDV_VENDAS.PREVENDA (= PEDIDOS_PREVENDAS.PEDIDO_PREVENDA).
 // - Cupom sem registro em PDV_VENDAS fica como operador 0 ("sem operador informado").
 // - Devolução no caixa (tipo 14): pode ter vários lançamentos com VENDA diferente;
 //   o documento é identificado pelo REG_MASTER_ORIGEM (= DEV_PRODUTOS.DEVOLUCAO_PRODUTO).
@@ -373,11 +419,12 @@ const BASE_CAIXA = `
       COALESCE(PV.OPERADOR, DEVOP.OPERADOR, 0) AS OPERADOR,
       PV.DATA_HORA,
       PV.NFCE_SERIE,
+      PV.PREVENDA,
       DEVOBS.TEXTO AS OBSERVACAO
     FROM CUPONS C
     -- Cupom: operador e hora vêm da tabela do caixa
     OUTER APPLY (
-      SELECT TOP 1 P.OPERADOR, P.DATA_HORA, P.NFCE_SERIE
+      SELECT TOP 1 P.OPERADOR, P.DATA_HORA, P.NFCE_SERIE, NULLIF(P.PREVENDA, 0) AS PREVENDA
       FROM PDV_VENDAS P WITH (NOLOCK)
       WHERE C.CATEGORIA = 'CAIXA'
         AND P.EMPRESA = C.EMPRESA AND P.CAIXA = C.CAIXA AND P.VENDA = C.VENDA
@@ -456,12 +503,15 @@ async function cuponsDoOperador(filtros, operador, limite = LIMITE_NOTAS, termo 
       E.INSCRICAO_FEDERAL                     AS cnpj_cpf,
       CO.EMPRESA                              AS empresa,
       CO.VENDA                                AS venda,
+      CO.PREVENDA                             AS pedido,
+      PP.GRUPO_PRECO                          AS grupo_preco,
       CO.CATEGORIA                            AS categoria,
       CO.BRUTA                                AS bruto,
       CO.DESCONTOS                            AS desconto,
       CO.LIQUIDA                              AS valor
     FROM CUPONS_OPERADOR CO
     LEFT JOIN VENDEDORES VV WITH (NOLOCK) ON VV.VENDEDOR = CO.VENDEDOR
+    LEFT JOIN PEDIDOS_PREVENDAS PP WITH (NOLOCK) ON PP.PEDIDO_PREVENDA = CO.PREVENDA
     LEFT JOIN ENTIDADES E WITH (NOLOCK)   ON E.ENTIDADE = CO.CLIENTE
     LEFT JOIN OPERADORES O WITH (NOLOCK)  ON O.OPERADOR = CO.OPERADOR
     LEFT JOIN VENDEDORES VO WITH (NOLOCK) ON VO.VENDEDOR = O.VENDEDOR
@@ -471,6 +521,7 @@ async function cuponsDoOperador(filtros, operador, limite = LIMITE_NOTAS, termo 
       AND (
         @busca IS NULL
         OR CAST(CO.DOCUMENTO_NUMERO AS varchar(20)) = @busca
+        OR CAST(CO.PREVENDA AS varchar(20)) = @busca
         OR CAST(CO.CLIENTE AS varchar(20)) = @busca
         OR E.NOME COLLATE Latin1_General_CI_AI LIKE @buscaLike
         OR E.NOME_FANTASIA COLLATE Latin1_General_CI_AI LIKE @buscaLike
@@ -478,7 +529,7 @@ async function cuponsDoOperador(filtros, operador, limite = LIMITE_NOTAS, termo 
       )
     ORDER BY CO.MOVIMENTO, CO.DATA_HORA, CO.DOCUMENTO_NUMERO
   `);
-  return recordset;
+  return nomearTabelas(recordset);
 }
 
 // ===== Produtos de um documento (nota ou cupom) =====

@@ -502,7 +502,7 @@ select:focus { background: var(--superficie); border-color: var(--verde-medio); 
   overflow: auto;
 }
 
-.tabela--detalhe { min-width: 62rem; }
+.tabela--detalhe { min-width: 66rem; }
 
 /* Botão ▸ que abre os produtos de cada documento */
 .tabela--detalhe .coluna-expandir {
@@ -609,6 +609,19 @@ select:focus { background: var(--superficie); border-color: var(--verde-medio); 
   font-size: 0.78rem;
   font-weight: 700;
 }
+.tabela-preco {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--outros-claro);
+  color: #4A524C;
+}
+.tabela-preco--atacado { background: #DDEBF7; color: #1F4E79; }
+.tabela-preco--varejo { background: #FCE8C8; color: #7A4B00; }
+
 .tipo-documento--nota { background: var(--verde-suave); color: var(--verde); }
 .tipo-documento--cupom { background: #F1E7F4; color: var(--acai); }
 .linha-cancelada td:last-child { text-decoration: line-through; color: var(--tinta-suave); }
