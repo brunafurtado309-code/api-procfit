@@ -7,9 +7,10 @@ const fs = require('fs');
 const crypto = require('crypto');
 const helmet = require('helmet');
 const { getPool } = require('./config/db');
-const exigirChave = require('./middlewares/auth');
+const { exigirChave } = require('./middlewares/auth');
 const errorHandler = require('./middlewares/errorHandler');
 const vendasRoutes = require('./routes/vendas.routes');
+const financeiroRoutes = require('./routes/financeiro.routes');
 
 const app = express();
 
@@ -51,8 +52,12 @@ app.get('/health', async (req, res) => {
   }
 });
 
-// Rotas protegidas por chave
-app.use('/vendas', exigirChave, vendasRoutes);
+// Diz ao painel quais setores a chave informada abre (usado na tela de entrada)
+app.get('/acessos', exigirChave(), (req, res) => res.json({ setores: req.setores }));
+
+// Rotas protegidas por chave, cada uma no seu setor
+app.use('/vendas', exigirChave('vendas'), vendasRoutes);
+app.use('/financeiro', exigirChave('financeiro'), financeiroRoutes);
 
 // Painel visual (arquivos da pasta src/public)
 app.use('/painel', express.static(path.join(__dirname, 'public')));

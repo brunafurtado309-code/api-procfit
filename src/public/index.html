@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Painel de vendas | Belo Norte</title>
   <link rel="stylesheet" href="css/style.css">
+  <script src="js/modulos.js" defer></script>
   <script src="js/app.js" defer></script>
 </head>
 <body>
@@ -13,7 +14,10 @@
       <p class="marca">Belo Norte</p>
       <h1>Painel de vendas</h1>
     </div>
-    <button id="trocar-chave" class="botao-texto" type="button" hidden>Trocar chave</button>
+    <div class="topo-acoes">
+      <nav id="modulos" class="modulos" aria-label="Módulos do painel" hidden></nav>
+      <button id="trocar-chave" class="botao-texto" type="button" hidden>Trocar chave</button>
+    </div>
   </header>
 
   <main class="conteudo">

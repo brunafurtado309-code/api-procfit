@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Painel financeiro | Belo Norte</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/modulos.js" defer></script>
+  <script src="js/financeiro.js" defer></script>
+</head>
+<body>
+  <header class="topo">
+    <div>
+      <p class="marca">Belo Norte</p>
+      <h1>Painel financeiro</h1>
+    </div>
+    <div class="topo-acoes">
+      <nav id="modulos" class="modulos" aria-label="Módulos do painel" hidden></nav>
+      <button id="trocar-chave" class="botao-texto" type="button" hidden>Trocar chave</button>
+    </div>
+  </header>
+
+  <main class="conteudo">
+    <!-- Tela de entrada: pede a chave do setor -->
+    <form id="form-chave" class="entrada" hidden>
+      <h2>Entrar no financeiro</h2>
+      <p>Informe a chave de acesso do setor financeiro. Ela fica guardada só até você fechar esta aba.</p>
+      <label for="campo-chave">Chave de acesso</label>
+      <input id="campo-chave" type="password" autocomplete="off" required>
+      <button type="submit">Entrar</button>
+    </form>
+
+    <div id="painel" hidden>
+      <nav class="abas" id="abas">
+        <button class="aba aba--ativa" type="button" data-aba="titulos">Títulos em aberto</button>
+        <button class="aba" type="button" data-aba="parciais">Baixa parcial</button>
+        <button class="aba" type="button" data-aba="boletos">Boletos e prazos</button>
+        <button class="aba" type="button" data-aba="cobranca">Cobrança</button>
+      </nav>
+
+      <form id="filtros" class="filtros">
+        <label>Vencimento de <input type="date" id="inicio"></label>
+        <label>até <input type="date" id="fim"></label>
+        <label>Modalidade
+          <select id="modalidade">
+            <option value="">Todas</option>
+            <option value="1">Boleto</option>
+            <option value="0">Carteira</option>
+            <option value="6">Cartão crédito</option>
+            <option value="12">Cartão débito</option>
+            <option value="11">PIX</option>
+            <option value="4">Dinheiro</option>
+            <option value="2">Depósito</option>
+            <option value="3">Cheque</option>
+          </select>
+        </label>
+        <button type="submit">Atualizar</button>
+      </form>
+
+      <form id="form-pesquisa" class="pesquisa" role="search">
+        <label class="campo campo--busca">
+          <span>Encontrar título, nota, pedido ou cliente</span>
+          <input id="pesquisa-termo" type="search" maxlength="60" autocomplete="off"
+                 placeholder="Nº da nota, pedido, título, código ou nome do cliente">
+        </label>
+        <button type="submit">Pesquisar</button>
+        <button id="limpar-pesquisa" type="button" class="botao-secundario" hidden>Limpar</button>
+      </form>
+
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+
+      <section class="destaque" aria-labelledby="titulo-pendente">
+        <h2 id="titulo-pendente">Total a receber</h2>
+        <p id="total-pendente" class="valor-grande">—</p>
+        <p id="resumo-linha" class="explica"></p>
+      </section>
+
+      <section class="cartoes" id="cartoes" aria-label="Situação do que está a receber"></section>
+
+      <section class="bloco" aria-labelledby="titulo-faixas">
+        <h2 id="titulo-faixas">Por tempo de atraso</h2>
+        <div class="tabela-rolagem">
+          <table class="tabela" id="tabela-faixas">
+            <thead>
+              <tr><th>Faixa</th><th>Títulos</th><th>Clientes</th><th>Pendente</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="bloco" aria-labelledby="titulo-lista">
+        <h2 id="titulo-lista">Títulos</h2>
+        <div class="tabela-rolagem">
+          <table class="tabela" id="tabela-titulos">
+            <thead>
+              <tr>
+                <th>Vencimento</th><th>Atraso</th><th>Nota</th><th>Pedido</th>
+                <th>Título</th><th>Cliente</th><th>Modalidade</th>
+                <th>Valor</th><th>Recebido</th><th>Pendente</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+            <tfoot></tfoot>
+          </table>
+        </div>
+        <div class="paginacao">
+          <button id="anterior" type="button" class="botao-secundario">Anterior</button>
+          <span id="pagina-atual"></span>
+          <button id="proxima" type="button" class="botao-secundario">Próxima</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- Ficha do cliente: abre ao clicar no nome na lista -->
+    <dialog id="ficha" class="detalhe" aria-labelledby="ficha-nome">
+      <header class="detalhe__topo">
+        <div>
+          <h2 id="ficha-nome">Cliente</h2>
+          <p id="ficha-sub" class="detalhe__resumo"></p>
+        </div>
+        <div class="detalhe__acoes">
+          <button id="ficha-fechar" type="button" class="botao-secundario">Fechar</button>
+        </div>
+      </header>
+      <p id="ficha-status" class="status" role="status" aria-live="polite"></p>
+      <div id="ficha-corpo" class="detalhe__corpo ficha-corpo" hidden>
+        <section class="cartoes" id="ficha-cartoes"></section>
+
+        <h3>Produtos que mais compra</h3>
+        <div class="tabela-rolagem">
+          <table class="tabela tabela--detalhe" id="ficha-produtos">
+            <thead><tr><th>Produto</th><th>Descrição</th><th>Quantidade</th><th>Valor</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <h3>Títulos do cliente</h3>
+        <div class="tabela-rolagem">
+          <table class="tabela tabela--detalhe" id="ficha-titulos">
+            <thead>
+              <tr><th>Vencimento</th><th>Situação</th><th>Nota</th><th>Pedido</th>
+                  <th>Título</th><th>Valor</th><th>Recebido</th><th>Pendente</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </dialog>
+  </main>
+</body>
+</html>

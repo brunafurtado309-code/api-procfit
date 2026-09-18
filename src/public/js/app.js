@@ -36,11 +36,33 @@ const chave = {
 function mostrarEntrada() {
   el('painel').hidden = true;
   el('trocar-chave').hidden = true;
+  document.getElementById('modulos').hidden = true;
   el('form-chave').hidden = false;
   el('campo-chave').focus();
 }
 
-function mostrarPainel() {
+async function mostrarPainel() {
+  // Antes de desenhar, pergunta à API o que esta chave abre
+  let setores;
+  try {
+    setores = await modulos.setoresDaChave();
+  } catch (erro) {
+    if (erro.chaveInvalida) {
+      chave.apagar();
+      mostrarEntrada();
+      alert('Chave de acesso inválida. Informe a chave novamente.');
+      return;
+    }
+    setores = ['vendas']; // API fora do ar: segue e deixa a própria carga avisar
+  }
+
+  // Chave de outro setor: vai direto para o módulo dela
+  if (!setores.includes('vendas')) {
+    modulos.irPara(setores[0]);
+    return;
+  }
+  modulos.desenharMenu(setores, 'vendas');
+
   painelFoiAtualizado(); // guarda a versão que está aberta
   el('form-chave').hidden = true;
   el('painel').hidden = false;
