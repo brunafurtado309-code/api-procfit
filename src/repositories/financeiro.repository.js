@@ -22,6 +22,14 @@ const { sql, getPool } = require('../config/db');
 
 const TAB_NOTA_FISCAL = 753289; // TAB_MASTER_ORIGEM da NF_FATURAMENTO
 
+// Origens encontradas nos títulos em aberto (set/2026), por valor:
+//   753289 nota fiscal (83%)   757539 identificação manual ("N.IDENT.")
+//   455510 / 750078 / 999999 / outras: importação e lançamentos avulsos
+const ORIGENS = {
+  nota: `T.TAB_MASTER_ORIGEM = ${TAB_NOTA_FISCAL}`,
+  sem_nota: `(T.TAB_MASTER_ORIGEM <> ${TAB_NOTA_FISCAL} OR T.TAB_MASTER_ORIGEM IS NULL)`,
+};
+
 // Saldo de cada título, a partir do extrato de transações
 const SALDOS = `
   WITH SALDOS AS (
@@ -56,8 +64,22 @@ const TITULOS = `
         WHEN 6  THEN 'Cartão crédito' WHEN 7  THEN 'Promissória'
         WHEN 8  THEN 'Vale'          WHEN 9  THEN 'Devolução'
         WHEN 11 THEN 'PIX'           WHEN 12 THEN 'Cartão débito'
-        WHEN 13 THEN 'Convênio'      ELSE CONCAT('Modalidade ', T.MODALIDADE)
+        WHEN 13 THEN 'Convênio'
+        ELSE CASE WHEN T.MODALIDADE IS NULL THEN NULL ELSE CONCAT('Modalidade ', T.MODALIDADE) END
       END                                     AS modalidade,
+      -- Quem paga: a ADQUIRENTE (maquininha) ou o cliente da venda.
+      -- A regra vem do cadastro ADQUIRENTES, que liga cada maquininha a uma ENTIDADE
+      -- (ex.: REDE -> entidade 8025 = REDECARD). ENTIDADE 1 é preenchimento das
+      -- adquirentes não usadas pela empresa, por isso fica de fora.
+      -- Uma venda parcelada no cartão continua sendo dívida do CLIENTE.
+      CASE WHEN ADQ.ADQUIRENTE_ID IS NOT NULL THEN 'ADQUIRENTE' ELSE 'CLIENTE' END AS tipo_devedor,
+      ADQ.DESCRICAO                           AS adquirente,
+      T.TAB_MASTER_ORIGEM                     AS origem_id,
+      CASE
+        WHEN T.TAB_MASTER_ORIGEM = ${TAB_NOTA_FISCAL} THEN 'Nota fiscal'
+        WHEN ADQ.ADQUIRENTE_ID IS NOT NULL           THEN 'Recebível de cartão'
+        ELSE 'Sem nota'
+      END                                     AS origem,
       CONVERT(varchar(10), T.EMISSAO, 23)     AS emissao,
       CONVERT(varchar(10), T.VENCIMENTO, 23)  AS vencimento,
       DATEDIFF(day, T.VENCIMENTO, CAST(GETDATE() AS date)) AS dias_atraso,
@@ -72,7 +94,13 @@ const TITULOS = `
         WHEN S.PENDENTE <= 0.009      THEN 'QUITADO'
         WHEN S.RECEBIDO > 0.009       THEN 'PARCIAL'
         ELSE                               'ABERTO'
-      END                                     AS situacao
+      END                                     AS situacao,
+      -- Cada título é UMA PARCELA. Estas colunas somam todas as parcelas da mesma NOTA,
+      -- para a tela poder mostrar o valor total da nota, o quanto já foi pago e o que falta.
+      COUNT(*)      OVER (PARTITION BY T.EMPRESA, NF.NF_NUMERO) AS nota_parcelas,
+      SUM(T.VALOR)  OVER (PARTITION BY T.EMPRESA, NF.NF_NUMERO) AS nota_valor,
+      SUM(S.RECEBIDO) OVER (PARTITION BY T.EMPRESA, NF.NF_NUMERO) AS nota_recebido,
+      SUM(S.PENDENTE) OVER (PARTITION BY T.EMPRESA, NF.NF_NUMERO) AS nota_pendente
     FROM TITULOS_RECEBER T WITH (NOLOCK)
     JOIN SALDOS S ON S.TITULO_RECEBER = T.TITULO_RECEBER
     -- Só quando a origem É a nota fiscal; senão o REG_MASTER_ORIGEM aponta para outra tabela
@@ -80,12 +108,76 @@ const TITULOS = `
            ON T.TAB_MASTER_ORIGEM = ${TAB_NOTA_FISCAL}
           AND NF.NF_FATURAMENTO = T.REG_MASTER_ORIGEM
     LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = T.ENTIDADE
+    -- A entidade do título é uma adquirente cadastrada?
+    OUTER APPLY (
+      SELECT TOP 1 A.ADQUIRENTE_ID, A.DESCRICAO
+      FROM ADQUIRENTES A WITH (NOLOCK)
+      WHERE A.ENTIDADE = T.ENTIDADE AND A.ENTIDADE > 1
+    ) ADQ
     WHERE (@empresa IS NULL OR T.EMPRESA = @empresa)
   )`;
 
-async function criarRequest({ empresa }) {
+// Todas as consultas recebem os MESMOS parâmetros: assim os cartões, o resumo
+// e a lista falam sempre do mesmo conjunto de títulos.
+async function criarRequest(filtros = {}) {
   const pool = await getPool();
-  return pool.request().input('empresa', sql.Int, empresa ?? null);
+  return pool
+    .request()
+    .input('empresa', sql.Int, filtros.empresa ?? null)
+    .input('inicio', sql.VarChar(10), filtros.inicio ?? null)
+    .input('fim', sql.VarChar(10), filtros.fim ?? null)
+    .input('modalidade', sql.Int, filtros.modalidade ?? null)
+    .input('busca', sql.VarChar(80), filtros.busca ?? null)
+    // Filtros de coluna (cada um vale sozinho)
+    .input('f_nota', sql.VarChar(20), filtros.f_nota ?? null)
+    .input('f_pedido', sql.VarChar(20), filtros.f_pedido ?? null)
+    .input('f_titulo', sql.VarChar(40), filtros.f_titulo ?? null)
+    .input('f_cliente', sql.VarChar(80), filtros.f_cliente ?? null)
+    .input('f_valor_min', sql.Decimal(18, 2), filtros.f_valor_min ?? null)
+    .input('f_valor_max', sql.Decimal(18, 2), filtros.f_valor_max ?? null);
+}
+
+// Filtros que valem para TODAS as consultas (período de vencimento, modalidade e pesquisa)
+const FILTRO_COMUM = `
+  (@inicio IS NULL OR vencimento >= @inicio)
+  AND (@fim IS NULL OR vencimento <= @fim)
+  AND (@modalidade IS NULL OR modalidade_id = @modalidade)
+  AND (
+    @busca IS NULL
+    OR CAST(nota AS varchar(20)) = @busca
+    OR CAST(pedido AS varchar(20)) = @busca
+    OR CAST(cod_cliente AS varchar(20)) = @busca
+    OR titulo = @busca
+    OR cliente LIKE '%' + @busca + '%'
+  )
+  AND (@f_nota IS NULL OR CAST(nota AS varchar(20)) LIKE @f_nota + '%')
+  AND (@f_pedido IS NULL OR CAST(pedido AS varchar(20)) LIKE @f_pedido + '%')
+  AND (@f_titulo IS NULL OR titulo LIKE '%' + @f_titulo + '%')
+  AND (
+    @f_cliente IS NULL
+    OR cliente COLLATE Latin1_General_CI_AI LIKE '%' + @f_cliente + '%'
+    OR CAST(cod_cliente AS varchar(20)) = @f_cliente
+  )
+  AND (@f_valor_min IS NULL OR pendente >= @f_valor_min)
+  AND (@f_valor_max IS NULL OR pendente <= @f_valor_max)`;
+
+// Vencido é o que já passou do vencimento; a vencer é o que ainda está no prazo
+function filtroAtraso(atraso) {
+  if (atraso === 'vencidos') return 'dias_atraso > 0';
+  if (atraso === 'a_vencer') return 'dias_atraso <= 0';
+  return '1 = 1';
+}
+
+// Quem deve: o cliente da venda ou a adquirente do cartão
+function filtroDevedor(devedor) {
+  if (devedor === 'adquirente') return `tipo_devedor = 'ADQUIRENTE'`;
+  if (devedor === 'cliente') return `tipo_devedor = 'CLIENTE'`;
+  return '1 = 1';
+}
+
+// Separa os títulos que nasceram de nota fiscal dos demais
+function filtroOrigem(origem) {
+  return ORIGENS[origem] ?? '1 = 1';
 }
 
 // Filtro de situação usado pelas abas
@@ -113,7 +205,7 @@ async function resumo(filtros) {
       SUM(CASE WHEN situacao = 'PARCIAL' THEN pendente ELSE 0 END)         AS pendente_parciais,
       COUNT(DISTINCT cod_cliente)                                          AS clientes
     FROM TITULOS
-    WHERE ${filtroSituacao(filtros.situacao)}
+    WHERE ${filtroSituacao(filtros.situacao)} AND ${filtroAtraso(filtros.atraso)} AND ${filtroOrigem(filtros.origem)} AND ${filtroDevedor(filtros.devedor)} AND ${FILTRO_COMUM}
   `);
   return recordset[0];
 }
@@ -136,7 +228,7 @@ async function porFaixaAtraso(filtros) {
       SUM(pendente) AS pendente,
       COUNT(DISTINCT cod_cliente) AS clientes
     FROM TITULOS
-    WHERE situacao IN ('ABERTO', 'PARCIAL')
+    WHERE situacao IN ('ABERTO', 'PARCIAL') AND ${filtroOrigem(filtros.origem)} AND ${filtroDevedor(filtros.devedor)} AND ${FILTRO_COMUM}
     GROUP BY CASE
         WHEN dias_atraso <= 0  THEN '1. A vencer'
         WHEN dias_atraso <= 30 THEN '2. 1 a 30 dias'
@@ -152,26 +244,14 @@ async function porFaixaAtraso(filtros) {
 // Lista dos títulos, com paginação e pesquisa
 async function titulos(filtros) {
   const request = await criarRequest(filtros);
-  request.input('inicio', sql.VarChar(10), filtros.inicio ?? null);
-  request.input('fim', sql.VarChar(10), filtros.fim ?? null);
-  request.input('busca', sql.VarChar(80), filtros.busca ?? null);
-  request.input('modalidade', sql.Int, filtros.modalidade ?? null);
   request.input('pular', sql.Int, (filtros.pagina - 1) * filtros.limite);
   request.input('limite', sql.Int, filtros.limite);
 
   const condicoes = `
     ${filtroSituacao(filtros.situacao)}
-    AND (@inicio IS NULL OR vencimento >= @inicio)
-    AND (@fim    IS NULL OR vencimento <= @fim)
-    AND (@modalidade IS NULL OR modalidade_id = @modalidade)
-    AND (
-      @busca IS NULL
-      OR CAST(nota AS varchar(20)) = @busca
-      OR CAST(pedido AS varchar(20)) = @busca
-      OR CAST(cod_cliente AS varchar(20)) = @busca
-      OR titulo = @busca
-      OR cliente LIKE '%' + @busca + '%'
-    )`;
+    AND ${filtroAtraso(filtros.atraso)}
+    AND ${filtroOrigem(filtros.origem)} AND ${filtroDevedor(filtros.devedor)}
+    AND ${FILTRO_COMUM}`;
 
   const { recordsets } = await request.query(`
     ${SALDOS},
@@ -195,6 +275,60 @@ async function titulos(filtros) {
   return { total: recordsets[0][0], lista: recordsets[1] };
 }
 
+// Totais de cada cartão do topo, numa consulta só
+async function cartoes(filtros) {
+  const request = await criarRequest(filtros);
+  const { recordset } = await request.query(`
+    ${SALDOS},
+    ${TITULOS}
+    SELECT
+      SUM(CASE WHEN situacao <> 'QUITADO' THEN pendente ELSE 0 END)                        AS aberto,
+      COUNT(CASE WHEN situacao <> 'QUITADO' THEN 1 END)                                    AS aberto_titulos,
+      SUM(CASE WHEN situacao <> 'QUITADO' AND dias_atraso > 0 THEN pendente ELSE 0 END)     AS vencido,
+      COUNT(CASE WHEN situacao <> 'QUITADO' AND dias_atraso > 0 THEN 1 END)                 AS vencido_titulos,
+      SUM(CASE WHEN situacao <> 'QUITADO' AND dias_atraso <= 0 THEN pendente ELSE 0 END)    AS a_vencer,
+      COUNT(CASE WHEN situacao <> 'QUITADO' AND dias_atraso <= 0 THEN 1 END)                AS a_vencer_titulos,
+      SUM(CASE WHEN situacao = 'PARCIAL' THEN pendente ELSE 0 END)                          AS parcial,
+      COUNT(CASE WHEN situacao = 'PARCIAL' THEN 1 END)                                      AS parcial_titulos,
+      SUM(CASE WHEN situacao = 'QUITADO' THEN valor ELSE 0 END)                             AS quitado,
+      COUNT(CASE WHEN situacao = 'QUITADO' THEN 1 END)                                      AS quitado_titulos,
+      SUM(CASE WHEN situacao <> 'QUITADO' AND tipo_devedor = 'CLIENTE' THEN pendente ELSE 0 END)    AS de_clientes,
+      COUNT(CASE WHEN situacao <> 'QUITADO' AND tipo_devedor = 'CLIENTE' THEN 1 END)                 AS de_clientes_titulos,
+      SUM(CASE WHEN situacao <> 'QUITADO' AND tipo_devedor = 'ADQUIRENTE' THEN pendente ELSE 0 END)  AS de_adquirentes,
+      COUNT(CASE WHEN situacao <> 'QUITADO' AND tipo_devedor = 'ADQUIRENTE' THEN 1 END)              AS de_adquirentes_titulos,
+      COUNT(DISTINCT CASE WHEN situacao <> 'QUITADO' THEN cod_cliente END)                  AS clientes
+    FROM TITULOS
+    WHERE ${filtroOrigem(filtros.origem)} AND ${FILTRO_COMUM}
+  `);
+  return recordset[0];
+}
+
+// Um resumo por cliente (cartão "Clientes")
+async function porCliente(filtros) {
+  const request = await criarRequest(filtros);
+  const { recordset } = await request.query(`
+    ${SALDOS},
+    ${TITULOS}
+    SELECT TOP 300
+      cod_cliente,
+      MAX(cliente)                                          AS cliente,
+      COUNT(*)                                              AS titulos,
+      SUM(pendente)                                         AS pendente,
+      SUM(CASE WHEN dias_atraso > 0 THEN pendente ELSE 0 END) AS vencido,
+      MAX(CASE WHEN dias_atraso > 0 THEN dias_atraso END)   AS maior_atraso,
+      MIN(vencimento)                                       AS vencimento_mais_antigo,
+      MAX(ultimo_recebimento)                               AS ultimo_recebimento
+    FROM TITULOS
+    WHERE ${filtroSituacao(filtros.situacao)}
+      AND ${filtroAtraso(filtros.atraso)}
+      AND ${filtroOrigem(filtros.origem)} AND ${filtroDevedor(filtros.devedor)}
+      AND ${FILTRO_COMUM}
+    GROUP BY cod_cliente
+    ORDER BY pendente DESC
+  `);
+  return recordset;
+}
+
 // Ficha do cliente: quem é, o que deve e o que compra.
 // Junta o financeiro (TITULOS_RECEBER) com as vendas (VENDAS_ANALITICAS),
 // que já usamos no painel de vendas. O tipo 20 (importação de demanda) fica fora.
@@ -204,7 +338,12 @@ async function fichaCliente(entidade, { meses = 12 } = {}) {
     .request()
     .input('entidade', sql.Int, entidade)
     .input('desde', sql.Int, meses)
-    .input('empresa', sql.Int, null); // a ficha olha todas as empresas
+    // A ficha mostra o cliente inteiro, sem os filtros da tela
+    .input('empresa', sql.Int, null)
+    .input('inicio', sql.VarChar(10), null)
+    .input('fim', sql.VarChar(10), null)
+    .input('modalidade', sql.Int, null)
+    .input('busca', sql.VarChar(80), null);
 
   const { recordsets } = await request.query(`
     -- 1. Cadastro
@@ -273,4 +412,4 @@ async function fichaCliente(entidade, { meses = 12 } = {}) {
   };
 }
 
-module.exports = { resumo, porFaixaAtraso, titulos, fichaCliente };
+module.exports = { resumo, cartoes, porFaixaAtraso, porCliente, titulos, fichaCliente };

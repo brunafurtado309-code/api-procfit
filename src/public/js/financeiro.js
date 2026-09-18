@@ -3,6 +3,10 @@
 
 const el = (id) => document.getElementById(id);
 
+// Valor de um campo que pode não existir na página (evita quebrar a tela
+// quando o HTML está numa versão diferente da do JavaScript).
+const valorCampo = (id) => document.getElementById(id)?.value || null;
+
 const dinheiro = (valor) =>
   valor === null || valor === undefined
     ? '—'
@@ -50,22 +54,83 @@ const ABAS = {
 };
 
 let abaAtual = 'titulos';
+// Cartão clicado (filtra a lista). null = o que a aba já traz.
+let cartaoAtual = null;
+// O que está digitado nos filtros de coluna (vai para a API)
+const filtrosColuna = {};
+// Faixa de atraso escolhida no gráfico
+let faixaAtual = null;
 let pagina = 1;
 let totalPaginas = 1;
 const LIMITE = 50;
 
+// Cada cartão é um recorte dos títulos
+const CARTOES = {
+  aberto:   { situacao: 'aberto',  atraso: null },
+  vencido:  { situacao: 'aberto',  atraso: 'vencidos' },
+  a_vencer: { situacao: 'aberto',  atraso: 'a_vencer' },
+  parcial:  { situacao: 'parcial', atraso: null },
+  quitado:  { situacao: 'quitado', atraso: null },
+  clientes:    { situacao: 'aberto', atraso: null, porCliente: true },
+  de_clientes: { situacao: 'aberto', atraso: null },
+  adquirentes: { situacao: 'aberto', atraso: null },
+};
+
 function filtrosAtuais() {
   const aba = ABAS[abaAtual];
+  const cartao = cartaoAtual ? CARTOES[cartaoAtual] : null;
   return {
-    situacao: aba.situacao,
-    inicio: el('inicio').value || null,
+    situacao: cartao ? cartao.situacao : aba.situacao,
+    atraso: cartao ? cartao.atraso : (aba.somenteVencidos ? 'vencidos' : null),
+    inicio: valorCampo('inicio'),
     // Na aba de cobrança, mostra só o que já venceu: "até ontem"
-    fim: aba.somenteVencidos ? ontem() : (el('fim').value || null),
-    modalidade: aba.modalidade ?? (el('modalidade').value || null),
-    busca: el('pesquisa-termo').value.trim() || null,
+    fim: aba.somenteVencidos ? ontem() : valorCampo('fim'),
+    modalidade: aba.modalidade ?? valorCampo('modalidade'),
+    origem: valorCampo('origem'),
+    devedor: cartaoAtual === 'adquirentes' ? 'adquirente'
+           : cartaoAtual === 'de_clientes' ? 'cliente'
+           : valorCampo('devedor'),
+    busca: (valorCampo('pesquisa-termo') ?? '').trim() || null,
+    ...filtrosColuna,
+    ...faixaEmFiltro(),
     limite: LIMITE,
     pagina,
   };
+}
+
+// Atalhos de período: preenchem os campos De/Até sem abrir o calendário
+function aplicarAtalho(periodo) {
+  const hoje = new Date();
+  const iso = (data) => data.toISOString().slice(0, 10);
+  const somar = (dias) => {
+    const nova = new Date(hoje);
+    nova.setDate(nova.getDate() + dias);
+    return iso(nova);
+  };
+
+  const periodos = {
+    tudo:     { inicio: '', fim: '' },
+    vencidos: { inicio: '', fim: ontem() },
+    mes:      { inicio: iso(new Date(hoje.getFullYear(), hoje.getMonth(), 1)),
+                fim: iso(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0)) },
+    '7dias':  { inicio: iso(hoje), fim: somar(7) },
+    '30dias': { inicio: iso(hoje), fim: somar(30) },
+  };
+
+  const escolhido = periodos[periodo];
+  if (!escolhido) return;
+  el('inicio').value = escolhido.inicio;
+  el('fim').value = escolhido.fim;
+  pagina = 1;
+  carregar();
+}
+
+// Converte a faixa clicada no gráfico em filtro de dias de atraso
+function faixaEmFiltro() {
+  const faixa = faixaAtual ? DIAS_DA_FAIXA[faixaAtual] : null;
+  if (!faixa) return {};
+  if (faixa.atraso) return { atraso: faixa.atraso };
+  return { atraso_min: faixa.min, atraso_max: faixa.max ?? null };
 }
 
 function ontem() {
@@ -80,23 +145,98 @@ function mostrarStatus(texto, erro = false) {
 }
 
 // ===== Desenho da tela =====
+function mostrarIndicadores(ind) {
+  const inadimplencia = ind.pendente ? (100 * ind.vencido) / ind.pendente : 0;
+  const itens = [
+    ['Inadimplência', `${inadimplencia.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`,
+      'do que está em aberto já venceu'],
+    ['Atraso médio', ind.atraso_medio ? `${numero(Math.round(ind.atraso_medio))} dias` : '—',
+      'ponderado pelo valor'],
+    ['Ticket médio', dinheiro(ind.ticket_medio), 'por título'],
+    ['Mais antigo', dataBR(ind.vencimento_mais_antigo), 'vencimento em aberto'],
+  ];
+
+  el('indicadores').replaceChildren(
+    ...itens.flatMap(([rotulo, valor, nota]) => {
+      const dt = document.createElement('dt');
+      dt.textContent = rotulo;
+      const dd = document.createElement('dd');
+      dd.textContent = valor;
+      const span = document.createElement('span');
+      span.textContent = nota;
+      dd.append(span);
+      return [dt, dd];
+    }),
+  );
+}
+
+// Barras horizontais proporcionais (sem biblioteca: só HTML e CSS)
+function desenharBarras(area, itens, { aoClicar = null, cor = 'verde' } = {}) {
+  const maior = Math.max(...itens.map((i) => Number(i.valor) || 0), 1);
+
+  area.replaceChildren(
+    ...itens.map((item) => {
+      const linha = document.createElement(aoClicar ? 'button' : 'div');
+      linha.className = `barra barra--${cor}${item.ativo ? ' barra--ativa' : ''}`;
+      if (aoClicar) {
+        linha.type = 'button';
+        linha.addEventListener('click', () => aoClicar(item));
+      }
+
+      const rotulo = document.createElement('span');
+      rotulo.className = 'barra-rotulo';
+      rotulo.textContent = item.rotulo;
+
+      const trilho = document.createElement('span');
+      trilho.className = 'barra-trilho';
+      const preenchida = document.createElement('span');
+      preenchida.className = 'barra-preenchida';
+      preenchida.style.width = `${Math.max(2, (100 * (Number(item.valor) || 0)) / maior)}%`;
+      trilho.append(preenchida);
+
+      const valor = document.createElement('span');
+      valor.className = 'barra-valor';
+      valor.textContent = dinheiro(item.valor);
+      if (item.nota) {
+        const nota = document.createElement('small');
+        nota.textContent = item.nota;
+        valor.append(nota);
+      }
+
+      linha.append(rotulo, trilho, valor);
+      return linha;
+    }),
+  );
+}
+
 function mostrarResumo(resumo) {
   el('total-pendente').textContent = dinheiro(resumo.pendente);
   el('resumo-linha').textContent =
     `${numero(resumo.titulos)} títulos de ${numero(resumo.clientes)} clientes · ` +
     `valor original ${dinheiro(resumo.valor_original)} · já recebido ${dinheiro(resumo.recebido)}`;
+}
 
+// Cada cartão filtra a lista quando clicado. Clicar de novo tira o filtro.
+function mostrarCartoes(totais) {
   const cartoes = [
-    { titulo: 'Vencido', valor: dinheiro(resumo.vencido), nota: 'já passou do vencimento' },
-    { titulo: 'A vencer', valor: dinheiro(resumo.a_vencer), nota: 'ainda dentro do prazo' },
-    { titulo: 'Baixa parcial', valor: dinheiro(resumo.pendente_parciais), nota: `${numero(resumo.titulos_parciais)} títulos` },
-    { titulo: 'Clientes', valor: numero(resumo.clientes), nota: 'com valor em aberto' },
+    { id: 'aberto',   titulo: 'Em aberto',       valor: dinheiro(totais.aberto),   nota: `${numero(totais.aberto_titulos)} títulos` },
+    { id: 'vencido',  titulo: 'Vencido',         valor: dinheiro(totais.vencido),  nota: `${numero(totais.vencido_titulos)} títulos vencidos` },
+    { id: 'a_vencer', titulo: 'A vencer',        valor: dinheiro(totais.a_vencer), nota: `${numero(totais.a_vencer_titulos)} títulos no prazo` },
+    { id: 'parcial',  titulo: 'Baixa parcial',   valor: dinheiro(totais.parcial),  nota: `${numero(totais.parcial_titulos)} títulos` },
+    { id: 'quitado',  titulo: 'Títulos baixados', valor: dinheiro(totais.quitado), nota: `${numero(totais.quitado_titulos)} títulos quitados` },
+    { id: 'de_clientes',  titulo: 'Devido por clientes',
+      valor: dinheiro(totais.de_clientes),     nota: `${numero(totais.de_clientes_titulos)} títulos` },
+    { id: 'adquirentes',  titulo: 'Devido por adquirentes',
+      valor: dinheiro(totais.de_adquirentes),  nota: `${numero(totais.de_adquirentes_titulos)} títulos de cartão` },
+    { id: 'clientes', titulo: 'Clientes',        valor: numero(totais.clientes),   nota: 'com valor em aberto' },
   ];
 
   el('cartoes').replaceChildren(
     ...cartoes.map((c) => {
-      const caixa = document.createElement('article');
-      caixa.className = 'cartao';
+      const botao = document.createElement('button');
+      botao.type = 'button';
+      botao.className = c.id === cartaoAtual ? 'cartao cartao--ativo' : 'cartao';
+      botao.dataset.cartao = c.id;
       const titulo = document.createElement('h3');
       titulo.textContent = c.titulo;
       const valor = document.createElement('p');
@@ -105,24 +245,76 @@ function mostrarResumo(resumo) {
       const nota = document.createElement('p');
       nota.className = 'cartao-nota';
       nota.textContent = c.nota;
-      caixa.append(titulo, valor, nota);
-      return caixa;
+      botao.append(titulo, valor, nota);
+      botao.addEventListener('click', () => {
+        cartaoAtual = cartaoAtual === c.id ? null : c.id;
+        pagina = 1;
+        carregar();
+      });
+      return botao;
     }),
   );
 }
 
+// Cada faixa vira uma barra clicável que filtra a lista pelo atraso
+const DIAS_DA_FAIXA = {
+  '1. A vencer': { atraso: 'a_vencer' },
+  '2. 1 a 30 dias': { min: 1, max: 30 },
+  '3. 31 a 60 dias': { min: 31, max: 60 },
+  '4. 61 a 90 dias': { min: 61, max: 90 },
+  '5. Mais de 90 dias': { min: 91 },
+};
+
 function mostrarFaixas(faixas) {
-  const corpo = el('tabela-faixas').querySelector('tbody');
-  corpo.replaceChildren(
-    ...faixas.map((f) => {
-      const linha = document.createElement('tr');
-      for (const texto of [f.faixa.replace(/^\d+\.\s*/, ''), numero(f.titulos), numero(f.clientes), dinheiro(f.pendente)]) {
-        const celula = document.createElement('td');
-        celula.textContent = texto;
-        linha.append(celula);
-      }
-      return linha;
-    }),
+  desenharBarras(
+    el('grafico-faixas'),
+    faixas.map((f) => ({
+      rotulo: f.faixa.replace(/^\d+\.\s*/, ''),
+      valor: f.pendente,
+      nota: `${numero(f.titulos)} títulos · ${numero(f.clientes)} clientes`,
+      ativo: faixaAtual === f.faixa,
+      faixa: f.faixa,
+    })),
+    {
+      cor: 'atraso',
+      aoClicar: (item) => {
+        faixaAtual = faixaAtual === item.faixa ? null : item.faixa;
+        pagina = 1;
+        carregar();
+      },
+    },
+  );
+}
+
+function mostrarRanking(clientes) {
+  desenharBarras(
+    el('ranking'),
+    clientes.slice(0, 6).map((c) => ({
+      rotulo: c.cliente ?? `Cliente ${c.cod_cliente}`,
+      valor: c.pendente,
+      nota: `${numero(c.titulos)} títulos · vencido ${dinheiro(c.vencido)}`,
+      cod: c.cod_cliente,
+      nome: c.cliente,
+    })),
+    { aoClicar: (item) => abrirFicha(item.cod, item.nome) },
+  );
+}
+
+function mostrarPrevisao(semanas) {
+  if (semanas.length === 0) {
+    el('previsao').replaceChildren(Object.assign(document.createElement('p'), {
+      className: 'explica', textContent: 'Nenhum título a vencer no filtro atual.',
+    }));
+    return;
+  }
+  desenharBarras(
+    el('previsao'),
+    semanas.map((s) => ({
+      rotulo: `semana de ${dataBR(s.semana)}`,
+      valor: s.pendente,
+      nota: `${numero(s.titulos)} títulos`,
+    })),
+    { cor: 'previsao' },
   );
 }
 
@@ -136,6 +328,15 @@ function celulaCliente(titulo) {
   botao.textContent = `${titulo.cod_cliente} · ${titulo.cliente ?? 'sem nome'}`;
   botao.addEventListener('click', () => abrirFicha(titulo.cod_cliente, titulo.cliente));
   td.append(botao);
+
+  if (titulo.tipo_devedor) {
+    const marca = document.createElement('span');
+    marca.className = titulo.tipo_devedor === 'ADQUIRENTE' ? 'marca marca--adquirente' : 'marca';
+    marca.textContent = titulo.tipo_devedor === 'ADQUIRENTE'
+      ? `adquirente${titulo.adquirente ? ` · ${titulo.adquirente}` : ''} — não é o cliente da venda`
+      : 'cliente';
+    td.append(marca);
+  }
   return td;
 }
 
@@ -146,31 +347,89 @@ function celula(texto, classe = null) {
   return td;
 }
 
+// Colunas da lista. A visão de baixa parcial mostra os valores da NOTA
+// (soma das parcelas), além dos valores da parcela em si.
+const COLUNAS_TITULO = [
+  { titulo: 'Vencimento', valor: (t) => dataBR(t.vencimento),
+    nota: (t) => (t.dias_atraso > 0 ? `${numero(t.dias_atraso)} dias de atraso` : 'em dia'),
+    classeNota: (t) => (t.dias_atraso > 0 ? 'atraso' : null) },
+  { titulo: 'Nota / pedido', valor: (t) => (t.nota ? `NF ${t.nota}` : 'sem nota'),
+    nota: (t) => (t.pedido ? `pedido ${t.pedido}` : t.origem),
+    filtros: [{ campo: 'f_nota', dica: 'nota' }, { campo: 'f_pedido', dica: 'pedido' }] },
+  { titulo: 'Título', valor: (t) => t.titulo ?? '—',
+    filtros: [{ campo: 'f_titulo', dica: 'título' }] },
+  { titulo: 'Devedor', cliente: true,
+    filtros: [{ campo: 'f_cliente', dica: 'nome ou código' }] },
+  { titulo: 'Forma', valor: (t) => t.modalidade ?? '—', nota: (t) => t.origem,
+    filtroSelect: 'modalidade' },
+  { titulo: 'Valor', valor: (t) => dinheiro(t.valor) },
+  { titulo: 'Recebido', valor: (t) => dinheiro(t.recebido) },
+  { titulo: 'Pendente', valor: (t) => dinheiro(t.pendente),
+    filtros: [{ campo: 'f_valor_min', dica: 'de R$' }, { campo: 'f_valor_max', dica: 'até R$' }] },
+];
+
+const COLUNAS_NOTA = [
+  { titulo: 'Vencimento', valor: (t) => dataBR(t.vencimento),
+    nota: (t) => (t.dias_atraso > 0 ? `${numero(t.dias_atraso)} dias de atraso` : 'em dia'),
+    classeNota: (t) => (t.dias_atraso > 0 ? 'atraso' : null) },
+  { titulo: 'Nota / pedido', valor: (t) => (t.nota ? `NF ${t.nota}` : 'sem nota'),
+    nota: (t) => (t.pedido ? `pedido ${t.pedido}` : t.origem),
+    filtros: [{ campo: 'f_nota', dica: 'nota' }, { campo: 'f_pedido', dica: 'pedido' }] },
+  { titulo: 'Devedor', cliente: true,
+    filtros: [{ campo: 'f_cliente', dica: 'nome ou código' }] },
+  { titulo: 'Valor da nota', valor: (t) => dinheiro(t.nota_valor),
+    nota: (t) => (t.nota_parcelas > 1 ? `${numero(t.nota_parcelas)} parcelas` : '1 parcela') },
+  { titulo: 'Pago da nota', valor: (t) => dinheiro(t.nota_recebido),
+    nota: (t) => (t.ultimo_recebimento ? `última baixa ${dataBR(t.ultimo_recebimento)}` : null) },
+  { titulo: 'A pagar da nota', valor: (t) => dinheiro(t.nota_pendente) },
+  { titulo: 'Parcela', valor: (t) => t.titulo ?? '—', nota: (t) => t.modalidade ?? null },
+  { titulo: 'Pago na parcela', valor: (t) => dinheiro(t.recebido) },
+  { titulo: 'Falta na parcela', valor: (t) => dinheiro(t.pendente) },
+];
+
+// A visão da nota entra quando o assunto é baixa parcial
+const colunasAtuais = () =>
+  (abaAtual === 'parciais' || cartaoAtual === 'parcial') ? COLUNAS_NOTA : COLUNAS_TITULO;
+
 function mostrarTitulos({ total, lista }) {
+  const colunas = colunasAtuais();
+  const tabela = el('tabela-titulos');
+
+  const cabecalho = document.createElement('tr');
+  for (const coluna of colunas) {
+    const th = document.createElement('th');
+    th.textContent = coluna.titulo;
+    cabecalho.append(th);
+  }
+  tabela.querySelector('thead').replaceChildren(cabecalho);
+
   const corpo = el('tabela-titulos').querySelector('tbody');
 
   if (lista.length === 0) {
     const linha = document.createElement('tr');
     const td = celula('Nenhum título encontrado com esses filtros.');
-    td.colSpan = 10;
+    td.colSpan = colunas.length;
     linha.append(td);
     corpo.replaceChildren(linha);
   } else {
     corpo.replaceChildren(
       ...lista.map((t) => {
         const linha = document.createElement('tr');
-        linha.append(
-          celula(dataBR(t.vencimento)),
-          celula(t.dias_atraso > 0 ? `${numero(t.dias_atraso)} dias` : 'em dia', t.dias_atraso > 0 ? 'atraso' : null),
-          celula(t.nota ?? '—'),
-          celula(t.pedido ?? '—'),
-          celula(t.titulo ?? '—'),
-          celulaCliente(t),
-          celula(t.modalidade),
-          celula(dinheiro(t.valor)),
-          celula(dinheiro(t.recebido)),
-          celula(dinheiro(t.pendente)),
-        );
+        for (const coluna of colunas) {
+          if (coluna.cliente) {
+            linha.append(celulaCliente(t));
+            continue;
+          }
+          const td = celula(coluna.valor(t), coluna.classe ? coluna.classe(t) : null);
+          const auxiliar = coluna.nota ? coluna.nota(t) : null;
+          if (auxiliar) {
+            const extra = document.createElement('span');
+            extra.className = coluna.classeNota?.(t) ? `origem ${coluna.classeNota(t)}` : 'origem';
+            extra.textContent = auxiliar;
+            td.append(extra);
+          }
+          linha.append(td);
+        }
         return linha;
       }),
     );
@@ -180,7 +439,7 @@ function mostrarTitulos({ total, lista }) {
   const rodape = el('tabela-titulos').querySelector('tfoot');
   const linha = document.createElement('tr');
   const rotulo = celula(`Total do filtro (${numero(total.total)} títulos)`);
-  rotulo.colSpan = 7;
+  rotulo.colSpan = colunas.length - 3; // os três últimos são sempre valores
   linha.append(rotulo, celula(dinheiro(total.valor_original)), celula(dinheiro(total.recebido)), celula(dinheiro(total.pendente)));
   rodape.replaceChildren(linha);
 
@@ -188,6 +447,83 @@ function mostrarTitulos({ total, lista }) {
   el('pagina-atual').textContent = `Página ${pagina} de ${numero(totalPaginas)}`;
   el('anterior').disabled = pagina <= 1;
   el('proxima').disabled = pagina >= totalPaginas;
+}
+
+function mostrarClientes(lista) {
+  const corpo = el('tabela-clientes').querySelector('tbody');
+  corpo.replaceChildren(
+    ...lista.map((c) => {
+      const linha = document.createElement('tr');
+      linha.append(
+        celulaCliente({ cod_cliente: c.cod_cliente, cliente: c.cliente }),
+        celula(numero(c.titulos)),
+        celula(dataBR(c.vencimento_mais_antigo)),
+        celula(c.maior_atraso ? `${numero(c.maior_atraso)} dias` : 'em dia', c.maior_atraso ? 'atraso' : null),
+        celula(dinheiro(c.vencido)),
+        celula(dinheiro(c.pendente)),
+      );
+      return linha;
+    }),
+  );
+}
+
+// Mostra a lista de títulos ou a de clientes, conforme o cartão escolhido
+function trocarVisao(porCliente) {
+  el('bloco-titulos').hidden = porCliente;
+  el('bloco-clientes').hidden = !porCliente;
+}
+
+// Mostra em marcadores tudo que está filtrando a lista, com "x" para remover
+const ROTULOS_FILTRO = {
+  f_nota: 'Nota', f_pedido: 'Pedido', f_titulo: 'Título', f_cliente: 'Devedor',
+  f_valor_min: 'Pendente de R$', f_valor_max: 'Pendente até R$',
+};
+
+function mostrarMarcadores() {
+  const area = el('marcadores');
+  const itens = [];
+
+  for (const [campo, valor] of Object.entries(filtrosColuna)) {
+    itens.push({ texto: `${ROTULOS_FILTRO[campo] ?? campo}: ${valor}`, remover: () => {
+      delete filtrosColuna[campo];
+      const campoTela = el(campo);
+      if (campoTela) campoTela.value = '';
+    } });
+  }
+
+  if (faixaAtual) {
+    itens.push({ texto: `Atraso: ${faixaAtual.replace(/^\d+\.\s*/, '')}`, remover: () => { faixaAtual = null; } });
+  }
+
+  if (cartaoAtual) {
+    const nomes = {
+      aberto: 'Em aberto', vencido: 'Vencidos', a_vencer: 'A vencer', parcial: 'Baixa parcial',
+      quitado: 'Títulos baixados', clientes: 'Por cliente', de_clientes: 'Devido por clientes',
+      adquirentes: 'Devido por adquirentes',
+    };
+    itens.push({ texto: nomes[cartaoAtual] ?? cartaoAtual, remover: () => { cartaoAtual = null; } });
+  }
+
+  area.hidden = itens.length === 0;
+  area.replaceChildren(
+    ...itens.map((item) => {
+      const marcador = document.createElement('button');
+      marcador.type = 'button';
+      marcador.className = 'marcador';
+      marcador.textContent = item.texto;
+      const x = document.createElement('span');
+      x.textContent = '×';
+      x.setAttribute('aria-hidden', 'true');
+      marcador.append(x);
+      marcador.title = 'Remover este filtro';
+      marcador.addEventListener('click', () => {
+        item.remover();
+        pagina = 1;
+        carregar();
+      });
+      return marcador;
+    }),
+  );
 }
 
 // ===== Carregamento =====
@@ -200,16 +536,39 @@ async function carregar() {
 
   try {
     const filtros = filtrosAtuais();
-    const [resumo, faixas, titulos] = await Promise.all([
+    const porCliente = CARTOES[cartaoAtual]?.porCliente === true;
+
+    // Cartões e faixas usam o período, a modalidade e a pesquisa da tela,
+    // mas NÃO o recorte do cartão clicado: senão cada cartão filtraria a si mesmo.
+    const { inicio, fim, modalidade, busca, origem } = filtros;
+    const filtrosDaTela = { inicio, fim, modalidade, busca, origem, devedor: valorCampo('devedor') };
+
+    const [resumo, totais, indicadores, faixas, previsaoSemanas, ranking, dados] = await Promise.all([
       buscar('resumo', filtros),
-      buscar('faixas-atraso', { empresa: filtros.empresa }),
-      buscar('titulos', filtros),
+      buscar('cartoes', filtrosDaTela),
+      buscar('indicadores', filtrosDaTela),
+      buscar('faixas-atraso', filtrosDaTela),
+      buscar('previsao', filtrosDaTela),
+      buscar('clientes', { ...filtrosDaTela, situacao: 'aberto' }),
+      buscar(porCliente ? 'clientes' : 'titulos', filtros),
     ]);
 
+    mostrarMarcadores();
     mostrarResumo(resumo);
+    mostrarCartoes(totais);
+    mostrarIndicadores(indicadores);
     mostrarFaixas(faixas);
-    mostrarTitulos(titulos);
-    mostrarStatus(`${ABAS[abaAtual].titulo} · atualizado às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`);
+    mostrarPrevisao(previsaoSemanas);
+    mostrarRanking(ranking);
+    trocarVisao(porCliente);
+    if (porCliente) mostrarClientes(dados);
+    else mostrarTitulos(dados);
+    const nomeCartao = {
+      aberto: 'todos em aberto', vencido: 'somente vencidos', a_vencer: 'somente a vencer',
+      parcial: 'somente baixa parcial', quitado: 'somente títulos baixados', clientes: 'agrupado por cliente',
+      de_clientes: 'somente o que os clientes devem', adquirentes: 'somente o que as adquirentes devem',
+    }[cartaoAtual];
+    mostrarStatus(`${ABAS[abaAtual].titulo}${nomeCartao ? ` · ${nomeCartao}` : ''} · atualizado às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`);
   } catch (erro) {
     if (erro instanceof ChaveInvalida) {
       chave.apagar();
@@ -372,16 +731,27 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   el('limpar-pesquisa').addEventListener('click', () => {
+    for (const chave of Object.keys(filtrosColuna)) delete filtrosColuna[chave];
     el('pesquisa-termo').value = '';
     el('limpar-pesquisa').hidden = true;
     pagina = 1;
     carregar();
   });
 
+  el('atalhos')?.addEventListener('click', (evento) => {
+    const botao = evento.target.closest('[data-periodo]');
+    if (!botao) return;
+    for (const item of el('atalhos').querySelectorAll('[data-periodo]')) {
+      item.classList.toggle('atalho--ativo', item === botao);
+    }
+    aplicarAtalho(botao.dataset.periodo);
+  });
+
   el('abas').addEventListener('click', (evento) => {
     const botao = evento.target.closest('.aba');
     if (!botao) return;
     abaAtual = botao.dataset.aba;
+    cartaoAtual = null;
     pagina = 1;
     for (const aba of el('abas').querySelectorAll('.aba')) {
       aba.classList.toggle('aba--ativa', aba === botao);
@@ -389,6 +759,62 @@ document.addEventListener('DOMContentLoaded', () => {
     // A modalidade fixa da aba (ex.: boletos) desabilita o seletor
     el('modalidade').disabled = ABAS[abaAtual].modalidade !== null;
     carregar();
+  });
+
+  el('abrir-filtros')?.addEventListener('click', () => {
+    const painel = el('filtros-lista');
+    painel.hidden = !painel.hidden;
+    el('abrir-filtros').setAttribute('aria-expanded', String(!painel.hidden));
+  });
+
+  el('filtros-lista')?.addEventListener('submit', (evento) => {
+    evento.preventDefault();
+    for (const campo of Object.keys(ROTULOS_FILTRO)) {
+      const valor = (valorCampo(campo) ?? '').trim();
+      if (valor === '') delete filtrosColuna[campo];
+      else filtrosColuna[campo] = valor;
+    }
+    pagina = 1;
+    carregar();
+  });
+
+  el('limpar-filtros')?.addEventListener('click', () => {
+    for (const campo of Object.keys(ROTULOS_FILTRO)) {
+      delete filtrosColuna[campo];
+      const campoTela = el(campo);
+      if (campoTela) campoTela.value = '';
+    }
+    faixaAtual = null;
+    pagina = 1;
+    carregar();
+  });
+
+  el('baixar-excel')?.addEventListener('click', async () => {
+    const botao = el('baixar-excel');
+    botao.disabled = true;
+    botao.textContent = 'Gerando…';
+    try {
+      const url = new URL('/financeiro/excel', window.location.origin);
+      for (const [nome, valor] of Object.entries(filtrosAtuais())) {
+        if (valor !== null && valor !== undefined && valor !== '' && nome !== 'pagina' && nome !== 'limite') {
+          url.searchParams.set(nome, valor);
+        }
+      }
+      // Busca com a chave no cabeçalho e salva o arquivo: a chave não aparece na URL
+      const resposta = await fetch(url, { headers: { 'x-api-key': chave.ler() ?? '' } });
+      if (!resposta.ok) throw new Error('Não foi possível gerar a planilha.');
+      const arquivo = await resposta.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(arquivo);
+      link.download = `contas-a-receber-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (erro) {
+      mostrarStatus(erro.message, true);
+    } finally {
+      botao.disabled = false;
+      botao.textContent = 'Baixar Excel';
+    }
   });
 
   el('ficha-fechar').addEventListener('click', () => el('ficha').close());

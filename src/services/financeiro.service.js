@@ -59,15 +59,57 @@ function montarFiltros(query) {
     }
   }
 
+  const DEVEDORES = ['cliente', 'adquirente'];
+  const devedor = query.devedor ?? null;
+  if (devedor !== null && !DEVEDORES.includes(devedor)) {
+    throw new AppError(`"devedor" deve ser: ${DEVEDORES.join(', ')}`);
+  }
+
+  const ORIGENS = ['nota', 'sem_nota'];
+  const origem = query.origem ?? null;
+  if (origem !== null && !ORIGENS.includes(origem)) {
+    throw new AppError(`"origem" deve ser: ${ORIGENS.join(', ')}`);
+  }
+
+  const ATRASOS = ['vencidos', 'a_vencer'];
+  const atraso = query.atraso ?? null;
+  if (atraso !== null && !ATRASOS.includes(atraso)) {
+    throw new AppError(`"atraso" deve ser: ${ATRASOS.join(', ')}`);
+  }
+
+  // Filtros de coluna: texto simples e faixa de valor
+  const texto = (valor, tamanho) => {
+    const limpo = (valor ?? '').trim();
+    if (limpo === '') return null;
+    if (limpo.length > tamanho) throw new AppError(`Filtro muito longo (máximo ${tamanho} caracteres)`);
+    return limpo;
+  };
+
+  const valorDecimal = (valor, nome) => {
+    if (valor === undefined || valor === '') return null;
+    const numero = Number(String(valor).replace(',', '.'));
+    if (!Number.isFinite(numero) || numero < 0) throw new AppError(`"${nome}" deve ser um valor numérico`);
+    return numero;
+  };
+
   const busca = (query.busca ?? '').trim();
 
   return {
     inicio,
     fim,
     situacao,
+    atraso,
+    origem,
+    devedor,
     empresa: numeroOpcional(query.empresa, 'empresa'),
     modalidade: numeroOpcional(query.modalidade, 'modalidade'),
     busca: busca === '' ? null : busca,
+    f_nota: texto(query.f_nota, 20),
+    f_pedido: texto(query.f_pedido, 20),
+    f_titulo: texto(query.f_titulo, 40),
+    f_cliente: texto(query.f_cliente, 80),
+    f_valor_min: valorDecimal(query.f_valor_min, 'f_valor_min'),
+    f_valor_max: valorDecimal(query.f_valor_max, 'f_valor_max'),
     limite,
     pagina,
   };
@@ -76,6 +118,8 @@ function montarFiltros(query) {
 const resumo = (query) => repo.resumo(montarFiltros(query));
 const porFaixaAtraso = (query) => repo.porFaixaAtraso(montarFiltros(query));
 const titulos = (query) => repo.titulos(montarFiltros(query));
+const cartoes = (query) => repo.cartoes(montarFiltros(query));
+const porCliente = (query) => repo.porCliente(montarFiltros(query));
 
 const MESES_PADRAO = 12;
 const MESES_MAXIMO = 60;
@@ -97,4 +141,4 @@ function fichaCliente(query, params) {
   return repo.fichaCliente(entidade, { meses });
 }
 
-module.exports = { resumo, porFaixaAtraso, titulos, fichaCliente };
+module.exports = { resumo, cartoes, porFaixaAtraso, porCliente, titulos, fichaCliente };

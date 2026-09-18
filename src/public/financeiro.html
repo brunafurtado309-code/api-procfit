@@ -20,7 +20,7 @@
     </div>
   </header>
 
-  <main class="conteudo">
+  <main class="conteudo conteudo--largo">
     <!-- Tela de entrada: pede a chave do setor -->
     <form id="form-chave" class="entrada" hidden>
       <h2>Entrar no financeiro</h2>
@@ -54,7 +54,28 @@
             <option value="3">Cheque</option>
           </select>
         </label>
+        <label>Quem deve
+          <select id="devedor">
+            <option value="">Todos</option>
+            <option value="cliente">Clientes</option>
+            <option value="adquirente">Adquirentes (cartão)</option>
+          </select>
+        </label>
+        <label>Origem
+          <select id="origem">
+            <option value="">Todas</option>
+            <option value="nota">Só com nota fiscal</option>
+            <option value="sem_nota">Só sem nota (cartão, manual)</option>
+          </select>
+        </label>
         <button type="submit">Atualizar</button>
+        <div class="atalhos" id="atalhos">
+          <button type="button" class="botao-secundario" data-periodo="tudo">Tudo</button>
+          <button type="button" class="botao-secundario" data-periodo="vencidos">Vencidos</button>
+          <button type="button" class="botao-secundario" data-periodo="mes">Este mês</button>
+          <button type="button" class="botao-secundario" data-periodo="7dias">Próximos 7 dias</button>
+          <button type="button" class="botao-secundario" data-periodo="30dias">Próximos 30 dias</button>
+        </div>
       </form>
 
       <form id="form-pesquisa" class="pesquisa" role="search">
@@ -69,37 +90,76 @@
 
       <p id="status" class="status" role="status" aria-live="polite"></p>
 
-      <section class="destaque" aria-labelledby="titulo-pendente">
-        <h2 id="titulo-pendente">Total a receber</h2>
-        <p id="total-pendente" class="valor-grande">—</p>
-        <p id="resumo-linha" class="explica"></p>
+      <section class="destaque painel-topo" aria-labelledby="titulo-pendente">
+        <div>
+          <h2 id="titulo-pendente">Total a receber</h2>
+          <p id="total-pendente" class="valor-grande">—</p>
+          <p id="resumo-linha" class="explica"></p>
+        </div>
+        <dl class="indicadores" id="indicadores"></dl>
       </section>
 
       <section class="cartoes" id="cartoes" aria-label="Situação do que está a receber"></section>
 
-      <section class="bloco" aria-labelledby="titulo-faixas">
-        <h2 id="titulo-faixas">Por tempo de atraso</h2>
+      <div class="duas-colunas">
+        <section class="bloco" aria-labelledby="titulo-faixas">
+          <h2 id="titulo-faixas">Por tempo de atraso</h2>
+          <p class="explica">Clique numa faixa para filtrar a lista.</p>
+          <div id="grafico-faixas" class="barras"></div>
+        </section>
+
+        <section class="bloco" aria-labelledby="titulo-ranking">
+          <h2 id="titulo-ranking">Maiores devedores</h2>
+          <p class="explica">Clique no nome para abrir a ficha.</p>
+          <div id="ranking" class="barras"></div>
+        </section>
+      </div>
+
+      <section class="bloco" aria-labelledby="titulo-previsao">
+        <h2 id="titulo-previsao">Previsão de recebimento</h2>
+        <p class="explica">O que vence nas próximas semanas, pelos títulos em aberto.</p>
+        <div id="previsao" class="barras barras--previsao"></div>
+      </section>
+
+      <section class="bloco" id="bloco-clientes" aria-labelledby="titulo-clientes" hidden>
+        <h2 id="titulo-clientes">Clientes com valor em aberto</h2>
         <div class="tabela-rolagem">
-          <table class="tabela" id="tabela-faixas">
+          <table class="tabela" id="tabela-clientes">
             <thead>
-              <tr><th>Faixa</th><th>Títulos</th><th>Clientes</th><th>Pendente</th></tr>
+              <tr><th>Devedor</th><th>Títulos</th><th>Vencimento mais antigo</th>
+                  <th>Maior atraso</th><th>Vencido</th><th>Pendente</th></tr>
             </thead>
             <tbody></tbody>
           </table>
         </div>
       </section>
 
-      <section class="bloco" aria-labelledby="titulo-lista">
-        <h2 id="titulo-lista">Títulos</h2>
+      <section class="bloco" id="bloco-titulos" aria-labelledby="titulo-lista">
+        <div class="bloco-topo">
+          <h2 id="titulo-lista">Títulos</h2>
+          <div class="bloco-acoes">
+            <button id="abrir-filtros" type="button" class="botao-secundario" aria-expanded="false">Filtrar</button>
+            <button id="baixar-excel" type="button" class="botao-secundario">Baixar Excel</button>
+          </div>
+        </div>
+
+        <div id="marcadores" class="marcadores" hidden></div>
+
+        <form id="filtros-lista" class="filtros-lista" hidden>
+          <label>Nota<input id="f_nota" type="search" inputmode="numeric" placeholder="ex.: 8513"></label>
+          <label>Pedido<input id="f_pedido" type="search" inputmode="numeric" placeholder="ex.: 12558"></label>
+          <label>Título<input id="f_titulo" type="search" placeholder="ex.: 8513/1"></label>
+          <label>Devedor<input id="f_cliente" type="search" placeholder="nome ou código"></label>
+          <label>Pendente de<input id="f_valor_min" type="search" inputmode="decimal" placeholder="R$ mínimo"></label>
+          <label>Pendente até<input id="f_valor_max" type="search" inputmode="decimal" placeholder="R$ máximo"></label>
+          <div class="filtros-lista-acoes">
+            <button type="submit">Aplicar</button>
+            <button id="limpar-filtros" type="button" class="botao-secundario">Limpar</button>
+          </div>
+        </form>
         <div class="tabela-rolagem">
           <table class="tabela" id="tabela-titulos">
-            <thead>
-              <tr>
-                <th>Vencimento</th><th>Atraso</th><th>Nota</th><th>Pedido</th>
-                <th>Título</th><th>Cliente</th><th>Modalidade</th>
-                <th>Valor</th><th>Recebido</th><th>Pendente</th>
-              </tr>
-            </thead>
+            <thead></thead>
             <tbody></tbody>
             <tfoot></tfoot>
           </table>

@@ -762,20 +762,53 @@ select:focus { background: var(--superficie); border-color: var(--verde-medio); 
   color: #FFFFFF;
 }
 
-/* Nome do cliente clicável na lista do financeiro */
-.link-cliente {
-  border: none;
+/* Nome do cliente clicável na lista do financeiro.
+   Precisa vencer o estilo global de "button" (verde e arredondado). */
+.link-cliente,
+.link-cliente:hover,
+.link-cliente:focus,
+.link-cliente:active {
+  border: 0;
   background: none;
+  border-radius: 0;
   padding: 0;
   font: inherit;
+  font-weight: 500;
   color: var(--verde);
   text-align: left;
+  white-space: normal;
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
-.link-cliente:hover { color: var(--verde-escuro); }
+.link-cliente:hover { color: var(--verde-escuro); text-decoration-thickness: 2px; }
+.link-cliente:focus-visible { outline: 2px solid var(--verde); outline-offset: 2px; }
+
+/* Lista do financeiro: uma linha por título, com espaço para o nome do cliente */
+#tabela-titulos td,
+#tabela-titulos th,
+#tabela-clientes td,
+#tabela-clientes th { white-space: nowrap; }
+
+/* Nome do devedor: uma linha só, com reticências quando não couber */
+#tabela-titulos td.esquerda,
+#tabela-clientes td:first-child { min-width: 18rem; max-width: 24rem; }
+
+#tabela-titulos .link-cliente,
+#tabela-clientes .link-cliente {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Números alinhados pela casa decimal, para a coluna ficar reta */
+#tabela-titulos td,
+#tabela-clientes td { font-variant-numeric: tabular-nums; }
+
+.atraso { white-space: nowrap; }
 
 /* Ficha do cliente: rolagem e respiro nas seções */
 .ficha-corpo {
@@ -789,3 +822,266 @@ select:focus { background: var(--superficie); border-color: var(--verde-medio); 
 }
 
 .ficha-corpo .cartoes { margin-bottom: 0.5rem; }
+
+/* Cartões do financeiro viram filtros */
+button.cartao {
+  border: 2px solid transparent;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+button.cartao:hover { border-color: var(--verde-claro); transform: translateY(-1px); }
+
+.cartao--ativo {
+  border-color: var(--verde);
+  background: var(--verde-suave);
+}
+
+/* ===== Ajustes da tela do financeiro ===== */
+
+/* O financeiro tem tabelas largas: usa mais espaço da tela */
+.conteudo--largo { max-width: min(1600px, 96vw); }
+
+/* Linha auxiliar dentro da célula (ex.: "3 parcelas" abaixo do valor da nota) */
+#tabela-titulos .origem,
+#tabela-clientes .origem {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--tinta-suave);
+  white-space: nowrap;
+}
+
+/* Cabeçalho fixo: as colunas continuam visíveis ao rolar a lista */
+#bloco-titulos .tabela-rolagem,
+#bloco-clientes .tabela-rolagem {
+  max-height: 32rem;
+  overflow-y: auto;
+}
+
+#tabela-titulos thead th,
+#tabela-clientes thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+/* Atalhos de período, ao lado dos campos de data */
+.atalhos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.atalhos button { padding: 0.5rem 0.9rem; font-size: 0.85rem; }
+
+.atalho--ativo {
+  background: var(--verde);
+  color: #fff;
+}
+.atalho--ativo:hover { background: var(--verde-escuro); color: #fff; }
+
+/* Marca embaixo do nome: diz se quem deve é o cliente ou a adquirente do cartão */
+.marca {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--tinta-suave);
+  white-space: normal;
+}
+
+.marca--adquirente { color: var(--acai); }
+
+
+
+/* ===== Topo do financeiro: total + indicadores ===== */
+.painel-topo {
+  display: grid;
+  grid-template-columns: minmax(18rem, 1fr) minmax(18rem, 1.2fr);
+  gap: 1.5rem 2rem;
+  align-items: center;
+}
+
+.indicadores {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: 0.9rem 1.25rem;
+  margin: 0;
+}
+
+.indicadores dt {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--tinta-suave);
+}
+
+.indicadores dd {
+  margin: 0.1rem 0 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.indicadores dd span {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--tinta-suave);
+}
+
+/* ===== Blocos lado a lado ===== */
+.duas-colunas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(26rem, 1fr));
+  gap: 1.25rem;
+}
+
+.bloco-topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.bloco-topo h2 { margin: 0; }
+
+/* ===== Barras (atraso, ranking e previsão) ===== */
+.barras {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.9rem;
+}
+
+.barra {
+  display: grid;
+  grid-template-columns: minmax(7rem, 11rem) 1fr minmax(7.5rem, auto);
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 0;
+  border-radius: var(--raio);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.barra { cursor: pointer; }
+button.barra:hover { background: var(--verde-suave); }
+.barra--ativa { background: var(--verde-suave); box-shadow: inset 3px 0 0 var(--verde); }
+
+.barra-rotulo {
+  font-size: 0.85rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barra-trilho {
+  height: 0.7rem;
+  border-radius: 999px;
+  background: var(--verde-suave);
+  overflow: hidden;
+}
+
+.barra-preenchida {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--verde-medio);
+}
+
+.barra--atraso .barra-preenchida { background: var(--alerta); }
+.barra--previsao .barra-preenchida { background: var(--acai); }
+
+.barra-valor {
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.barra-valor small {
+  display: block;
+  font-size: 0.73rem;
+  font-weight: 400;
+  color: var(--tinta-suave);
+}
+
+@media (max-width: 720px) {
+  .painel-topo { grid-template-columns: 1fr; }
+  .barra { grid-template-columns: 1fr auto; }
+  .barra-trilho { grid-column: 1 / -1; }
+}
+
+/* ===== Painel de filtros da lista ===== */
+.bloco-acoes { display: flex; gap: 0.5rem; }
+
+.filtros-lista {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.9rem 1rem;
+  align-items: end;
+  margin-top: 1rem;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--linha);
+  border-radius: var(--raio-cartao);
+  background: var(--verde-suave);
+}
+
+.filtros-lista label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--tinta-suave);
+}
+
+.filtros-lista input {
+  padding: 0.5rem 0.7rem;
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: var(--tinta);
+  border: 1px solid var(--linha);
+  border-radius: var(--raio);
+  background: var(--superficie);
+}
+
+.filtros-lista input:focus { outline: 2px solid var(--verde); outline-offset: 1px; }
+
+.filtros-lista-acoes { display: flex; gap: 0.5rem; }
+.filtros-lista-acoes button { padding: 0.5rem 1.1rem; font-size: 0.9rem; }
+
+/* Marcadores do que está filtrando */
+.marcadores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.9rem;
+}
+
+.marcador {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1px solid var(--verde-claro);
+  background: var(--verde-suave);
+  color: var(--verde);
+  cursor: pointer;
+}
+
+.marcador:hover { background: var(--verde-claro); color: var(--verde-escuro); }
+.marcador span { font-size: 1rem; line-height: 1; opacity: 0.7; }
