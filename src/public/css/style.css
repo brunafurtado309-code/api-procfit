@@ -974,8 +974,8 @@ button.cartao:hover { border-color: var(--verde-claro); transform: translateY(-1
 
 .barra {
   display: grid;
-  grid-template-columns: minmax(7rem, 11rem) 1fr minmax(7.5rem, auto);
-  align-items: center;
+  grid-template-columns: minmax(7rem, 15rem) 1fr minmax(7.5rem, auto);
+  align-items: start;
   gap: 0.75rem;
   width: 100%;
   padding: 0.5rem 0.6rem;
@@ -992,6 +992,7 @@ button.barra:hover { background: var(--verde-suave); }
 .barra--ativa { background: var(--verde-suave); box-shadow: inset 3px 0 0 var(--verde); }
 
 .barra-rotulo {
+  padding-top: 0.1rem;
   font-size: 0.85rem;
   font-weight: 600;
   overflow: hidden;
@@ -1000,6 +1001,7 @@ button.barra:hover { background: var(--verde-suave); }
 }
 
 .barra-trilho {
+  margin-top: 0.35rem;
   height: 0.7rem;
   border-radius: 999px;
   background: var(--verde-suave);
@@ -1014,7 +1016,7 @@ button.barra:hover { background: var(--verde-suave); }
 }
 
 .barra--atraso .barra-preenchida { background: var(--alerta); }
-.barra--previsao .barra-preenchida { background: var(--acai); }
+.barra--previsao .barra-preenchida { background: var(--verde); }
 
 .barra-valor {
   text-align: right;
