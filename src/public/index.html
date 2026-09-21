@@ -32,23 +32,38 @@
 
     <!-- Painel -->
     <div id="painel" hidden>
-      <form id="filtros" class="filtros">
-        <label>De <input type="date" id="inicio" required></label>
-        <label>Até <input type="date" id="fim" required></label>
-        <button type="submit">Atualizar</button>
-        <button id="baixar-painel" type="button" class="botao-secundario">Baixar Excel</button>
-      </form>
+      <!-- Barra de filtros (padrão de todas as telas, ver DESIGN.md):
+           linha 1 = pesquisa + ações; linha 2 = período e filtros; depois o status -->
+      <section class="barra-filtros" aria-label="Filtros">
+        <div class="barra-filtros__linha">
+          <form id="form-pesquisa" class="pesquisa" role="search">
+            <label class="campo campo--busca">
+              <span class="sr-only">Encontrar nota ou cupom no período</span>
+              <input id="pesquisa-termo" type="search" maxlength="60" autocomplete="off"
+                     placeholder="Encontrar nota, cupom, pedido, cliente, CNPJ/CPF ou código">
+            </label>
+            <button type="submit">Pesquisar</button>
+          </form>
+          <div class="barra-filtros__acoes">
+            <button id="baixar-painel" type="button" class="botao-secundario">Baixar Excel</button>
+          </div>
+        </div>
 
-      <form id="form-pesquisa" class="pesquisa" role="search">
-        <label class="campo campo--busca">
-          <span>Encontrar nota ou cupom no período</span>
-          <input id="pesquisa-termo" type="search" maxlength="60" autocomplete="off"
-                 placeholder="Nº da nota, cupom ou pedido, cliente, CNPJ/CPF ou código do cliente">
-        </label>
-        <button type="submit">Pesquisar</button>
-      </form>
+        <form id="filtros" class="filtros">
+          <label>De <input type="date" id="inicio" required></label>
+          <label>Até <input type="date" id="fim" required></label>
+          <div class="atalhos" id="atalhos" aria-label="Períodos prontos">
+            <button type="button" class="botao-secundario" data-periodo="hoje">Hoje</button>
+            <button type="button" class="botao-secundario" data-periodo="ontem">Ontem</button>
+            <button type="button" class="botao-secundario" data-periodo="7dias">Últimos 7 dias</button>
+            <button type="button" class="botao-secundario atalho--ativo" data-periodo="mes">Este mês</button>
+            <button type="button" class="botao-secundario" data-periodo="mes-passado">Mês passado</button>
+          </div>
+          <button type="submit" class="filtros__aplicar">Atualizar</button>
+        </form>
 
-      <p id="status" class="status" role="status" aria-live="polite"></p>
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+      </section>
 
       <section class="destaque" aria-labelledby="titulo-liquida">
         <h2 id="titulo-liquida">Venda líquida no período</h2>

@@ -3,8 +3,10 @@
 
 const ExcelJS = require('exceljs');
 
-const COR_ACAI = 'FF5B1F6B';
-const COR_SUAVE = 'FF6E5D76';
+// Cores do padrão visual (DESIGN.md): verde principal e texto suave
+const COR_VERDE = 'FF1E7A4C';
+const COR_VERDE_ESCURO = 'FF0F3D27';
+const COR_SUAVE = 'FF56675C';
 
 const FORMATOS = {
   moeda: '"R$" #,##0.00;[Red]-"R$" #,##0.00',
@@ -43,7 +45,7 @@ function novaPlanilha() {
 
 function escreverTitulo(ws, titulo, subtitulo) {
   ws.getCell('A1').value = titulo;
-  ws.getCell('A1').font = { bold: true, size: 14, color: { argb: COR_ACAI } };
+  ws.getCell('A1').font = { bold: true, size: 14, color: { argb: COR_VERDE_ESCURO } };
   if (subtitulo) {
     ws.getCell('A2').value = subtitulo;
     ws.getCell('A2').font = { color: { argb: COR_SUAVE } };
@@ -67,7 +69,7 @@ function adicionarTabela(workbook, nomeAba, { titulo, subtitulo, colunas, linhas
     const cell = cabecalho.getCell(i + 1);
     cell.value = c.titulo;
     cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_ACAI } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_VERDE } };
     cell.alignment = {
       vertical: 'middle',
       wrapText: true,
@@ -97,7 +99,7 @@ function adicionarTabela(workbook, nomeAba, { titulo, subtitulo, colunas, linhas
     colunas.forEach((c, i) => {
       const cell = row.getCell(i + 1);
       cell.font = { bold: true };
-      cell.border = { top: { style: 'medium', color: { argb: COR_ACAI } } };
+      cell.border = { top: { style: 'medium', color: { argb: COR_VERDE } } };
       if (!c.somar) return;
       const letra = ws.getColumn(i + 1).letter;
       const soma = linhas.reduce((s, l) => s + (Number(c.valor ? c.valor(l) : l[c.chave]) || 0), 0);

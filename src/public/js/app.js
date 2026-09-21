@@ -1054,6 +1054,28 @@ async function carregar({ automatico = false } = {}) {
   }
 }
 
+// ===== Períodos prontos (atalhos ao lado das datas) =====
+function periodoPronto(nome) {
+  const hoje = new Date();
+  const diasAtras = (dias) => new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - dias);
+  const periodos = {
+    hoje: [hoje, hoje],
+    ontem: [diasAtras(1), diasAtras(1)],
+    '7dias': [diasAtras(6), hoje],
+    mes: [new Date(hoje.getFullYear(), hoje.getMonth(), 1), hoje],
+    'mes-passado': [new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1), new Date(hoje.getFullYear(), hoje.getMonth(), 0)],
+  };
+  const escolhido = periodos[nome];
+  return escolhido ? { inicio: formatarData(escolhido[0]), fim: formatarData(escolhido[1]) } : null;
+}
+
+// Deixa marcado só o atalho escolhido (null = nenhum, quando a data foi digitada à mão)
+function marcarAtalho(ativo) {
+  for (const item of document.querySelectorAll('#atalhos [data-periodo]')) {
+    item.classList.toggle('atalho--ativo', item === ativo);
+  }
+}
+
 // ===== Início =====
 document.addEventListener('DOMContentLoaded', () => {
   const hoje = new Date();
@@ -1071,6 +1093,20 @@ document.addEventListener('DOMContentLoaded', () => {
     evento.preventDefault();
     carregar();
   });
+
+  // Atalho de período: preenche De/Até e já atualiza a tela
+  el('atalhos').addEventListener('click', (evento) => {
+    const botao = evento.target.closest('[data-periodo]');
+    const periodo = botao && periodoPronto(botao.dataset.periodo);
+    if (!periodo) return;
+    el('inicio').value = periodo.inicio;
+    el('fim').value = periodo.fim;
+    marcarAtalho(botao);
+    el('filtros').requestSubmit();
+  });
+  for (const id of ['inicio', 'fim']) {
+    el(id).addEventListener('input', () => marcarAtalho(null));
+  }
 
   el('detalhe-fechar').addEventListener('click', () => el('detalhe').close());
   // Ao fechar a janela (botão ou Esc), faz a atualização que ficou esperando

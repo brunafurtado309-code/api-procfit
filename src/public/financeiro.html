@@ -38,57 +38,84 @@
         <button class="aba" type="button" data-aba="cobranca">Cobrança</button>
       </nav>
 
-      <form id="filtros" class="filtros">
-        <label>Vencimento de <input type="date" id="inicio"></label>
-        <label>até <input type="date" id="fim"></label>
-        <label>Modalidade
-          <select id="modalidade">
-            <option value="">Todas</option>
-            <option value="1">Boleto</option>
-            <option value="0">Carteira</option>
-            <option value="6">Cartão crédito</option>
-            <option value="12">Cartão débito</option>
-            <option value="11">PIX</option>
-            <option value="4">Dinheiro</option>
-            <option value="2">Depósito</option>
-            <option value="3">Cheque</option>
-          </select>
-        </label>
-        <label>Quem deve
-          <select id="devedor">
-            <option value="">Todos</option>
-            <option value="cliente">Clientes</option>
-            <option value="adquirente">Adquirentes (cartão)</option>
-          </select>
-        </label>
-        <label>Origem
-          <select id="origem">
-            <option value="">Todas</option>
-            <option value="nota">Só com nota fiscal</option>
-            <option value="sem_nota">Só sem nota (cartão, manual)</option>
-          </select>
-        </label>
-        <button type="submit">Atualizar</button>
-        <div class="atalhos" id="atalhos">
-          <button type="button" class="botao-secundario" data-periodo="tudo">Tudo</button>
-          <button type="button" class="botao-secundario" data-periodo="vencidos">Vencidos</button>
-          <button type="button" class="botao-secundario" data-periodo="mes">Este mês</button>
-          <button type="button" class="botao-secundario" data-periodo="7dias">Próximos 7 dias</button>
-          <button type="button" class="botao-secundario" data-periodo="30dias">Próximos 30 dias</button>
+      <!-- Barra de filtros (padrão de todas as telas, ver DESIGN.md):
+           linha 1 = pesquisa + ações; linha 2 = período;
+           painel "Mais filtros" (forma, devedor, origem e colunas); marcadores; status -->
+      <section class="barra-filtros" aria-label="Filtros">
+        <div class="barra-filtros__linha">
+          <form id="form-pesquisa" class="pesquisa" role="search">
+            <label class="campo campo--busca">
+              <span class="sr-only">Encontrar título, nota, pedido ou cliente</span>
+              <input id="pesquisa-termo" type="search" maxlength="60" autocomplete="off"
+                     placeholder="Encontrar título, nota, pedido, código ou nome do cliente">
+            </label>
+            <button type="submit">Pesquisar</button>
+            <button id="limpar-pesquisa" type="button" class="botao-secundario" hidden>Limpar</button>
+          </form>
+          <div class="barra-filtros__acoes">
+            <button id="abrir-filtros" type="button" class="botao-secundario" aria-expanded="false"
+                    aria-controls="filtros-lista">Mais filtros</button>
+            <button id="baixar-excel" type="button" class="botao-secundario">Baixar Excel</button>
+          </div>
         </div>
-      </form>
 
-      <form id="form-pesquisa" class="pesquisa" role="search">
-        <label class="campo campo--busca">
-          <span>Encontrar título, nota, pedido ou cliente</span>
-          <input id="pesquisa-termo" type="search" maxlength="60" autocomplete="off"
-                 placeholder="Nº da nota, pedido, título, código ou nome do cliente">
-        </label>
-        <button type="submit">Pesquisar</button>
-        <button id="limpar-pesquisa" type="button" class="botao-secundario" hidden>Limpar</button>
-      </form>
+        <form id="filtros" class="filtros">
+          <label>Vencimento de <input type="date" id="inicio"></label>
+          <label>até <input type="date" id="fim"></label>
+          <div class="atalhos" id="atalhos" aria-label="Períodos prontos">
+            <button type="button" class="botao-secundario" data-periodo="tudo">Tudo</button>
+            <button type="button" class="botao-secundario" data-periodo="vencidos">Vencidos</button>
+            <button type="button" class="botao-secundario" data-periodo="mes">Este mês</button>
+            <button type="button" class="botao-secundario" data-periodo="7dias">Próximos 7 dias</button>
+            <button type="button" class="botao-secundario" data-periodo="30dias">Próximos 30 dias</button>
+          </div>
+          <button type="submit" class="filtros__aplicar">Atualizar</button>
+        </form>
 
-      <p id="status" class="status" role="status" aria-live="polite"></p>
+        <form id="filtros-lista" class="filtros-lista" hidden>
+          <label>Forma
+            <select id="modalidade">
+              <option value="">Todas</option>
+              <option value="1">Boleto</option>
+              <option value="0">Carteira</option>
+              <option value="6">Cartão crédito</option>
+              <option value="12">Cartão débito</option>
+              <option value="11">PIX</option>
+              <option value="4">Dinheiro</option>
+              <option value="2">Depósito</option>
+              <option value="3">Cheque</option>
+            </select>
+          </label>
+          <label>Quem deve
+            <select id="devedor">
+              <option value="">Todos</option>
+              <option value="cliente">Clientes</option>
+              <option value="adquirente">Adquirentes (cartão)</option>
+            </select>
+          </label>
+          <label>Origem
+            <select id="origem">
+              <option value="">Todas</option>
+              <option value="nota">Só com nota fiscal</option>
+              <option value="sem_nota">Só sem nota (cartão, manual)</option>
+            </select>
+          </label>
+          <label>Nota<input id="f_nota" type="search" inputmode="numeric" placeholder="ex.: 8513"></label>
+          <label>Pedido<input id="f_pedido" type="search" inputmode="numeric" placeholder="ex.: 12558"></label>
+          <label>Título<input id="f_titulo" type="search" placeholder="ex.: 8513/1"></label>
+          <label>Devedor<input id="f_cliente" type="search" placeholder="nome ou código"></label>
+          <label>Pendente de<input id="f_valor_min" type="search" inputmode="decimal" placeholder="R$ mínimo"></label>
+          <label>Pendente até<input id="f_valor_max" type="search" inputmode="decimal" placeholder="R$ máximo"></label>
+          <div class="filtros-lista-acoes">
+            <button type="submit">Aplicar</button>
+            <button id="limpar-filtros" type="button" class="botao-secundario">Limpar</button>
+          </div>
+        </form>
+
+        <div id="marcadores" class="marcadores" hidden></div>
+
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+      </section>
 
       <section class="destaque painel-topo" aria-labelledby="titulo-pendente">
         <div>
@@ -135,28 +162,7 @@
       </section>
 
       <section class="bloco" id="bloco-titulos" aria-labelledby="titulo-lista">
-        <div class="bloco-topo">
-          <h2 id="titulo-lista">Títulos</h2>
-          <div class="bloco-acoes">
-            <button id="abrir-filtros" type="button" class="botao-secundario" aria-expanded="false">Filtrar</button>
-            <button id="baixar-excel" type="button" class="botao-secundario">Baixar Excel</button>
-          </div>
-        </div>
-
-        <div id="marcadores" class="marcadores" hidden></div>
-
-        <form id="filtros-lista" class="filtros-lista" hidden>
-          <label>Nota<input id="f_nota" type="search" inputmode="numeric" placeholder="ex.: 8513"></label>
-          <label>Pedido<input id="f_pedido" type="search" inputmode="numeric" placeholder="ex.: 12558"></label>
-          <label>Título<input id="f_titulo" type="search" placeholder="ex.: 8513/1"></label>
-          <label>Devedor<input id="f_cliente" type="search" placeholder="nome ou código"></label>
-          <label>Pendente de<input id="f_valor_min" type="search" inputmode="decimal" placeholder="R$ mínimo"></label>
-          <label>Pendente até<input id="f_valor_max" type="search" inputmode="decimal" placeholder="R$ máximo"></label>
-          <div class="filtros-lista-acoes">
-            <button type="submit">Aplicar</button>
-            <button id="limpar-filtros" type="button" class="botao-secundario">Limpar</button>
-          </div>
-        </form>
+        <h2 id="titulo-lista">Títulos</h2>
         <div class="tabela-rolagem">
           <table class="tabela" id="tabela-titulos">
             <thead></thead>

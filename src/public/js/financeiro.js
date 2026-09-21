@@ -62,6 +62,8 @@ const filtrosColuna = {};
 let faixaAtual = null;
 let pagina = 1;
 let totalPaginas = 1;
+// Ordem da lista ao clicar no nome da coluna. null = ordem padrão (vencimento)
+let ordem = null; // ex.: { coluna: 'devedor', direcao: 'asc' }
 const LIMITE = 50;
 
 // Cada cartão é um recorte dos títulos
@@ -93,6 +95,7 @@ function filtrosAtuais() {
     busca: (valorCampo('pesquisa-termo') ?? '').trim() || null,
     ...filtrosColuna,
     ...faixaEmFiltro(),
+    ...(ordem ? { ordem: ordem.coluna, direcao: ordem.direcao } : {}),
     limite: LIMITE,
     pagina,
   };
@@ -350,46 +353,79 @@ function celula(texto, classe = null) {
 // Colunas da lista. A visão de baixa parcial mostra os valores da NOTA
 // (soma das parcelas), além dos valores da parcela em si.
 const COLUNAS_TITULO = [
-  { titulo: 'Vencimento', valor: (t) => dataBR(t.vencimento),
+  { titulo: 'Vencimento', ordem: 'vencimento', valor: (t) => dataBR(t.vencimento),
     nota: (t) => (t.dias_atraso > 0 ? `${numero(t.dias_atraso)} dias de atraso` : 'em dia'),
     classeNota: (t) => (t.dias_atraso > 0 ? 'atraso' : null) },
-  { titulo: 'Nota / pedido', valor: (t) => (t.nota ? `NF ${t.nota}` : 'sem nota'),
+  { titulo: 'Nota / pedido', ordem: 'nota', valor: (t) => (t.nota ? `NF ${t.nota}` : 'sem nota'),
     nota: (t) => (t.pedido ? `pedido ${t.pedido}` : t.origem),
     filtros: [{ campo: 'f_nota', dica: 'nota' }, { campo: 'f_pedido', dica: 'pedido' }] },
-  { titulo: 'Título', valor: (t) => t.titulo ?? '—',
+  { titulo: 'Título', ordem: 'titulo', valor: (t) => t.titulo ?? '—',
     filtros: [{ campo: 'f_titulo', dica: 'título' }] },
-  { titulo: 'Devedor', cliente: true,
+  { titulo: 'Devedor', ordem: 'devedor', cliente: true,
     filtros: [{ campo: 'f_cliente', dica: 'nome ou código' }] },
-  { titulo: 'Forma', valor: (t) => t.modalidade ?? '—', nota: (t) => t.origem,
+  { titulo: 'Forma', ordem: 'forma', valor: (t) => t.modalidade ?? '—', nota: (t) => t.origem,
     filtroSelect: 'modalidade' },
-  { titulo: 'Valor', valor: (t) => dinheiro(t.valor) },
-  { titulo: 'Recebido', valor: (t) => dinheiro(t.recebido) },
-  { titulo: 'Pendente', valor: (t) => dinheiro(t.pendente),
+  { titulo: 'Valor', ordem: 'valor', valor: (t) => dinheiro(t.valor) },
+  { titulo: 'Recebido', ordem: 'recebido', valor: (t) => dinheiro(t.recebido) },
+  { titulo: 'Pendente', ordem: 'pendente', valor: (t) => dinheiro(t.pendente),
     filtros: [{ campo: 'f_valor_min', dica: 'de R$' }, { campo: 'f_valor_max', dica: 'até R$' }] },
 ];
 
 const COLUNAS_NOTA = [
-  { titulo: 'Vencimento', valor: (t) => dataBR(t.vencimento),
+  { titulo: 'Vencimento', ordem: 'vencimento', valor: (t) => dataBR(t.vencimento),
     nota: (t) => (t.dias_atraso > 0 ? `${numero(t.dias_atraso)} dias de atraso` : 'em dia'),
     classeNota: (t) => (t.dias_atraso > 0 ? 'atraso' : null) },
-  { titulo: 'Nota / pedido', valor: (t) => (t.nota ? `NF ${t.nota}` : 'sem nota'),
+  { titulo: 'Nota / pedido', ordem: 'nota', valor: (t) => (t.nota ? `NF ${t.nota}` : 'sem nota'),
     nota: (t) => (t.pedido ? `pedido ${t.pedido}` : t.origem),
     filtros: [{ campo: 'f_nota', dica: 'nota' }, { campo: 'f_pedido', dica: 'pedido' }] },
-  { titulo: 'Devedor', cliente: true,
+  { titulo: 'Devedor', ordem: 'devedor', cliente: true,
     filtros: [{ campo: 'f_cliente', dica: 'nome ou código' }] },
-  { titulo: 'Valor da nota', valor: (t) => dinheiro(t.nota_valor),
+  { titulo: 'Valor da nota', ordem: 'nota_valor', valor: (t) => dinheiro(t.nota_valor),
     nota: (t) => (t.nota_parcelas > 1 ? `${numero(t.nota_parcelas)} parcelas` : '1 parcela') },
-  { titulo: 'Pago da nota', valor: (t) => dinheiro(t.nota_recebido),
+  { titulo: 'Pago da nota', ordem: 'nota_recebido', valor: (t) => dinheiro(t.nota_recebido),
     nota: (t) => (t.ultimo_recebimento ? `última baixa ${dataBR(t.ultimo_recebimento)}` : null) },
-  { titulo: 'A pagar da nota', valor: (t) => dinheiro(t.nota_pendente) },
-  { titulo: 'Parcela', valor: (t) => t.titulo ?? '—', nota: (t) => t.modalidade ?? null },
-  { titulo: 'Pago na parcela', valor: (t) => dinheiro(t.recebido) },
-  { titulo: 'Falta na parcela', valor: (t) => dinheiro(t.pendente) },
+  { titulo: 'A pagar da nota', ordem: 'nota_pendente', valor: (t) => dinheiro(t.nota_pendente) },
+  { titulo: 'Parcela', ordem: 'titulo', valor: (t) => t.titulo ?? '—', nota: (t) => t.modalidade ?? null },
+  { titulo: 'Pago na parcela', ordem: 'recebido', valor: (t) => dinheiro(t.recebido) },
+  { titulo: 'Falta na parcela', ordem: 'pendente', valor: (t) => dinheiro(t.pendente) },
 ];
 
 // A visão da nota entra quando o assunto é baixa parcial
 const colunasAtuais = () =>
   (abaAtual === 'parciais' || cartaoAtual === 'parcial') ? COLUNAS_NOTA : COLUNAS_TITULO;
+
+// Nome da coluna clicável: 1º clique = crescente (A→Z, menor→maior), 2º = decrescente
+function cabecalhoOrdenavel(coluna) {
+  const th = document.createElement('th');
+  th.scope = 'col';
+  if (coluna.cliente) th.className = 'esquerda';
+  if (!coluna.ordem) {
+    th.textContent = coluna.titulo;
+    return th;
+  }
+
+  const ativa = ordem?.coluna === coluna.ordem;
+  const crescente = !ativa || ordem.direcao === 'asc';
+  if (ativa) th.setAttribute('aria-sort', crescente ? 'ascending' : 'descending');
+
+  const botao = document.createElement('button');
+  botao.type = 'button';
+  botao.className = ativa ? 'ordenar ordenar--ativo' : 'ordenar';
+  botao.title = ativa && crescente ? 'Clique para inverter a ordem' : 'Clique para ordenar';
+  const seta = document.createElement('span');
+  seta.className = 'ordenar__seta';
+  seta.setAttribute('aria-hidden', 'true');
+  seta.textContent = ativa ? (crescente ? '▲' : '▼') : '↕';
+  botao.append(coluna.titulo, seta);
+
+  botao.addEventListener('click', () => {
+    ordem = { coluna: coluna.ordem, direcao: ativa && crescente ? 'desc' : 'asc' };
+    pagina = 1;
+    carregar();
+  });
+  th.append(botao);
+  return th;
+}
 
 function mostrarTitulos({ total, lista }) {
   const colunas = colunasAtuais();
@@ -397,9 +433,7 @@ function mostrarTitulos({ total, lista }) {
 
   const cabecalho = document.createElement('tr');
   for (const coluna of colunas) {
-    const th = document.createElement('th');
-    th.textContent = coluna.titulo;
-    cabecalho.append(th);
+    cabecalho.append(cabecalhoOrdenavel(coluna));
   }
   tabela.querySelector('thead').replaceChildren(cabecalho);
 
@@ -490,6 +524,18 @@ function mostrarMarcadores() {
       if (campoTela) campoTela.value = '';
     } });
   }
+
+  // Seletores do painel "Mais filtros" (forma, quem deve, origem)
+  const SELETORES = { modalidade: 'Forma', devedor: 'Quem deve', origem: 'Origem' };
+  let extrasAtivos = Object.keys(filtrosColuna).length;
+  for (const [id, rotulo] of Object.entries(SELETORES)) {
+    const campo = el(id);
+    if (!campo || campo.disabled || campo.value === '') continue;
+    extrasAtivos += 1;
+    const opcao = campo.options[campo.selectedIndex]?.textContent ?? campo.value;
+    itens.push({ texto: `${rotulo}: ${opcao}`, remover: () => { campo.value = ''; } });
+  }
+  el('abrir-filtros').textContent = extrasAtivos ? `Mais filtros (${extrasAtivos})` : 'Mais filtros';
 
   if (faixaAtual) {
     itens.push({ texto: `Atraso: ${faixaAtual.replace(/^\d+\.\s*/, '')}`, remover: () => { faixaAtual = null; } });
@@ -746,12 +792,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     aplicarAtalho(botao.dataset.periodo);
   });
+  for (const id of ['inicio', 'fim']) {
+    el(id).addEventListener('input', () => {
+      for (const item of el('atalhos').querySelectorAll('[data-periodo]')) item.classList.remove('atalho--ativo');
+    });
+  }
 
   el('abas').addEventListener('click', (evento) => {
     const botao = evento.target.closest('.aba');
     if (!botao) return;
     abaAtual = botao.dataset.aba;
     cartaoAtual = null;
+    ordem = null; // cada aba começa na ordem padrão
     pagina = 1;
     for (const aba of el('abas').querySelectorAll('.aba')) {
       aba.classList.toggle('aba--ativa', aba === botao);
@@ -784,6 +836,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const campoTela = el(campo);
       if (campoTela) campoTela.value = '';
     }
+    for (const id of ['modalidade', 'devedor', 'origem']) {
+      if (!el(id).disabled) el(id).value = '';
+    }
     faixaAtual = null;
     pagina = 1;
     carregar();
@@ -795,20 +850,35 @@ document.addEventListener('DOMContentLoaded', () => {
     botao.textContent = 'Gerando…';
     try {
       const url = new URL('/financeiro/excel', window.location.origin);
+      // Os MESMOS filtros da lista na tela (menos a página): o Excel sai igual ao que você vê
       for (const [nome, valor] of Object.entries(filtrosAtuais())) {
         if (valor !== null && valor !== undefined && valor !== '' && nome !== 'pagina' && nome !== 'limite') {
           url.searchParams.set(nome, valor);
         }
       }
+      // Cartão "Clientes" ativo: a tela mostra um resumo por cliente, então o Excel também
+      if (CARTOES[cartaoAtual]?.porCliente) url.searchParams.set('visao', 'clientes');
+
       // Busca com a chave no cabeçalho e salva o arquivo: a chave não aparece na URL
       const resposta = await fetch(url, { headers: { 'x-api-key': chave.ler() ?? '' } });
-      if (!resposta.ok) throw new Error('Não foi possível gerar a planilha.');
+      if (!resposta.ok) {
+        const corpo = await resposta.json().catch(() => ({}));
+        throw new Error(corpo.erro || 'Não foi possível gerar a planilha.');
+      }
+
+      // Usa o nome que a API sugeriu (ex.: contas-a-receber_atacadao_2026-09-21.xlsx)
+      const cabecalho = resposta.headers.get('Content-Disposition') || '';
+      const nomeArquivo = (cabecalho.match(/filename="([^"]+)"/) || [])[1]
+        || `contas-a-receber-${new Date().toISOString().slice(0, 10)}.xlsx`;
+
       const arquivo = await resposta.blob();
       const link = document.createElement('a');
       link.href = URL.createObjectURL(arquivo);
-      link.download = `contas-a-receber-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      link.download = nomeArquivo;
+      document.body.append(link);
       link.click();
-      URL.revokeObjectURL(link.href);
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
     } catch (erro) {
       mostrarStatus(erro.message, true);
     } finally {
