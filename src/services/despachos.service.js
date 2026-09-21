@@ -87,7 +87,7 @@ async function exportar(query) {
       { titulo: 'Acerto', chave: 'acerto', tipo: 'codigo', largura: 9 },
       { titulo: 'Recebimento', chave: 'data_recebimento', tipo: 'data', largura: 12 },
       { titulo: 'Digitado em', chave: 'digitado_em', largura: 17 },
-      { titulo: 'Usuário', chave: 'usuario', tipo: 'codigo', largura: 9 },
+      { titulo: 'Lançado por', valor: (a) => a.usuario_nome ?? (a.usuario != null ? `usuário ${a.usuario}` : ''), largura: 22 },
       { titulo: 'Carga', chave: 'carga', tipo: 'codigo', largura: 9 },
       { titulo: 'Rota', chave: 'rota', largura: 18 },
       { titulo: 'Notas', chave: 'notas', tipo: 'inteiro', largura: 8, somar: true },

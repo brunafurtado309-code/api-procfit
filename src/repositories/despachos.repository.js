@@ -22,6 +22,17 @@ const { sql, getPool } = require('../config/db');
 
 const D = 'RECEBIMENTOS_FATURAMENTO_DESPACHO';
 
+// Nome de um usuário do PROCFIT. Só NOME e LOGIN: a tabela USUARIOS guarda senhas,
+// então nunca usar SELECT * nela.
+const NOME_USUARIO = (alias) =>
+  `COALESCE(NULLIF(LTRIM(RTRIM(${alias}.NOME)), ''), LTRIM(RTRIM(${alias}.LOGIN)))`;
+
+// Carga do acerto + quem lançou o retorno (usado na lista e no detalhe)
+const JUNCOES = `
+  LEFT JOIN FATURAMENTO_DESPACHO FD WITH (NOLOCK)
+    ON FD.FATURAMENTO_DESPACHO = R.FATURAMENTO_DESPACHO_FILTRO
+  LEFT JOIN USUARIOS UL WITH (NOLOCK) ON UL.USUARIO = R.USUARIO_LOGADO`;
+
 // Totais de um acerto, calculados a partir das notas e das parcelas
 const TOTAIS_DO_ACERTO = `
   OUTER APPLY (
@@ -50,6 +61,7 @@ const CAMPOS_DO_ACERTO = `
   CONVERT(varchar(10), COALESCE(R.DATA_RECEBIMENTO, R.DATA_HORA), 23) AS data_recebimento,
   CONVERT(varchar(16), R.DATA_HORA, 120)                              AS digitado_em,
   R.USUARIO_LOGADO                                                    AS usuario,
+  ${NOME_USUARIO('UL')}                                               AS usuario_nome,
   R.FATURAMENTO_DESPACHO_FILTRO                                       AS carga,
   LTRIM(RTRIM(FD.ROTA))                                               AS rota,
   ISNULL(NT.notas, 0)                                                 AS notas,
@@ -79,8 +91,7 @@ async function lista(filtros) {
     .query(`
       SELECT TOP 2000 ${CAMPOS_DO_ACERTO}
       FROM ${D} R WITH (NOLOCK)
-      LEFT JOIN FATURAMENTO_DESPACHO FD WITH (NOLOCK)
-        ON FD.FATURAMENTO_DESPACHO = R.FATURAMENTO_DESPACHO_FILTRO
+      ${JUNCOES}
       ${TOTAIS_DO_ACERTO}
       WHERE (@inicio IS NULL OR COALESCE(R.DATA_RECEBIMENTO, R.DATA_HORA) >= CAST(@inicio AS date))
         AND (@fim IS NULL OR COALESCE(R.DATA_RECEBIMENTO, R.DATA_HORA) < DATEADD(day, 1, CAST(@fim AS date)))
@@ -113,12 +124,18 @@ async function detalhe(acerto) {
       SELECT ${CAMPOS_DO_ACERTO},
         CONVERT(varchar(16), FD.DATA_HORA, 120) AS carga_criada_em,
         FD.USUARIO_LOGADO                       AS carga_usuario,
+        ${NOME_USUARIO('UC')}                   AS carga_usuario_nome,
         FD.VEICULO                              AS veiculo,
         FD.CONFERENTE                           AS conferente,
-        FD.RESPONSAVEL                          AS responsavel
+        LTRIM(RTRIM(VC.NOME))                   AS conferente_nome,
+        FD.RESPONSAVEL                          AS responsavel,
+        LTRIM(RTRIM(ER.NOME))                   AS responsavel_nome
       FROM ${D} R WITH (NOLOCK)
-      LEFT JOIN FATURAMENTO_DESPACHO FD WITH (NOLOCK)
-        ON FD.FATURAMENTO_DESPACHO = R.FATURAMENTO_DESPACHO_FILTRO
+      ${JUNCOES}
+      -- Pessoas da carga: quem montou (usuário), conferente (vendedor) e responsável (cadastro)
+      LEFT JOIN USUARIOS UC WITH (NOLOCK) ON UC.USUARIO = FD.USUARIO_LOGADO
+      LEFT JOIN VENDEDORES VC WITH (NOLOCK) ON VC.VENDEDOR = FD.CONFERENTE
+      LEFT JOIN ENTIDADES ER WITH (NOLOCK) ON ER.ENTIDADE = FD.RESPONSAVEL
       ${TOTAIS_DO_ACERTO}
       WHERE R.RECEBIMENTO_FATURAMENTO_DESPACHO = @acerto;
 

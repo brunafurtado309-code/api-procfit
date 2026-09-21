@@ -14,6 +14,9 @@ const dataHoraBR = (texto) => {
   const [data, hora] = String(texto).split(' ');
   return `${dataBR(data)}${hora ? ` ${hora}` : ''}`;
 };
+// Nome da pessoa; sem nome cadastrado, mostra o código (ex.: "conferente código 2")
+const pessoa = (nome, codigo, rotulo) =>
+  (nome && String(nome).trim()) || (codigo != null ? `${rotulo} código ${codigo}` : '—');
 const formatarData = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
@@ -293,7 +296,7 @@ function mostrarLista() {
       const falta = Number(a.a_descoberto) || 0;
       linha.append(
         comAuxiliar(botao, `acerto ${a.acerto}`, 'esquerda sem-quebra'),
-        comAuxiliar(dataBR(a.data_recebimento), `usuário ${a.usuario ?? '—'}`, 'esquerda sem-quebra'),
+        comAuxiliar(dataBR(a.data_recebimento), `lançado por ${pessoa(a.usuario_nome, a.usuario, 'usuário')}`, 'esquerda sem-quebra'),
         td(inteiro(a.notas)),
         td(dinheiro(a.total_notas)),
         td(dinheiro(a.total_informado)),
@@ -388,7 +391,7 @@ async function abrirAcerto(numero) {
     el('acerto-resumo').textContent = [
       `acerto ${numero}`,
       `recebido em ${dataBR(a.data_recebimento)}`,
-      `lançado ${dataHoraBR(a.digitado_em)} pelo usuário ${a.usuario ?? '—'}`,
+      `lançado ${dataHoraBR(a.digitado_em)} por ${pessoa(a.usuario_nome, a.usuario, 'usuário')}`,
     ].join(' · ');
 
     const partes = [];
@@ -458,6 +461,12 @@ async function abrirAcerto(numero) {
     item('Valor das notas', dinheiro(totalNotas));
     item('Recebido', dinheiro(totalPago));
     item('Falta receber', totalFalta > 0.01 ? dinheiro(totalFalta) : 'nada', totalFalta > 0.01);
+    // Pessoas de cada etapa do despacho
+    item('Montou o despacho', pessoa(a.carga_usuario_nome, a.carga_usuario, 'usuário'));
+    item('Conferente', pessoa(a.conferente_nome, a.conferente, 'conferente'));
+    item('Responsável', pessoa(a.responsavel_nome, a.responsavel, 'código'));
+    item(a.situacao === 'SEM_PARCELAS' ? 'Lançou e não processou' : 'Lançou o retorno',
+      pessoa(a.usuario_nome, a.usuario, 'usuário'));
     for (const [nome, valor] of [...porForma.entries()].sort((x, y) => y[1] - x[1])) {
       item(nome, dinheiro(valor));
     }
