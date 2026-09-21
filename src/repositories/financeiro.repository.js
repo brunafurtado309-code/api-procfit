@@ -134,7 +134,10 @@ async function criarRequest(filtros = {}) {
     .input('f_titulo', sql.VarChar(40), filtros.f_titulo ?? null)
     .input('f_cliente', sql.VarChar(80), filtros.f_cliente ?? null)
     .input('f_valor_min', sql.Decimal(18, 2), filtros.f_valor_min ?? null)
-    .input('f_valor_max', sql.Decimal(18, 2), filtros.f_valor_max ?? null);
+    .input('f_valor_max', sql.Decimal(18, 2), filtros.f_valor_max ?? null)
+    // Faixa de atraso em dias (ao clicar numa barra de "Por tempo de atraso")
+    .input('atraso_min', sql.Int, filtros.atraso_min ?? null)
+    .input('atraso_max', sql.Int, filtros.atraso_max ?? null);
 }
 
 // Filtros que valem para TODAS as consultas (período de vencimento, modalidade e pesquisa)
@@ -159,7 +162,9 @@ const FILTRO_COMUM = `
     OR CAST(cod_cliente AS varchar(20)) = @f_cliente
   )
   AND (@f_valor_min IS NULL OR pendente >= @f_valor_min)
-  AND (@f_valor_max IS NULL OR pendente <= @f_valor_max)`;
+  AND (@f_valor_max IS NULL OR pendente <= @f_valor_max)
+  AND (@atraso_min IS NULL OR dias_atraso >= @atraso_min)
+  AND (@atraso_max IS NULL OR dias_atraso <= @atraso_max)`;
 
 // Vencido é o que já passou do vencimento; a vencer é o que ainda está no prazo
 function filtroAtraso(atraso) {
@@ -241,6 +246,30 @@ async function porFaixaAtraso(filtros) {
   return recordset;
 }
 
+// Colunas que a lista aceita ordenar. Lista fechada: o texto que vem da tela
+// nunca entra direto no SQL, só escolhe uma destas expressões.
+const ORDENACAO = {
+  vencimento: 'vencimento',
+  nota: 'nota',
+  titulo: 'titulo',
+  devedor: 'cliente COLLATE Latin1_General_CI_AI', // A a Z ignorando acentos
+  forma: 'modalidade',
+  valor: 'valor',
+  recebido: 'recebido',
+  pendente: 'pendente',
+  nota_valor: 'nota_valor',
+  nota_recebido: 'nota_recebido',
+  nota_pendente: 'nota_pendente',
+};
+
+// Ordem escolhida na tela; empate (e sem escolha) cai na ordem padrão
+function ordenacao(filtros) {
+  const coluna = ORDENACAO[filtros.ordem];
+  if (!coluna) return 'vencimento, nota, titulo';
+  const direcao = filtros.direcao === 'desc' ? 'DESC' : 'ASC';
+  return `${coluna} ${direcao}, vencimento, nota, titulo`;
+}
+
 // Lista dos títulos, com paginação e pesquisa
 async function titulos(filtros) {
   const request = await criarRequest(filtros);
@@ -268,7 +297,7 @@ async function titulos(filtros) {
     SELECT *
     FROM TITULOS
     WHERE ${condicoes}
-    ORDER BY vencimento, nota, titulo
+    ORDER BY ${ordenacao(filtros)}
     OFFSET @pular ROWS FETCH NEXT @limite ROWS ONLY;
   `);
 

@@ -33,6 +33,25 @@ cor nem tamanho próprio: usa as variáveis.
   <section class="bloco">      cada seção: h2 + descrição + conteúdo
 ```
 
+## Barra de filtros (igual em todas as telas)
+
+Os filtros de toda tela ficam num lugar só, logo abaixo do topo (ou das abas), dentro de
+`<section class="barra-filtros">`, sempre nesta ordem:
+
+1. **Linha 1 — pesquisa e ações** (`.barra-filtros__linha`): campo de pesquisa grande com
+   lupa (`form.pesquisa`), botão Pesquisar e, à direita, as ações da tela
+   (`.barra-filtros__acoes`): "Mais filtros" (se houver) e "Baixar Excel".
+2. **Linha 2 — período** (`form.filtros`): datas De/Até, atalhos de período (`.atalhos`,
+   em pílulas; clicar preenche as datas) e o botão Atualizar (`.filtros__aplicar`).
+3. **Mais filtros** (`form.filtros-lista`, fechado por padrão): todo filtro que não é
+   período nem pesquisa (seletores e filtros de coluna), com Aplicar e Limpar.
+   O botão mostra quantos estão ativos: "Mais filtros (2)".
+4. **Marcadores** (`#marcadores`): uma pílula para cada filtro ativo; clicar remove.
+5. **Status** (`.status`): "atualizado às ...".
+
+Regras: o Excel da tela exporta exatamente o que está filtrado; filtro nunca fica escondido
+sem aparecer nos marcadores; nada de filtro solto dentro das seções da página.
+
 ## Componentes (use estas classes)
 
 | Preciso de... | Classe | Observação |
@@ -50,6 +69,7 @@ cor nem tamanho próprio: usa as variáveis.
 | Etiqueta | `.situacao`, `.tipo-documento`, `.tabela-preco` | pílula pequena |
 | Botão principal | `button` | um por barra de ferramentas |
 | Botão secundário | `.botao-secundario` | contorno verde |
+| Barra de filtros | `.barra-filtros` | ver seção acima |
 | Atalhos de período | `.atalhos` > `button` | pílulas; ativo = `.atalho--ativo` |
 | Janela de detalhe | `dialog.detalhe` | topo verde-escuro |
 

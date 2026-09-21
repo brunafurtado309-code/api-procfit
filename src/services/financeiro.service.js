@@ -7,6 +7,11 @@ const FORMATO_DATA = /^\d{4}-\d{2}-\d{2}$/;
 const SITUACOES = ['aberto', 'parcial', 'quitado', 'todos'];
 const LIMITE_PADRAO = 50;
 const LIMITE_MAXIMO = 500;
+// Colunas que a lista de títulos aceita ordenar (as mesmas do repository)
+const ORDENS = [
+  'vencimento', 'nota', 'titulo', 'devedor', 'forma', 'valor', 'recebido', 'pendente',
+  'nota_valor', 'nota_recebido', 'nota_pendente',
+];
 
 // Aqui a data é OPCIONAL (diferente de vendas): sem datas, mostra tudo em aberto
 function validarData(valor, nome) {
@@ -94,6 +99,16 @@ function montarFiltros(query) {
 
   const busca = (query.busca ?? '').trim();
 
+  // Ordenação ao clicar no nome da coluna
+  const ordem = query.ordem ? String(query.ordem) : null;
+  if (ordem !== null && !ORDENS.includes(ordem)) {
+    throw new AppError(`"ordem" deve ser: ${ORDENS.join(', ')}`);
+  }
+  const direcao = query.direcao ? String(query.direcao) : 'asc';
+  if (!['asc', 'desc'].includes(direcao)) {
+    throw new AppError('"direcao" deve ser asc ou desc');
+  }
+
   return {
     inicio,
     fim,
@@ -110,6 +125,10 @@ function montarFiltros(query) {
     f_cliente: texto(query.f_cliente, 80),
     f_valor_min: valorDecimal(query.f_valor_min, 'f_valor_min'),
     f_valor_max: valorDecimal(query.f_valor_max, 'f_valor_max'),
+    atraso_min: numeroOpcional(query.atraso_min, 'atraso_min'),
+    atraso_max: numeroOpcional(query.atraso_max, 'atraso_max'),
+    ordem,
+    direcao,
     limite,
     pagina,
   };
@@ -143,4 +162,7 @@ function fichaCliente(query, params) {
   return repo.fichaCliente(entidade, { meses });
 }
 
-module.exports = { resumo, cartoes, indicadores, previsao, porFaixaAtraso, porCliente, titulos, fichaCliente };
+module.exports = {
+  resumo, cartoes, indicadores, previsao, porFaixaAtraso, porCliente, titulos, fichaCliente,
+  montarFiltros, // usado pela exportação para Excel (mesmas regras da tela)
+};
