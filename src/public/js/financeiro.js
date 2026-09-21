@@ -343,6 +343,13 @@ function celulaCliente(titulo) {
   return td;
 }
 
+// Nº do pedido clicável: abre a janela com os produtos do pedido (js/pedido.js)
+function celulaPedido(numero) {
+  const td = document.createElement('td');
+  td.append(pedidoJanela.link(numero));
+  return td;
+}
+
 function celula(texto, classe = null) {
   const td = document.createElement('td');
   td.textContent = texto;
@@ -357,7 +364,7 @@ const COLUNAS_TITULO = [
     nota: (t) => (t.dias_atraso > 0 ? `${numero(t.dias_atraso)} dias de atraso` : 'em dia'),
     classeNota: (t) => (t.dias_atraso > 0 ? 'atraso' : null) },
   { titulo: 'Nota / pedido', ordem: 'nota', valor: (t) => (t.nota ? `NF ${t.nota}` : 'sem nota'),
-    nota: (t) => (t.pedido ? `pedido ${t.pedido}` : t.origem),
+    nota: (t) => (t.pedido ? pedidoJanela.link(t.pedido, 'pedido') : t.origem),
     filtros: [{ campo: 'f_nota', dica: 'nota' }, { campo: 'f_pedido', dica: 'pedido' }] },
   { titulo: 'Título', ordem: 'titulo', valor: (t) => t.titulo ?? '—',
     filtros: [{ campo: 'f_titulo', dica: 'título' }] },
@@ -376,7 +383,7 @@ const COLUNAS_NOTA = [
     nota: (t) => (t.dias_atraso > 0 ? `${numero(t.dias_atraso)} dias de atraso` : 'em dia'),
     classeNota: (t) => (t.dias_atraso > 0 ? 'atraso' : null) },
   { titulo: 'Nota / pedido', ordem: 'nota', valor: (t) => (t.nota ? `NF ${t.nota}` : 'sem nota'),
-    nota: (t) => (t.pedido ? `pedido ${t.pedido}` : t.origem),
+    nota: (t) => (t.pedido ? pedidoJanela.link(t.pedido, 'pedido') : t.origem),
     filtros: [{ campo: 'f_nota', dica: 'nota' }, { campo: 'f_pedido', dica: 'pedido' }] },
   { titulo: 'Devedor', ordem: 'devedor', cliente: true,
     filtros: [{ campo: 'f_cliente', dica: 'nome ou código' }] },
@@ -459,7 +466,9 @@ function mostrarTitulos({ total, lista }) {
           if (auxiliar) {
             const extra = document.createElement('span');
             extra.className = coluna.classeNota?.(t) ? `origem ${coluna.classeNota(t)}` : 'origem';
-            extra.textContent = auxiliar;
+            // Texto simples ou um elemento (ex.: o nº do pedido clicável)
+            if (auxiliar instanceof Node) extra.append(auxiliar);
+            else extra.textContent = auxiliar;
             td.append(extra);
           }
           linha.append(td);
@@ -693,7 +702,7 @@ async function abrirFicha(codigo, nome) {
           celula(dataBR(t.vencimento)),
           celula(SITUACAO_TEXTO[t.situacao] ?? t.situacao),
           celula(t.nota ?? '—'),
-          celula(t.pedido ?? '—'),
+          celulaPedido(t.pedido),
           celula(t.titulo ?? '—'),
           celula(dinheiro(t.valor)),
           celula(dinheiro(t.recebido)),
@@ -750,6 +759,8 @@ async function mostrarPainel() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  pedidoJanela.configurar({ setor: 'financeiro' });
+
   el('form-chave').addEventListener('submit', (evento) => {
     evento.preventDefault();
     const valor = el('campo-chave').value.trim();

@@ -673,4 +673,5 @@ module.exports = {
   resumo, porDia, porLoja, porOrigem, porVendedor, notasDoVendedor, nomeDoVendedor,
   porOperador, cuponsDoOperador, nomeDoOperador, itensDoDocumento, topProdutos,
   LIMITE_NOTAS,
+  nomearTabelas, // usado também pelo detalhe do pedido
 };

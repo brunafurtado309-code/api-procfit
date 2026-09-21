@@ -2,6 +2,7 @@
 
 const { Router } = require('express');
 const controller = require('../controllers/vendas.controller');
+const pedidos = require('../controllers/pedidos.controller');
 
 const router = Router();
 
@@ -22,6 +23,9 @@ router.get('/cupons', controller.todosCupons);
 router.get('/devolucoes', controller.listaDevolucoes);
 router.get('/descontos', controller.listaDescontos);
 router.get('/itens', controller.itensDoDocumento);
+
+// Detalhe do pedido (produtos, nota e cupom gerados)
+router.get('/pedidos/:pedido', pedidos.detalhe);
 
 // Downloads em Excel
 router.get('/exportar/excel', controller.exportarPainel);

@@ -332,6 +332,13 @@ function celulaTexto(texto, classe) {
   return td;
 }
 
+// Nº do pedido clicável: abre a janela com os produtos do pedido (js/pedido.js)
+function celulaPedido(numero) {
+  const td = document.createElement('td');
+  td.append(pedidoJanela.link(numero));
+  return td;
+}
+
 function celulaSituacao(situacao) {
   const td = document.createElement('td');
   td.className = 'esquerda';
@@ -564,7 +571,7 @@ const DETALHES = {
       { titulo: 'Data', celula: (n) => celulaTexto(dataBR(n.data), 'sem-quebra') },
       { titulo: 'Situação', esquerda: true, celula: (n) => celulaSituacao(n.situacao) },
       { titulo: 'Nº da nota', celula: celulaDocumento },
-      { titulo: 'Nº do pedido', celula: (n) => celulaTexto(n.pedido) },
+      { titulo: 'Nº do pedido', celula: (n) => celulaPedido(n.pedido) },
       { titulo: 'Tabela', esquerda: true, celula: celulaTabela },
       { titulo: 'Cód. cliente', celula: (n) => celulaTexto(n.codigo_cliente) },
       { titulo: 'Cliente', esquerda: true, celula: celulaCliente },
@@ -593,7 +600,7 @@ const DETALHES = {
       { titulo: 'Situação', esquerda: true, celula: (c) => celulaSituacao(c.situacao) },
       { titulo: 'Caixa', celula: (c) => celulaTexto(c.caixa) },
       { titulo: 'Nº do cupom', celula: (c) => celulaTexto(c.cupom) },
-      { titulo: 'Nº do pedido', celula: (c) => celulaTexto(c.pedido) },
+      { titulo: 'Nº do pedido', celula: (c) => celulaPedido(c.pedido) },
       { titulo: 'Tabela', esquerda: true, celula: celulaTabela },
       { titulo: 'Vendedor', esquerda: true, celula: (c) => celulaTexto(c.vendedor || 'Não informado', 'esquerda coluna-pessoa') },
       { titulo: 'Cliente', esquerda: true, celula: celulaCliente },
@@ -643,7 +650,7 @@ function listaMista({ rota, titulo, carregando, vazio, situacoes, colunasExtras 
       { titulo: 'Data', celula: (l) => celulaTexto(dataBR(l.data), 'sem-quebra') },
       { titulo: 'Situação', esquerda: true, celula: (l) => celulaSituacao(l.situacao) },
       { titulo: 'Nº documento', celula: celulaDocumento },
-      { titulo: 'Nº do pedido', celula: (l) => celulaTexto(l.pedido) },
+      { titulo: 'Nº do pedido', celula: (l) => celulaPedido(l.pedido) },
       { titulo: 'Tabela', esquerda: true, celula: celulaTabela },
       { titulo: 'Vendedor', esquerda: true, celula: (l) => celulaTexto(l.vendedor || 'Não informado', 'esquerda coluna-pessoa') },
       { titulo: 'Cliente', esquerda: true, celula: celulaCliente },

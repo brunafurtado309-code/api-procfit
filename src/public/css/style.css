@@ -799,6 +799,57 @@ button.barra:hover { background: var(--verde-suave); color: inherit; }
 .link-cliente:hover { color: var(--verde-escuro); text-decoration-color: var(--verde); }
 .link-cliente:focus-visible { outline: 2px solid var(--verde); outline-offset: 2px; }
 
+/* Nº do pedido clicável (todas as telas): abre a janela do pedido */
+.link-pedido,
+.link-pedido:hover {
+  display: inline;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font: inherit;
+  color: var(--verde);
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--verde-claro);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+.link-pedido:hover { color: var(--verde-escuro); text-decoration-color: var(--verde); }
+.origem .link-pedido { font-weight: 600; }
+
+/* Janela do pedido */
+.detalhe--pedido { width: min(68rem, calc(100vw - 2rem)); }
+.pedido-corpo { padding-top: 1rem; }
+.pedido-dados {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 0.9rem 1.5rem;
+  margin: 0;
+}
+.pedido-dados dt {
+  font-size: var(--texto-mini);
+  font-weight: 600;
+  color: var(--tinta-suave);
+}
+.pedido-dados dd { margin: 0.15rem 0 0; font-weight: 600; }
+.pedido-obs {
+  margin: 1.25rem 0 0;
+  padding: 0.6rem 0.9rem;
+  border-left: 4px solid var(--verde-claro);
+  background: var(--verde-suave);
+  font-size: 0.95rem;
+}
+.pedido-corpo h3 {
+  margin: 1.75rem 0 0;
+  font-family: var(--fonte-titulo);
+  font-size: 1.1rem;
+}
+.tabela--pedido { min-width: 40rem; }
+.tabela--pedido .coluna-codigo { font-size: var(--texto-pequeno); color: var(--tinta-suave); white-space: nowrap; }
+
 /* Marca embaixo do nome: diz se quem deve é o cliente ou a adquirente do cartão */
 .tabela .marca {
   overflow: hidden;

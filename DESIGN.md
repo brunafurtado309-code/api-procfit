@@ -72,6 +72,15 @@ sem aparecer nos marcadores; nada de filtro solto dentro das seções da página
 | Barra de filtros | `.barra-filtros` | ver seção acima |
 | Atalhos de período | `.atalhos` > `button` | pílulas; ativo = `.atalho--ativo` |
 | Janela de detalhe | `dialog.detalhe` | topo verde-escuro |
+| Nº do pedido | `pedidoJanela.link(numero)` (js/pedido.js) | **sempre clicável**: abre a janela do pedido |
+| Janela do pedido | `pedidoJanela.abrir(numero)` | dados, nota/cupom gerados e produtos; igual em todas as telas |
+
+## Pedido em qualquer tela
+
+Todo número de pedido que aparecer numa tela nova usa `pedidoJanela.link(numero)` (inclua
+`js/pedido.js` na página e chame `pedidoJanela.configurar({ setor: '...' })`). A API do
+pedido existe em cada setor (`/vendas/pedidos/:pedido` e `/financeiro/pedidos/:pedido`),
+então funciona com a chave de qualquer um deles.
 
 ## Cuidados que já deram problema
 
