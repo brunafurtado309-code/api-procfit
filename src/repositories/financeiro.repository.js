@@ -412,4 +412,55 @@ async function fichaCliente(entidade, { meses = 12 } = {}) {
   };
 }
 
-module.exports = { resumo, cartoes, porFaixaAtraso, porCliente, titulos, fichaCliente };
+// Indicadores de comportamento da carteira (cartão do topo da tela).
+// O atraso médio é PONDERADO PELO VALOR: um título grande atrasado pesa mais
+// que vários pequenos, que é como a cobrança enxerga o problema.
+async function indicadores(filtros) {
+  const request = await criarRequest(filtros);
+  const { recordset } = await request.query(`
+    ${SALDOS},
+    ${TITULOS}
+    SELECT
+      SUM(pendente)                                            AS pendente,
+      SUM(CASE WHEN dias_atraso > 0 THEN pendente ELSE 0 END)   AS vencido,
+      -- soma(dias * valor) / soma(valor), só do que está vencido
+      CASE
+        WHEN SUM(CASE WHEN dias_atraso > 0 THEN pendente ELSE 0 END) > 0
+        THEN SUM(CASE WHEN dias_atraso > 0 THEN dias_atraso * pendente ELSE 0 END)
+             / SUM(CASE WHEN dias_atraso > 0 THEN pendente ELSE 0 END)
+      END                                                      AS atraso_medio,
+      CASE WHEN COUNT(*) > 0 THEN SUM(pendente) / COUNT(*) END AS ticket_medio,
+      MIN(vencimento)                                          AS vencimento_mais_antigo
+    FROM TITULOS
+    WHERE ${filtroSituacao(filtros.situacao)}
+      AND ${filtroAtraso(filtros.atraso)}
+      AND ${filtroOrigem(filtros.origem)} AND ${filtroDevedor(filtros.devedor)}
+      AND ${FILTRO_COMUM}
+  `);
+  return recordset[0];
+}
+
+// Previsão de recebimento por SEMANA (só o que ainda vai vencer).
+// DATEADD/DATEDIFF com week devolve a segunda-feira da semana do vencimento.
+async function previsao(filtros) {
+  const request = await criarRequest(filtros);
+  const { recordset } = await request.query(`
+    ${SALDOS},
+    ${TITULOS}
+    SELECT TOP 12
+      CONVERT(varchar(10),
+        DATEADD(week, DATEDIFF(week, 0, CAST(vencimento AS date)), 0), 23) AS semana,
+      COUNT(*)      AS titulos,
+      SUM(pendente) AS pendente
+    FROM TITULOS
+    WHERE situacao IN ('ABERTO', 'PARCIAL')
+      AND dias_atraso <= 0
+      AND ${filtroOrigem(filtros.origem)} AND ${filtroDevedor(filtros.devedor)}
+      AND ${FILTRO_COMUM}
+    GROUP BY DATEADD(week, DATEDIFF(week, 0, CAST(vencimento AS date)), 0)
+    ORDER BY semana
+  `);
+  return recordset;
+}
+
+module.exports = { resumo, cartoes, indicadores, previsao, porFaixaAtraso, porCliente, titulos, fichaCliente };

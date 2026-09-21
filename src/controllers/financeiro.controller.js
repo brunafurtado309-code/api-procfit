@@ -13,6 +13,8 @@ const acao = (fn) => async (req, res, next) => {
 module.exports = {
   resumo: acao(service.resumo),
   cartoes: acao(service.cartoes),
+  indicadores: acao(service.indicadores),
+  previsao: acao(service.previsao),
   porCliente: acao(service.porCliente),
   porFaixaAtraso: acao(service.porFaixaAtraso),
   titulos: acao(service.titulos),
