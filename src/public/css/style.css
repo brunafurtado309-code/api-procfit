@@ -391,6 +391,7 @@ select:focus { border-color: var(--verde); }
   margin-bottom: -1px;
 }
 .aba:hover { background: none; color: var(--verde); }
+a.aba, span.aba { display: inline-block; text-decoration: none; }
 .aba--ativa { color: var(--verde); border-bottom-color: var(--verde); }
 
 /* ===== 7. Destaque: número principal ===== */
@@ -577,6 +578,23 @@ select:focus { border-color: var(--verde); }
 }
 
 /* ===== 10. Cartões-filtro (única caixa da página: são clicáveis) ===== */
+/* Cinco cartões numa linha (ex.: Despachos) */
+.cartoes.cartoes--cinco {
+  grid-template-columns: repeat(auto-fill, minmax(max(11rem, calc((100% - 3rem) / 5)), 1fr));
+}
+.tabela td.sem-quebra { white-space: nowrap; }
+.situacao.etiqueta-abaixo { display: table; margin-top: 0.3rem; }
+
+/* Bloco que abre e fecha (ex.: títulos gerados no despacho) */
+.mais-detalhes { margin-top: 1.5rem; }
+.mais-detalhes > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--verde);
+  padding: 0.4rem 0;
+}
+.mais-detalhes > summary:hover { color: var(--verde-escuro); }
+
 /* No máximo 4 por linha, para o valor nunca apertar */
 .cartoes {
   display: grid;
@@ -930,6 +948,7 @@ button.barra:hover { background: var(--verde-suave); color: inherit; }
 .situacao--faturada { background: var(--verde-claro); color: #145634; }
 .situacao--cancelada { background: var(--outros-claro); color: #4A524C; }
 .situacao--devolucao { background: var(--alerta-claro); color: #7F3A12; }
+.situacao--sem { background: var(--alerta); color: #fff; }
 
 .tipo-documento--nota { background: var(--verde-claro); color: #145634; }
 .tipo-documento--cupom { background: var(--acai-claro); color: #1F5E3B; }

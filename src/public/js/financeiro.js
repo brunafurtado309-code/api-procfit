@@ -761,6 +761,16 @@ async function mostrarPainel() {
 document.addEventListener('DOMContentLoaded', () => {
   pedidoJanela.configurar({ setor: 'financeiro' });
 
+  // Aba pedida no endereço (ex.: financeiro.html#boletos, vindo da página de Despachos)
+  const abaInicial = window.location.hash.slice(1);
+  if (ABAS[abaInicial]) {
+    abaAtual = abaInicial;
+    for (const aba of el('abas').querySelectorAll('.aba[data-aba]')) {
+      aba.classList.toggle('aba--ativa', aba.dataset.aba === abaInicial);
+    }
+    el('modalidade').disabled = ABAS[abaAtual].modalidade !== null;
+  }
+
   el('form-chave').addEventListener('submit', (evento) => {
     evento.preventDefault();
     const valor = el('campo-chave').value.trim();
@@ -810,7 +820,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   el('abas').addEventListener('click', (evento) => {
-    const botao = evento.target.closest('.aba');
+    const botao = evento.target.closest('.aba[data-aba]'); // "Despachos" é link para outra página
     if (!botao) return;
     abaAtual = botao.dataset.aba;
     cartaoAtual = null;

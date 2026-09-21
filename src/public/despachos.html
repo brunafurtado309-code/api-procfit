@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Despachos | Painel financeiro | Belo Norte</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/modulos.js" defer></script>
+  <script src="js/pedido.js" defer></script>
+  <script src="js/despachos.js" defer></script>
+</head>
+<body>
+  <header class="topo">
+    <div>
+      <p class="marca">Belo Norte</p>
+      <h1>Painel financeiro</h1>
+    </div>
+    <div class="topo-acoes">
+      <nav id="modulos" class="modulos" aria-label="Módulos do painel" hidden></nav>
+      <button id="trocar-chave" class="botao-texto" type="button">Trocar chave</button>
+    </div>
+  </header>
+
+  <main class="conteudo conteudo--largo">
+    <!-- Mesmas abas do financeiro: as outras abrem a página do financeiro -->
+    <nav class="abas" aria-label="Visões do financeiro">
+      <a class="aba" href="financeiro.html#titulos">Títulos em aberto</a>
+      <a class="aba" href="financeiro.html#parciais">Baixa parcial</a>
+      <a class="aba" href="financeiro.html#boletos">Boletos e prazos</a>
+      <a class="aba" href="financeiro.html#cobranca">Cobrança</a>
+      <span class="aba aba--ativa" aria-current="page">Despachos</span>
+    </nav>
+
+    <!-- Barra de filtros (padrão de todas as telas, ver DESIGN.md) -->
+    <section class="barra-filtros" aria-label="Filtros">
+      <div class="barra-filtros__linha">
+        <form id="form-pesquisa" class="pesquisa" role="search">
+          <label class="campo campo--busca">
+            <span class="sr-only">Encontrar despacho, acerto, nota, pedido ou cliente</span>
+            <input id="pesquisa-termo" type="search" maxlength="60" autocomplete="off"
+                   placeholder="Encontrar despacho, acerto, nota, pedido, código ou nome do cliente">
+          </label>
+          <button type="submit">Pesquisar</button>
+          <button id="limpar-pesquisa" type="button" class="botao-secundario" hidden>Limpar</button>
+        </form>
+        <div class="barra-filtros__acoes">
+          <button id="baixar-excel" type="button" class="botao-secundario">Baixar Excel</button>
+        </div>
+      </div>
+
+      <form id="filtros" class="filtros">
+        <label>Recebimento de <input type="date" id="inicio"></label>
+        <label>até <input type="date" id="fim"></label>
+        <div class="atalhos" id="atalhos" aria-label="Períodos prontos">
+          <button type="button" class="botao-secundario" data-periodo="hoje">Hoje</button>
+          <button type="button" class="botao-secundario" data-periodo="7dias">Últimos 7 dias</button>
+          <button type="button" class="botao-secundario atalho--ativo" data-periodo="30dias">Últimos 30 dias</button>
+          <button type="button" class="botao-secundario" data-periodo="mes">Este mês</button>
+          <button type="button" class="botao-secundario" data-periodo="mes-passado">Mês passado</button>
+          <button type="button" class="botao-secundario" data-periodo="tudo">Tudo</button>
+        </div>
+        <button type="submit" class="filtros__aplicar">Atualizar</button>
+      </form>
+
+      <div id="marcadores" class="marcadores" hidden></div>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <div id="painel" hidden>
+      <!-- Número principal + indicadores -->
+      <section class="destaque">
+        <div class="painel-topo">
+          <div>
+            <h2>Valor das notas dos despachos</h2>
+            <p id="total-notas" class="valor-grande">—</p>
+            <p id="total-explica" class="explica"></p>
+          </div>
+          <dl class="indicadores">
+            <dt>Recebido</dt>
+            <dd id="ind-informado">—</dd>
+            <dt>Falta receber</dt>
+            <dd id="ind-descoberto">—</dd>
+            <dt>Não processados</dt>
+            <dd id="ind-parcelas">—</dd>
+            <dt>Para conferir</dt>
+            <dd id="ind-diferenca">—</dd>
+          </dl>
+        </div>
+      </section>
+
+      <!-- Cartões: clicar filtra a lista pela situação -->
+      <section class="cartoes" id="cartoes" aria-label="Situação dos despachos"></section>
+
+      <section class="bloco">
+        <h2 id="titulo-lista">Despachos</h2>
+        <p class="bloco__descricao">Clique no despacho para ver todas as notas e como cada uma foi paga.</p>
+        <div class="tabela-rolagem">
+          <table class="tabela" id="tabela-acertos">
+            <thead></thead>
+            <tbody></tbody>
+            <tfoot></tfoot>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

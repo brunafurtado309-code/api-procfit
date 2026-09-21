@@ -3,6 +3,7 @@
 const { Router } = require('express');
 const controller = require('../controllers/financeiro.controller');
 const pedidos = require('../controllers/pedidos.controller');
+const despachos = require('../controllers/despachos.controller');
 
 const router = Router();
 
@@ -17,6 +18,11 @@ router.get('/titulos', controller.titulos);
 router.get('/excel', controller.excel);
 // Detalhe do pedido (produtos, nota e cupom gerados)
 router.get('/pedidos/:pedido', pedidos.detalhe);
+
+// Aba Despachos: acertos de carga (a rota do Excel vem antes da rota com :acerto)
+router.get('/despachos', despachos.lista);
+router.get('/despachos/excel', despachos.excel);
+router.get('/despachos/:acerto', despachos.detalhe);
 // Precisa ficar DEPOIS de /clientes: o Express testa na ordem, e uma rota
 // com parâmetro captura tudo que vier antes dela.
 router.get('/clientes/:entidade', controller.fichaCliente);

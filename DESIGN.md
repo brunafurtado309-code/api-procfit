@@ -82,6 +82,13 @@ Todo número de pedido que aparecer numa tela nova usa `pedidoJanela.link(numero
 pedido existe em cada setor (`/vendas/pedidos/:pedido` e `/financeiro/pedidos/:pedido`),
 então funciona com a chave de qualquer um deles.
 
+## Aba que é outra página
+
+Quando uma aba mostra outra coisa (ex.: Despachos no financeiro), ela vira uma página própria
+(`despachos.html`) com **as mesmas abas no topo**: as outras abas são links
+(`financeiro.html#boletos`) e a atual é um `<span class="aba aba--ativa">`. O financeiro lê o
+`#aba` do endereço ao abrir. A barra de filtros, os cartões-filtro e a lista seguem o mesmo padrão.
+
 ## Cuidados que já deram problema
 
 - **Não reaproveitar nome de classe com outro sentido.** A barra da venda (vendas) e as
