@@ -38,8 +38,8 @@ const SITUACAO = {
 
 // ===== Estado =====
 let cartaoAtual = 'aberto';
-let diasPagamentos = 30;
 let pagamentosLista = [];
+let pessoasCaixa = []; // todas as pessoas que cuidam de caixa (cartão sempre visível)
 let pessoaAtual = null; // código do usuário, ou 'sem' para não identificado
 let titulos = [];
 let ordem = { coluna: 'vencimento', direcao: 'asc' };
@@ -484,9 +484,15 @@ function mostrarLista(limite) {
 async function carregarPagamentos() {
   try {
     const dados = await buscar('pagar/pagamentos', {
-      dias: diasPagamentos, busca: el('pesquisa-termo').value.trim() || null,
+      inicio: el('pag-inicio').value || null,
+      fim: el('pag-fim').value || null,
+      busca: el('pesquisa-termo').value.trim() || null,
     });
+    // Mostra nos campos o período que a API usou (ex.: últimos 30 dias quando vazio)
+    el('pag-inicio').value = dados.inicio;
+    el('pag-fim').value = dados.fim;
     pagamentosLista = dados.pagamentos;
+    pessoasCaixa = dados.pessoas ?? [];
     mostrarPessoas();
   } catch (erro) {
     el('cartoes-pessoas').replaceChildren(span(`Não foi possível carregar os pagamentos: ${erro.message}`, 'status--erro'));
@@ -513,7 +519,18 @@ function mostrarPessoas() {
     if (p.lancado_em && (!g.ultimo || p.lancado_em > g.ultimo)) g.ultimo = p.lancado_em;
     pessoas.set(k, g);
   }
-  const lista = [...pessoas.values()].sort((a, b) => b.total - a.total);
+  // Toda pessoa que cuida de caixa aparece, mesmo sem pagamento no período (fica com R$ 0,00)
+  for (const p of pessoasCaixa) {
+    const k = String(p.usuario);
+    if (!pessoas.has(k)) {
+      pessoas.set(k, {
+        chave: k, nome: p.usuario_nome ?? `Usuário ${p.usuario}`, total: 0, qtd: 0, caixa: 0, banco: 0, somaDias: 0, ultimo: null,
+      });
+    }
+  }
+  const lista = [...pessoas.values()].sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome));
+  const escolhida = lista.find((g) => g.chave === pessoaAtual);
+  el('caixa-titulo').textContent = escolhida ? `Caixa de ${escolhida.nome}` : 'Todos os caixas';
   el('cartoes-pessoas').replaceChildren(...(lista.length ? lista.map((g) => {
     const botao = document.createElement('button');
     botao.type = 'button';
@@ -534,7 +551,8 @@ function mostrarPessoas() {
     const atraso = document.createElement('p');
     atraso.className = `cartao-nota${diasMedio > 7 ? ' negativo' : ''}`;
     atraso.textContent = g.chave === 'sem' ? 'origem sem pessoa registrada'
-      : `lança em média ${plural(diasMedio, 'dia', 'dias')} depois do pagamento`;
+      : g.qtd === 0 ? 'nenhum pagamento neste período'
+        : `lança em média ${plural(diasMedio, 'dia', 'dias')} depois do pagamento`;
     botao.append(titulo, valor, nota, atraso);
     botao.addEventListener('click', () => {
       pessoaAtual = ativo ? null : g.chave;
@@ -542,7 +560,7 @@ function mostrarPessoas() {
       mostrarPessoas();
     });
     return botao;
-  }) : [span(`Nenhum pagamento lançado nos últimos ${diasPagamentos} dias.`, 'explica')]));
+  }) : [span(`Nenhum pagamento entre ${dataBR(el('pag-inicio').value)} e ${dataBR(el('pag-fim').value)}.`, 'explica')]));
   mostrarPagamentos();
 }
 
@@ -757,13 +775,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     carregar();
   });
   el('baixar-excel').addEventListener('click', baixarExcel);
+  // Período dos pagamentos: atalhos preenchem as datas; datas digitadas valem ao clicar Aplicar
+  const marcarPeriodo = (ativo) => {
+    for (const item of el('periodo-pagamentos').querySelectorAll('[data-dias]')) {
+      item.classList.toggle('atalho--ativo', item === ativo);
+    }
+  };
   el('periodo-pagamentos').addEventListener('click', (evento) => {
     const botao = evento.target.closest('[data-dias]');
     if (!botao) return;
-    diasPagamentos = Number(botao.dataset.dias);
-    for (const item of el('periodo-pagamentos').querySelectorAll('[data-dias]')) {
-      item.classList.toggle('atalho--ativo', item === botao);
-    }
+    const hoje = new Date();
+    const inicio = botao.dataset.dias === 'mes'
+      ? new Date(hoje.getFullYear(), hoje.getMonth(), 1)
+      : new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - Math.max(0, Number(botao.dataset.dias) - 1));
+    el('pag-inicio').value = formatarData(inicio);
+    el('pag-fim').value = formatarData(hoje);
+    marcarPeriodo(botao);
+    diaAberto = null;
+    carregarPagamentos();
+  });
+  for (const id of ['pag-inicio', 'pag-fim']) el(id).addEventListener('input', () => marcarPeriodo(null));
+  el('filtro-pagamentos').addEventListener('submit', (evento) => {
+    evento.preventDefault();
+    diaAberto = null;
     carregarPagamentos();
   });
 

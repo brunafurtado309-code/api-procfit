@@ -15,8 +15,14 @@ const testes = [
   ['Contas a receber: títulos por título', () => financeiro.titulos({ ordem: 'titulo', limite: 5, pagina: 1 })],
   ['Clientes e crédito', () => financeiro.analiseClientes({})],
   ['Despachos (lista)', () => despachos.lista({})],
+  ['Contas a pagar: pessoas que cuidam de caixa', async () => {
+    const pessoas = await pagar.pessoasPagamento();
+    console.log(`       ${pessoas.map((p) => `${p.usuario} ${p.usuario_nome ?? ''}`.trim()).join(' | ') || 'nenhuma'}`);
+  }],
   ['Contas a pagar: pagamentos por pessoa', async () => {
-    const lista = await pagar.pagamentos({ dias: 90 });
+    const hoje = new Date().toISOString().slice(0, 10);
+    const inicio = new Date(Date.now() - 89 * 86400000).toISOString().slice(0, 10);
+    const lista = await pagar.pagamentos({ inicio, fim: hoje });
     const identificados = lista.filter((p) => p.usuario != null).length;
     console.log(`       ${lista.length} pagamentos em 90 dias, ${identificados} com a pessoa identificada`
       + ` (${lista.length ? Math.round((identificados / lista.length) * 100) : 0}%)`);

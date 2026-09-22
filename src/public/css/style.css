@@ -685,6 +685,11 @@ button.cartao { display: flex; flex-direction: column; justify-content: flex-sta
 .bloco .cartoes { margin-top: 1rem; }
 /* Linha de dia que abre as notas */
 .tabela tr.linha-dia { cursor: pointer; }
+/* Filtro dentro de um bloco (ex.: período dos pagamentos) */
+.filtros--bloco { margin-top: 0.75rem; }
+/* Caixa da pessoa escolhida (abaixo dos cartões das pessoas) */
+.caixa-pessoa { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--linha); }
+.caixa-pessoa__titulo { margin: 0; font-family: var(--fonte-titulo); font-size: 1.1rem; }
 .tabela tr.linha-dia--aberta { background: var(--verde-suave); }
 .cartao--ativo,
 button.cartao--ativo {

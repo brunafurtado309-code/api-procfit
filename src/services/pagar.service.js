@@ -79,12 +79,24 @@ async function exportar(query) {
   return { workbook, nomeArquivo: `contas-a-pagar${parte ? `_${parte}` : ''}_${hoje}.xlsx` };
 }
 
-// Pagamentos por pessoa: últimos 7, 30 ou 90 dias
+// Pagamentos por pessoa, pela DATA DO PAGAMENTO: período de/até (no máximo 1 ano).
+// Sem datas, usa os últimos 30 dias.
+const UM_DIA = 24 * 60 * 60 * 1000;
+// Data local do servidor (toISOString usaria o horário UTC e, à noite, já daria o dia seguinte)
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 async function pagamentos(query) {
-  const dias = Number(query.dias ?? 30);
-  if (![7, 30, 90].includes(dias)) throw new AppError('"dias" deve ser 7, 30 ou 90');
+  let inicio = data(query.inicio, 'inicio');
+  let fim = data(query.fim, 'fim');
+  const hoje = new Date();
+  if (!fim) fim = iso(hoje);
+  if (!inicio) inicio = iso(new Date(new Date(`${fim}T12:00:00`).getTime() - 29 * UM_DIA));
+  if (inicio > fim) throw new AppError('A data inicial não pode ser depois da final');
+  const dias = Math.round((new Date(`${fim}T12:00:00Z`) - new Date(`${inicio}T12:00:00Z`)) / UM_DIA) + 1;
+  if (dias > 366) throw new AppError('Escolha um período de no máximo 1 ano');
   const busca = (query.busca ?? '').trim().slice(0, 60) || null;
-  return { dias, pagamentos: await repo.pagamentos({ dias, busca }) };
+  const [lista, pessoas] = await Promise.all([repo.pagamentos({ inicio, fim, busca }), repo.pessoasPagamento()]);
+  return { inicio, fim, pagamentos: lista, pessoas };
 }
 
 module.exports = { painel, exportar, pagamentos };

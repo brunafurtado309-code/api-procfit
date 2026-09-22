@@ -270,7 +270,8 @@ async function pagamentos(filtros) {
   const pool = await getPool();
   const { recordset } = await pool
     .request()
-    .input('dias', sql.Int, filtros.dias)
+    .input('inicio', sql.VarChar(10), filtros.inicio)
+    .input('fim', sql.VarChar(10), filtros.fim)
     .input('busca', sql.VarChar(60), filtros.busca ?? null)
     .query(`
       SELECT TOP 5000
@@ -320,7 +321,8 @@ async function pagamentos(filtros) {
         ORDER BY C.VALOR DESC
       ) CAT
       WHERE TX.TRANSACAO_FINANCEIRA = 11
-        AND TX.DATA >= DATEADD(day, -@dias, CAST(GETDATE() AS date))
+        AND TX.DATA >= CAST(@inicio AS date)
+        AND TX.DATA <  DATEADD(day, 1, CAST(@fim AS date))
         AND (@busca IS NULL
           OR T.TITULO LIKE '%' + @busca + '%'
           OR CAST(T.ENTIDADE AS varchar(20)) = @busca
@@ -330,4 +332,24 @@ async function pagamentos(filtros) {
   return recordset;
 }
 
-module.exports = { painel, pagamentos, ORDENACAO, FILTRO_SITUACAO };
+// Quem cuida de caixa: todo usuário que lançou pagamento (caixa ou banco) no último ano.
+// Serve para a tela mostrar SEMPRE o cartão de cada pessoa, mesmo sem pagamento no período.
+async function pessoasPagamento() {
+  const pool = await getPool();
+  const { recordset } = await pool.request().query(`
+    SELECT X.usuario,
+           COALESCE(NULLIF(LTRIM(RTRIM(U.NOME)), ''), LTRIM(RTRIM(U.LOGIN))) AS usuario_nome
+    FROM (
+      SELECT DISTINCT USUARIO_LOGADO AS usuario FROM PAGAMENTOS_CAIXA WITH (NOLOCK)
+      WHERE DATA_HORA >= DATEADD(year, -1, GETDATE())
+      UNION
+      SELECT DISTINCT USUARIO_LOGADO FROM PAGAMENTOS_ESCRITURAIS WITH (NOLOCK)
+      WHERE DATA_HORA >= DATEADD(year, -1, GETDATE())
+    ) X
+    LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = X.usuario
+    WHERE X.usuario IS NOT NULL;
+  `);
+  return recordset;
+}
+
+module.exports = { painel, pagamentos, pessoasPagamento, ORDENACAO, FILTRO_SITUACAO };
