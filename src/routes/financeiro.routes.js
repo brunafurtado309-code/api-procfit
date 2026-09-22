@@ -29,6 +29,7 @@ router.get('/despachos/:acerto', despachos.detalhe);
 // Contas a pagar (mesma chave do financeiro)
 router.get('/pagar', pagar.painel);
 router.get('/pagar/excel', pagar.excel);
+router.get('/pagar/pagamentos', pagar.pagamentos);
 
 // Clientes e crédito (contas a receber)
 router.get('/clientes-credito', clientesCredito.analise);

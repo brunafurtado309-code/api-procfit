@@ -256,4 +256,56 @@ async function painel(filtros) {
   };
 }
 
-module.exports = { painel, ORDENACAO, FILTRO_SITUACAO };
+// Pagamentos lançados, com QUEM lançou e por onde (caixa ou banco).
+// A transação de pagamento (11) aponta para a tela que a gerou:
+//   TAB_MASTER_ORIGEM 186377 -> PAGAMENTOS_CAIXA        (pagamento pelo caixa, valores pequenos)
+//   TAB_MASTER_ORIGEM 258    -> PAGAMENTOS_ESCRITURAIS  (baixa pelo banco, com conta bancária)
+// e REG_MASTER_ORIGEM é o código do registro nessa tela (amostra de set/2026: 274, 277, 281).
+// As duas telas guardam USUARIO_LOGADO, DATA_HORA (quando foi lançado) e DATA_PAGAMENTO.
+// Atraso de lançamento = dias entre o pagamento e o lançamento no PROCFIT.
+const TAB_PAGAMENTO_CAIXA = 186377;
+const TAB_PAGAMENTO_BANCO = 258;
+
+async function pagamentos(filtros) {
+  const pool = await getPool();
+  const { recordset } = await pool
+    .request()
+    .input('dias', sql.Int, filtros.dias)
+    .input('busca', sql.VarChar(60), filtros.busca ?? null)
+    .query(`
+      SELECT TOP 5000
+        TX.TITULO_PAGAR                                         AS id,
+        LTRIM(RTRIM(T.TITULO))                                  AS titulo,
+        T.ENTIDADE                                              AS cod_fornecedor,
+        LTRIM(RTRIM(E.NOME))                                    AS fornecedor,
+        CONVERT(varchar(10), TX.DATA, 23)                       AS data_pagamento,
+        TX.DEBITO                                               AS valor,
+        CASE WHEN PC.PAGAMENTO_CAIXA IS NOT NULL THEN 'Caixa'
+             WHEN PE.PAGAMENTO_ESCRITURAL IS NOT NULL THEN 'Banco'
+             ELSE 'Não identificado' END                        AS canal,
+        COALESCE(PC.USUARIO_LOGADO, PE.USUARIO_LOGADO)          AS usuario,
+        COALESCE(NULLIF(LTRIM(RTRIM(U.NOME)), ''), LTRIM(RTRIM(U.LOGIN))) AS usuario_nome,
+        CONVERT(varchar(16), COALESCE(PC.DATA_HORA, PE.DATA_HORA), 120) AS lancado_em,
+        DATEDIFF(day, CAST(TX.DATA AS date), CAST(COALESCE(PC.DATA_HORA, PE.DATA_HORA) AS date)) AS dias_para_lancar,
+        PE.CONTA_BANCARIA                                       AS conta_bancaria
+      FROM TITULOS_PAGAR_TRANSACOES TX WITH (NOLOCK)
+      JOIN TITULOS_PAGAR T WITH (NOLOCK) ON T.TITULO_PAGAR = TX.TITULO_PAGAR
+      LEFT JOIN PAGAMENTOS_CAIXA PC WITH (NOLOCK)
+        ON TX.TAB_MASTER_ORIGEM = ${TAB_PAGAMENTO_CAIXA} AND PC.PAGAMENTO_CAIXA = TX.REG_MASTER_ORIGEM
+      LEFT JOIN PAGAMENTOS_ESCRITURAIS PE WITH (NOLOCK)
+        ON TX.TAB_MASTER_ORIGEM = ${TAB_PAGAMENTO_BANCO} AND PE.PAGAMENTO_ESCRITURAL = TX.REG_MASTER_ORIGEM
+      -- Da tabela de usuários, só NOME e LOGIN (ela guarda senhas)
+      LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = COALESCE(PC.USUARIO_LOGADO, PE.USUARIO_LOGADO)
+      LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = T.ENTIDADE
+      WHERE TX.TRANSACAO_FINANCEIRA = 11
+        AND TX.DATA >= DATEADD(day, -@dias, CAST(GETDATE() AS date))
+        AND (@busca IS NULL
+          OR T.TITULO LIKE '%' + @busca + '%'
+          OR CAST(T.ENTIDADE AS varchar(20)) = @busca
+          OR E.NOME LIKE '%' + @busca + '%')
+      ORDER BY TX.DATA DESC, TX.TITULO_PAGAR;
+    `);
+  return recordset;
+}
+
+module.exports = { painel, pagamentos, ORDENACAO, FILTRO_SITUACAO };

@@ -28,4 +28,5 @@ const download = (fn) => async (req, res, next) => {
 module.exports = {
   painel: acao(service.painel),
   excel: download(service.exportar),
+  pagamentos: acao(service.pagamentos),
 };

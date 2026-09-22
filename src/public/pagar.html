@@ -87,6 +87,28 @@
       <!-- Cartões: clicar muda a lista de títulos -->
       <section class="cartoes cartoes--cinco" id="cartoes" aria-label="Situação dos títulos"></section>
 
+      <!-- Quem lançou os pagamentos: cada pessoa, por caixa ou banco -->
+      <section class="bloco">
+        <div class="bloco-topo">
+          <h2>Pagamentos por pessoa</h2>
+          <div class="atalhos" id="periodo-pagamentos" aria-label="Período dos pagamentos">
+            <button type="button" class="botao-secundario" data-dias="7">Últimos 7 dias</button>
+            <button type="button" class="botao-secundario atalho--ativo" data-dias="30">Últimos 30 dias</button>
+            <button type="button" class="botao-secundario" data-dias="90">Últimos 90 dias</button>
+          </div>
+        </div>
+        <p class="bloco__descricao">Pela data do pagamento. "Dias para lançar" é quanto tempo a pessoa levou entre o
+          pagamento e o lançamento da baixa no PROCFIT. Clique numa pessoa para ver só os pagamentos dela.</p>
+        <div class="cartoes" id="cartoes-pessoas" aria-label="Pessoas"></div>
+        <div class="tabela-rolagem">
+          <table class="tabela" id="tabela-pagamentos">
+            <thead></thead>
+            <tbody></tbody>
+            <tfoot></tfoot>
+          </table>
+        </div>
+      </section>
+
       <div class="duas-colunas">
         <section class="bloco">
           <h2>Tempo de atraso</h2>

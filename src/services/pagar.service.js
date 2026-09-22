@@ -79,4 +79,12 @@ async function exportar(query) {
   return { workbook, nomeArquivo: `contas-a-pagar${parte ? `_${parte}` : ''}_${hoje}.xlsx` };
 }
 
-module.exports = { painel, exportar };
+// Pagamentos por pessoa: últimos 7, 30 ou 90 dias
+async function pagamentos(query) {
+  const dias = Number(query.dias ?? 30);
+  if (![7, 30, 90].includes(dias)) throw new AppError('"dias" deve ser 7, 30 ou 90');
+  const busca = (query.busca ?? '').trim().slice(0, 60) || null;
+  return { dias, pagamentos: await repo.pagamentos({ dias, busca }) };
+}
+
+module.exports = { painel, exportar, pagamentos };

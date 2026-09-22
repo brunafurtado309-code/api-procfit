@@ -38,6 +38,9 @@ const SITUACAO = {
 
 // ===== Estado =====
 let cartaoAtual = 'aberto';
+let diasPagamentos = 30;
+let pagamentosLista = [];
+let pessoaAtual = null; // código do usuário, ou 'sem' para não identificado
 let titulos = [];
 let ordem = { coluna: 'vencimento', direcao: 'asc' };
 
@@ -130,6 +133,7 @@ async function carregar() {
     mostrarFornecedores(dados.fornecedores);
     mostrarMarcadores();
     mostrarLista(dados.limite);
+    carregarPagamentos();
     el('painel').hidden = false;
     const cartao = CARTOES.find((c) => c.id === cartaoAtual);
     mostrarStatus(`${cartao.titulo} · atualizado às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`);
@@ -476,6 +480,111 @@ function mostrarLista(limite) {
   }
 }
 
+// ===== Pagamentos por pessoa =====
+async function carregarPagamentos() {
+  try {
+    const dados = await buscar('pagar/pagamentos', {
+      dias: diasPagamentos, busca: el('pesquisa-termo').value.trim() || null,
+    });
+    pagamentosLista = dados.pagamentos;
+    mostrarPessoas();
+  } catch (erro) {
+    el('cartoes-pessoas').replaceChildren(span(`Não foi possível carregar os pagamentos: ${erro.message}`, 'status--erro'));
+  }
+}
+
+const chavePessoa = (p) => (p.usuario == null ? 'sem' : String(p.usuario));
+
+function mostrarPessoas() {
+  // Agrupa por pessoa: total, quantidade, por canal e atraso médio de lançamento (ponderado pelo valor)
+  const pessoas = new Map();
+  for (const p of pagamentosLista) {
+    const k = chavePessoa(p);
+    const g = pessoas.get(k) ?? {
+      chave: k, nome: p.usuario_nome ?? (p.usuario == null ? 'Não identificado' : `Usuário ${p.usuario}`),
+      total: 0, qtd: 0, caixa: 0, banco: 0, somaDias: 0, ultimo: null,
+    };
+    const valor = Number(p.valor) || 0;
+    g.total += valor;
+    g.qtd += 1;
+    if (p.canal === 'Caixa') g.caixa += valor;
+    if (p.canal === 'Banco') g.banco += valor;
+    if (p.dias_para_lancar != null) g.somaDias += valor * Math.max(0, Number(p.dias_para_lancar));
+    if (p.lancado_em && (!g.ultimo || p.lancado_em > g.ultimo)) g.ultimo = p.lancado_em;
+    pessoas.set(k, g);
+  }
+  const lista = [...pessoas.values()].sort((a, b) => b.total - a.total);
+  el('cartoes-pessoas').replaceChildren(...(lista.length ? lista.map((g) => {
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    const ativo = pessoaAtual === g.chave;
+    botao.className = `cartao${ativo ? ' cartao--ativo' : ''}`;
+    botao.setAttribute('aria-pressed', String(ativo));
+    const titulo = document.createElement('h3');
+    titulo.textContent = g.nome;
+    const valor = document.createElement('p');
+    valor.className = 'cartao-valor';
+    valor.textContent = dinheiro(g.total);
+    const diasMedio = g.total ? Math.round(g.somaDias / g.total) : 0;
+    const canais = [g.caixa > 0.009 ? `caixa ${compacto(g.caixa)}` : null, g.banco > 0.009 ? `banco ${compacto(g.banco)}` : null]
+      .filter(Boolean).join(' · ');
+    const nota = document.createElement('p');
+    nota.className = 'cartao-nota';
+    nota.textContent = `${plural(g.qtd, 'pagamento', 'pagamentos')}${canais ? ` · ${canais}` : ''}`;
+    const atraso = document.createElement('p');
+    atraso.className = `cartao-nota${diasMedio > 7 ? ' negativo' : ''}`;
+    atraso.textContent = g.chave === 'sem' ? 'origem sem pessoa registrada'
+      : `lança em média ${plural(diasMedio, 'dia', 'dias')} depois do pagamento`;
+    botao.append(titulo, valor, nota, atraso);
+    botao.addEventListener('click', () => {
+      pessoaAtual = ativo ? null : g.chave;
+      mostrarPessoas();
+    });
+    return botao;
+  }) : [span(`Nenhum pagamento lançado nos últimos ${diasPagamentos} dias.`, 'explica')]));
+  mostrarPagamentos();
+}
+
+function mostrarPagamentos() {
+  const lista = pagamentosLista.filter((p) => (pessoaAtual ? chavePessoa(p) === pessoaAtual : true));
+  const tabela = el('tabela-pagamentos');
+  const cab = document.createElement('tr');
+  for (const [titulo, esquerda] of [['Pagamento', true], ['Lançado', true], ['Pessoa', true], ['Canal', true],
+    ['Fornecedor', true], ['Título', true], ['Valor']]) {
+    const th = document.createElement('th');
+    th.scope = 'col';
+    th.textContent = titulo;
+    if (esquerda) th.className = 'esquerda';
+    cab.append(th);
+  }
+  tabela.tHead.replaceChildren(cab);
+  const MAXIMO = 300;
+  tabela.tBodies[0].replaceChildren(...lista.slice(0, MAXIMO).map((p) => {
+    const linha = document.createElement('tr');
+    const dias = Number(p.dias_para_lancar);
+    linha.append(
+      td(dataBR(p.data_pagamento), 'esquerda sem-quebra'),
+      comAuxiliar(p.lancado_em ? dataBR(p.lancado_em.slice(0, 10)) : '—',
+        p.lancado_em && dias > 0 ? `${plural(dias, 'dia', 'dias')} depois` : null, 'esquerda sem-quebra',
+        dias > 7 ? 'qtd negativo' : 'qtd'),
+      td(p.usuario_nome ?? (p.usuario == null ? 'Não identificado' : `Usuário ${p.usuario}`), 'esquerda'),
+      comAuxiliar(p.canal, p.conta_bancaria ? `conta ${p.conta_bancaria}` : null, 'esquerda'),
+      comAuxiliar(p.fornecedor ?? `Fornecedor ${p.cod_fornecedor}`, `código ${p.cod_fornecedor}`, 'esquerda'),
+      td(p.titulo ?? '—', 'esquerda sem-quebra'),
+      td(dinheiro(p.valor)),
+    );
+    return linha;
+  }));
+  const total = lista.reduce((t, p) => t + (Number(p.valor) || 0), 0);
+  const rotulo = td(lista.length > MAXIMO
+    ? `Total (${plural(lista.length, 'pagamento', 'pagamentos')}; mostrando os ${MAXIMO} mais recentes)`
+    : `Total (${plural(lista.length, 'pagamento', 'pagamentos')})`, 'esquerda');
+  rotulo.colSpan = 6;
+  const rodape = document.createElement('tr');
+  rodape.append(rotulo, td(dinheiro(total)));
+  tabela.tFoot.replaceChildren(rodape);
+}
+
 // ===== Excel: a mesma lista da tela, na mesma ordem =====
 async function baixarExcel() {
   const botao = el('baixar-excel');
@@ -551,6 +660,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     carregar();
   });
   el('baixar-excel').addEventListener('click', baixarExcel);
+  el('periodo-pagamentos').addEventListener('click', (evento) => {
+    const botao = evento.target.closest('[data-dias]');
+    if (!botao) return;
+    diasPagamentos = Number(botao.dataset.dias);
+    for (const item of el('periodo-pagamentos').querySelectorAll('[data-dias]')) {
+      item.classList.toggle('atalho--ativo', item === botao);
+    }
+    carregarPagamentos();
+  });
 
   carregar();
 });

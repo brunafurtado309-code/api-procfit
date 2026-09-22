@@ -680,6 +680,9 @@ button.cartao {
   transition: border-color 0.15s, background-color 0.15s;
 }
 button.cartao:hover { background: var(--verde-suave); border-color: var(--verde-medio); }
+/* Conteúdo do cartão sempre a partir do topo (botão centraliza por padrão) */
+button.cartao { display: flex; flex-direction: column; justify-content: flex-start; }
+.bloco .cartoes { margin-top: 1rem; }
 .cartao--ativo,
 button.cartao--ativo {
   border-color: var(--verde);
