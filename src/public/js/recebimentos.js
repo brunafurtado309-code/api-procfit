@@ -27,7 +27,6 @@ const chave = {
 let lista = [];
 let origemAtual = null;   // código da tela de origem
 let pessoaAtual = null;   // código do usuário
-let ordem = { coluna: 'dia', direcao: 'desc' };
 
 // ===== API =====
 async function buscar(rota, parametros = {}) {
@@ -213,17 +212,42 @@ function mostrarPessoas() {
   }) : [span('Nenhum recebimento no período.', 'explica')]));
 }
 
-// ===== Lista =====
-const COLUNAS = [
-  { titulo: 'Recebimento', chave: 'dia', esquerda: true },
-  { titulo: 'Origem', chave: 'origem', esquerda: true },
-  { titulo: 'Quem lançou', chave: 'usuario_nome', esquerda: true },
-  { titulo: 'Título', chave: 'titulo', esquerda: true },
-  { titulo: 'Nota / pedido', chave: 'nota', esquerda: true },
-  { titulo: 'Cliente', chave: 'cliente', esquerda: true },
-  { titulo: 'Forma', chave: 'forma', esquerda: true },
-  { titulo: 'Recebido', chave: 'recebido' },
-];
+// ===== Lista: um lançamento por linha; clicar abre os títulos daquele lançamento =====
+let loteAberto = null;
+let ordemLotes = { coluna: 'dia', direcao: 'desc' };
+
+function thOrdenavel(titulo, chaveColuna, aoOrdenar, ordemAtual, esquerda = false) {
+  const th = document.createElement('th');
+  th.scope = 'col';
+  if (esquerda) th.className = 'esquerda';
+  if (!chaveColuna) {
+    th.textContent = titulo;
+    return th;
+  }
+  const ativa = ordemAtual.coluna === chaveColuna;
+  const crescente = ordemAtual.direcao === 'asc';
+  if (ativa) th.setAttribute('aria-sort', crescente ? 'ascending' : 'descending');
+  const botao = document.createElement('button');
+  botao.type = 'button';
+  botao.className = ativa ? 'ordenar ordenar--ativo' : 'ordenar';
+  const seta = span(ativa ? (crescente ? '▲' : '▼') : '↕', 'ordenar__seta');
+  seta.setAttribute('aria-hidden', 'true');
+  botao.append(titulo, seta);
+  botao.addEventListener('click', (evento) => {
+    evento.stopPropagation();
+    aoOrdenar({ coluna: chaveColuna, direcao: ativa && crescente ? 'desc' : 'asc' });
+  });
+  th.append(botao);
+  return th;
+}
+
+function comparar(a, b, { coluna, direcao }) {
+  const fator = direcao === 'asc' ? 1 : -1;
+  const x = a[coluna];
+  const y = b[coluna];
+  if (typeof x === 'number' || typeof y === 'number') return ((Number(x) || 0) - (Number(y) || 0)) * fator;
+  return String(x ?? '').localeCompare(String(y ?? ''), 'pt-BR', { sensitivity: 'base' }) * fator;
+}
 
 function mostrarMarcadores() {
   const itens = [];
@@ -249,6 +273,7 @@ function mostrarMarcadores() {
     botao.append(item.texto, span('×'));
     botao.addEventListener('click', () => {
       item.remover();
+      loteAberto = null;
       mostrarCartoes();
       mostrarPessoas();
       mostrarLista();
@@ -257,73 +282,124 @@ function mostrarMarcadores() {
   }));
 }
 
-function cabecalho() {
-  const linha = document.createElement('tr');
-  for (const coluna of COLUNAS) {
-    const th = document.createElement('th');
-    th.scope = 'col';
-    if (coluna.esquerda) th.className = 'esquerda';
-    const ativa = ordem.coluna === coluna.chave;
-    const crescente = ordem.direcao === 'asc';
-    if (ativa) th.setAttribute('aria-sort', crescente ? 'ascending' : 'descending');
-    const botao = document.createElement('button');
-    botao.type = 'button';
-    botao.className = ativa ? 'ordenar ordenar--ativo' : 'ordenar';
-    const seta = span(ativa ? (crescente ? '▲' : '▼') : '↕', 'ordenar__seta');
-    seta.setAttribute('aria-hidden', 'true');
-    botao.append(coluna.titulo, seta);
-    botao.addEventListener('click', () => {
-      ordem = { coluna: coluna.chave, direcao: ativa && crescente ? 'desc' : 'asc' };
-      mostrarLista();
-    });
-    th.append(botao);
-    linha.append(th);
-  }
-  return linha;
-}
-
 function mostrarLista() {
   mostrarMarcadores();
-  const fator = ordem.direcao === 'asc' ? 1 : -1;
-  const itens = [...visiveis()].sort((a, b) => {
-    const x = a[ordem.coluna];
-    const y = b[ordem.coluna];
-    if (typeof x === 'number' || typeof y === 'number') return ((Number(x) || 0) - (Number(y) || 0)) * fator;
-    return String(x ?? '').localeCompare(String(y ?? ''), 'pt-BR', { sensitivity: 'base' }) * fator;
-  });
-  el('titulo-lista').textContent = `Recebimentos (${inteiro(itens.length)})`;
+  const itens = visiveis();
+
+  // Agrupa por lançamento (origem + lote): é assim que a baixa acontece no PROCFIT
+  const lotes = new Map();
+  for (const r of itens) {
+    const chaveLote = `${r.origem_id}-${r.lote}`;
+    const g = lotes.get(chaveLote) ?? {
+      chave: chaveLote, dia: r.dia, lancado_em: r.lancado_em, origem: r.origem, lote: r.lote,
+      usuario_nome: r.usuario_nome ?? 'Não identificado', titulos: [], recebido: 0, formas: new Set(),
+    };
+    g.titulos.push(r);
+    g.recebido += Number(r.recebido) || 0;
+    g.formas.add(r.forma ?? 'Outra');
+    lotes.set(chaveLote, g);
+  }
+  for (const g of lotes.values()) g.quantidade = g.titulos.length;
+  const listaLotes = [...lotes.values()].sort((a, b) => comparar(a, b, ordemLotes));
+
+  el('titulo-lista').textContent = `Recebimentos · ${plural(listaLotes.length, 'lançamento', 'lançamentos')} `
+    + `· ${plural(itens.length, 'título', 'títulos')}`;
 
   const tabela = el('tabela-recebimentos');
-  tabela.tHead.replaceChildren(cabecalho());
-  const MAXIMO = 500;
-  tabela.tBodies[0].replaceChildren(...(itens.length ? itens.slice(0, MAXIMO).map((r) => {
+  const cab = document.createElement('tr');
+  const ordenar = (nova) => { ordemLotes = nova; mostrarLista(); };
+  for (const [titulo, campo, esquerda] of [['Dia', 'dia', true], ['Origem', 'origem', true],
+    ['Quem lançou', 'usuario_nome', true], ['Títulos', 'quantidade'], ['Recebido', 'recebido'], ['', null, true]]) {
+    cab.append(thOrdenavel(titulo, campo, ordenar, ordemLotes, esquerda));
+  }
+  tabela.tHead.replaceChildren(cab);
+
+  const linhas = [];
+  if (!listaLotes.length) {
     const linha = document.createElement('tr');
-    const notaPedido = td(r.nota ? `NF ${r.nota}` : 'sem nota', 'esquerda');
-    if (r.pedido) {
-      notaPedido.append(document.createElement('br'), pedidoJanela.link(r.pedido));
-    }
+    const vazio = td('Nenhum recebimento com esses filtros.', 'vazio');
+    vazio.colSpan = 6;
+    linha.append(vazio);
+    linhas.push(linha);
+  }
+  for (const g of listaLotes) {
+    const aberto = loteAberto === g.chave;
+    const linha = document.createElement('tr');
+    linha.className = `linha-dia${aberto ? ' linha-dia--aberta' : ''}`;
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    botao.className = 'botao-expandir';
+    botao.setAttribute('aria-expanded', String(aberto));
+    botao.setAttribute('aria-label', aberto ? 'Fechar o lançamento' : 'Ver os títulos deste lançamento');
+    botao.textContent = aberto ? '▾' : '▸';
     linha.append(
-      comAuxiliar(dataBR(r.dia), r.lancado_em ? `lançado ${dataHoraBR(r.lancado_em)}` : null, 'esquerda sem-quebra'),
-      comAuxiliar(r.origem, r.lote ? `lote ${r.lote}` : null, 'esquerda'),
-      td(r.usuario_nome ?? 'Não identificado', 'esquerda'),
-      td(r.titulo ?? '—', 'esquerda sem-quebra'),
-      notaPedido,
-      comAuxiliar(r.cliente ?? `Cliente ${r.cod_cliente}`, `código ${r.cod_cliente}`, 'esquerda'),
-      td(r.forma ?? '—', 'esquerda'),
-      comAuxiliar(dinheiro(r.recebido), parcial(r) ? `parcial de ${dinheiro(r.valor_titulo)}` : null,
-        'coluna-final', 'qtd negativo'),
+      comAuxiliar(dataBR(g.dia), g.lancado_em ? `lançado ${dataHoraBR(g.lancado_em)}` : null, 'esquerda sem-quebra'),
+      comAuxiliar(g.origem, `lote ${g.lote}`, 'esquerda'),
+      td(g.usuario_nome, 'esquerda'),
+      td(inteiro(g.quantidade)),
+      comAuxiliar(dinheiro(g.recebido), [...g.formas].join(' · '), 'coluna-final'),
+      td(botao, 'esquerda'),
     );
-    return linha;
-  }) : [Object.assign(document.createElement('tr'),
-    { innerHTML: '<td class="vazio" colspan="8">Nenhum recebimento com esses filtros.</td>' })]));
+    const alternar = () => {
+      loteAberto = aberto ? null : g.chave;
+      mostrarLista();
+    };
+    botao.addEventListener('click', (evento) => { evento.stopPropagation(); alternar(); });
+    linha.addEventListener('click', alternar);
+    linhas.push(linha);
+    if (aberto) linhas.push(detalheDoLote(g));
+  }
+  tabela.tBodies[0].replaceChildren(...linhas);
 
   const rodape = document.createElement('tr');
-  const rotulo = td(itens.length > MAXIMO
-    ? `Total (${plural(itens.length, 'título', 'títulos')}; mostrando os ${MAXIMO} primeiros)`
-    : `Total (${plural(itens.length, 'título', 'títulos')})`, 'esquerda');
-  rotulo.colSpan = 7;
-  rodape.append(rotulo, td(dinheiro(soma(itens))));
+  const rotulo = td(`Total (${plural(listaLotes.length, 'lançamento', 'lançamentos')})`, 'esquerda');
+  rotulo.colSpan = 3;
+  rodape.append(rotulo, td(inteiro(itens.length)), td(dinheiro(soma(itens))), td(''));
   tabela.tFoot.replaceChildren(rodape);
+}
+
+// Títulos de um lançamento: cliente, nota, pedido, forma e valor
+function detalheDoLote(g) {
+  const linha = document.createElement('tr');
+  linha.className = 'linha-itens';
+  const celula = document.createElement('td');
+  celula.colSpan = 6;
+  const tabela = document.createElement('table');
+  tabela.className = 'tabela tabela--itens';
+  const cab = document.createElement('tr');
+  for (const [texto, esquerda] of [['Cliente', true], ['Título', true], ['Nota / pedido', true],
+    ['Vencimento', true], ['Forma', true], ['Recebido']]) {
+    const th = document.createElement('th');
+    th.scope = 'col';
+    th.textContent = texto;
+    if (esquerda) th.className = 'esquerda';
+    cab.append(th);
+  }
+  tabela.createTHead().append(cab);
+  const corpo = tabela.createTBody();
+  for (const r of [...g.titulos].sort((a, b) => (Number(b.recebido) || 0) - (Number(a.recebido) || 0))) {
+    const tr = document.createElement('tr');
+    const notaPedido = td(r.nota ? `NF ${r.nota}` : 'sem nota', 'esquerda');
+    if (r.pedido) notaPedido.append(' · ', pedidoJanela.link(r.pedido));
+    tr.append(
+      comAuxiliar(r.cliente ?? `Cliente ${r.cod_cliente}`, `código ${r.cod_cliente}`, 'esquerda'),
+      td(r.titulo ?? '—', 'esquerda sem-quebra'),
+      notaPedido,
+      td(dataBR(r.vencimento), 'esquerda sem-quebra'),
+      td(r.forma ?? '—', 'esquerda'),
+      comAuxiliar(dinheiro(r.recebido), parcial(r) ? `parcial de ${dinheiro(r.valor_titulo)}` : null,
+        null, 'qtd negativo'),
+    );
+    corpo.append(tr);
+  }
+  const rodape = document.createElement('tr');
+  const rotulo = td(`Total do lançamento (${plural(g.titulos.length, 'título', 'títulos')})`, 'esquerda');
+  rotulo.colSpan = 5;
+  rodape.append(rotulo, td(dinheiro(g.recebido)));
+  tabela.createTFoot().append(rodape);
+  celula.append(tabela);
+  linha.append(celula);
+  return linha;
 }
 
 // ===== Excel =====
@@ -333,7 +409,7 @@ async function baixarExcel() {
   try {
     const url = new URL('/financeiro/recebimentos/excel', window.location.origin);
     for (const [nome, valor] of Object.entries({
-      ...filtrosAtuais(), origem: origemAtual, usuario: pessoaAtual, ordem: ordem.coluna, direcao: ordem.direcao,
+      ...filtrosAtuais(), origem: origemAtual, usuario: pessoaAtual, direcao: ordemLotes.direcao,
     })) {
       if (valor) url.searchParams.set(nome, valor);
     }
