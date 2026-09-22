@@ -32,6 +32,12 @@
     </form>
 
     <div id="painel" hidden>
+      <!-- Divisão principal do financeiro: o que entra e o que sai -->
+      <nav class="divisao" aria-label="Parte do financeiro">
+        <span class="divisao__item divisao__item--ativa" aria-current="page">Contas a receber</span>
+        <a class="divisao__item" href="pagar.html">Contas a pagar</a>
+      </nav>
+
       <nav class="abas" id="abas">
         <button class="aba aba--ativa" type="button" data-aba="titulos">Títulos em aberto</button>
         <button class="aba" type="button" data-aba="parciais">Baixa parcial</button>

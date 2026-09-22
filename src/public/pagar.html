@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Contas a pagar | Painel financeiro | Belo Norte</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/modulos.js" defer></script>
+  <script src="js/pagar.js" defer></script>
+</head>
+<body>
+  <header class="topo">
+    <div>
+      <p class="marca">Belo Norte</p>
+      <h1>Painel financeiro</h1>
+    </div>
+    <div class="topo-acoes">
+      <nav id="modulos" class="modulos" aria-label="Módulos do painel" hidden></nav>
+      <button id="trocar-chave" class="botao-texto" type="button">Trocar chave</button>
+    </div>
+  </header>
+
+  <main class="conteudo conteudo--largo">
+    <!-- Divisão principal do financeiro: o que entra e o que sai -->
+    <nav class="divisao" aria-label="Parte do financeiro">
+      <a class="divisao__item" href="financeiro.html">Contas a receber</a>
+      <span class="divisao__item divisao__item--ativa" aria-current="page">Contas a pagar</span>
+    </nav>
+
+    <!-- Barra de filtros (padrão de todas as telas, ver DESIGN.md) -->
+    <section class="barra-filtros" aria-label="Filtros">
+      <div class="barra-filtros__linha">
+        <form id="form-pesquisa" class="pesquisa" role="search">
+          <label class="campo campo--busca">
+            <span class="sr-only">Encontrar fornecedor ou título</span>
+            <input id="pesquisa-termo" type="search" maxlength="60" autocomplete="off"
+                   placeholder="Encontrar fornecedor (nome ou código) ou número do título">
+          </label>
+          <button type="submit">Pesquisar</button>
+          <button id="limpar-pesquisa" type="button" class="botao-secundario" hidden>Limpar</button>
+        </form>
+        <div class="barra-filtros__acoes">
+          <button id="baixar-excel" type="button" class="botao-secundario">Baixar Excel</button>
+        </div>
+      </div>
+
+      <form id="filtros" class="filtros">
+        <label>Vencimento de <input type="date" id="inicio"></label>
+        <label>até <input type="date" id="fim"></label>
+        <div class="atalhos" id="atalhos" aria-label="Períodos prontos">
+          <button type="button" class="botao-secundario atalho--ativo" data-periodo="tudo">Tudo</button>
+          <button type="button" class="botao-secundario" data-periodo="semana">Esta semana</button>
+          <button type="button" class="botao-secundario" data-periodo="mes">Este mês</button>
+          <button type="button" class="botao-secundario" data-periodo="proximo-mes">Próximo mês</button>
+        </div>
+        <button type="submit" class="filtros__aplicar">Atualizar</button>
+      </form>
+
+      <div id="marcadores" class="marcadores" hidden></div>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <div id="painel" hidden>
+      <!-- Aparece quando algum mês tem poucas baixas: o vencido fica superestimado -->
+      <p id="aviso-baixas" class="aviso-alerta" role="alert" hidden></p>
+
+      <section class="destaque">
+        <div class="painel-topo">
+          <div>
+            <h2>Total a pagar (em aberto)</h2>
+            <p id="total-aberto" class="valor-grande">—</p>
+            <p id="total-explica" class="explica"></p>
+          </div>
+          <dl class="indicadores">
+            <dt>Vencido</dt>
+            <dd id="ind-vencido">—</dd>
+            <dt>Vence em 7 dias</dt>
+            <dd id="ind-7">—</dd>
+            <dt>Vence em 30 dias</dt>
+            <dd id="ind-30">—</dd>
+            <dt>Fornecedores</dt>
+            <dd id="ind-fornecedores">—</dd>
+          </dl>
+        </div>
+      </section>
+
+      <!-- Cartões: clicar muda a lista de títulos -->
+      <section class="cartoes cartoes--cinco" id="cartoes" aria-label="Situação dos títulos"></section>
+
+      <div class="duas-colunas">
+        <section class="bloco">
+          <h2>Tempo de atraso</h2>
+          <p class="bloco__descricao">Quanto do vencido está em cada faixa de dias de atraso.</p>
+          <div class="barras" id="barras-aging"></div>
+        </section>
+        <section class="bloco">
+          <h2>Baixas em dia?</h2>
+          <p class="bloco__descricao">Do que já venceu em cada mês, quanto foi baixado como pago no PROCFIT.</p>
+          <div class="barras" id="barras-baixas"></div>
+        </section>
+      </div>
+
+      <div class="duas-colunas">
+        <section class="bloco">
+          <h2>Previsão de pagamentos</h2>
+          <p class="bloco__descricao">Quanto vence em cada semana, pelos títulos em aberto.</p>
+          <div class="barras" id="barras-previsao"></div>
+        </section>
+        <section class="bloco">
+          <h2>Maiores fornecedores</h2>
+          <p class="bloco__descricao">Em aberto. Clique no nome para ver só os títulos dele.</p>
+          <div class="barras" id="barras-fornecedores"></div>
+        </section>
+      </div>
+
+      <section class="bloco">
+        <h2>Onde o dinheiro vai</h2>
+        <p class="bloco__descricao">Valor lançado no período, pelo grupo e pela categoria de cada título. A nota mostra quanto ainda está em aberto.</p>
+        <p id="aviso-categoria" class="aviso-alerta" hidden></p>
+        <div class="duas-colunas duas-colunas--sem-linha">
+          <div>
+            <h3 class="subtitulo">Por grupo</h3>
+            <div class="barras" id="barras-grupos"></div>
+          </div>
+          <div>
+            <h3 class="subtitulo">Maiores categorias</h3>
+            <div class="barras" id="barras-categorias"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="bloco">
+        <h2>Compromissos de longo prazo</h2>
+        <p id="longo-resumo" class="bloco__descricao"></p>
+        <div class="duas-colunas duas-colunas--sem-linha">
+          <div>
+            <h3 class="subtitulo">Por ano</h3>
+            <div class="barras" id="barras-longo"></div>
+          </div>
+          <div>
+            <h3 class="subtitulo">Credores</h3>
+            <div class="barras" id="barras-credores"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="bloco">
+        <h2 id="titulo-lista">Títulos em aberto</h2>
+        <div class="tabela-rolagem">
+          <table class="tabela" id="tabela-pagar">
+            <thead></thead>
+            <tbody></tbody>
+            <tfoot></tfoot>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

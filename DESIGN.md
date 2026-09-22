@@ -82,6 +82,12 @@ Todo número de pedido que aparecer numa tela nova usa `pedidoJanela.link(numero
 pedido existe em cada setor (`/vendas/pedidos/:pedido` e `/financeiro/pedidos/:pedido`),
 então funciona com a chave de qualquer um deles.
 
+## Divisão do financeiro (receber | pagar)
+
+No topo das telas do financeiro fica a divisão `nav.divisao` com **Contas a receber** e
+**Contas a pagar** (`.divisao__item`, a atual com `.divisao__item--ativa` e `aria-current`).
+Ela vem antes das abas. Toda tela nova do financeiro repete essa divisão.
+
 ## Aba que é outra página
 
 Quando uma aba mostra outra coisa (ex.: Despachos no financeiro), ela vira uma página própria

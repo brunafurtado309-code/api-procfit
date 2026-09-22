@@ -4,6 +4,7 @@ const { Router } = require('express');
 const controller = require('../controllers/financeiro.controller');
 const pedidos = require('../controllers/pedidos.controller');
 const despachos = require('../controllers/despachos.controller');
+const pagar = require('../controllers/pagar.controller');
 
 const router = Router();
 
@@ -23,6 +24,10 @@ router.get('/pedidos/:pedido', pedidos.detalhe);
 router.get('/despachos', despachos.lista);
 router.get('/despachos/excel', despachos.excel);
 router.get('/despachos/:acerto', despachos.detalhe);
+
+// Contas a pagar (mesma chave do financeiro)
+router.get('/pagar', pagar.painel);
+router.get('/pagar/excel', pagar.excel);
 // Precisa ficar DEPOIS de /clientes: o Express testa na ordem, e uma rota
 // com parâmetro captura tudo que vier antes dela.
 router.get('/clientes/:entidade', controller.fichaCliente);
