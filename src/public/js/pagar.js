@@ -587,19 +587,53 @@ function mostrarPessoas() {
 // Caixa por dia: cada linha é um dia; clicar abre todas as notas pagas naquele dia,
 // com fornecedor, categoria, valor da nota, quanto foi pago e quanto ainda falta.
 let diaAberto = null;
+// Ordem da tabela de dias e da tabela de notas (clicar no nome da coluna)
+let ordemDias = { coluna: 'dia', direcao: 'desc' };
+let ordemNotas = { coluna: 'valor', direcao: 'desc' };
+
+// Cabeçalho clicável (mesmo visual das outras listas): 1º clique crescente, 2º decrescente
+function thOrdenavel(titulo, chave, ordemAtual, aoOrdenar, esquerda = false) {
+  const th = document.createElement('th');
+  th.scope = 'col';
+  if (esquerda) th.className = 'esquerda';
+  if (!chave) {
+    th.textContent = titulo;
+    return th;
+  }
+  const ativa = ordemAtual.coluna === chave;
+  const crescente = ordemAtual.direcao === 'asc';
+  if (ativa) th.setAttribute('aria-sort', crescente ? 'ascending' : 'descending');
+  const botao = document.createElement('button');
+  botao.type = 'button';
+  botao.className = ativa ? 'ordenar ordenar--ativo' : 'ordenar';
+  const seta = span(ativa ? (crescente ? '▲' : '▼') : '↕', 'ordenar__seta');
+  seta.setAttribute('aria-hidden', 'true');
+  botao.append(titulo, seta);
+  botao.addEventListener('click', (evento) => {
+    evento.stopPropagation();
+    aoOrdenar({ coluna: chave, direcao: ativa && crescente ? 'desc' : 'asc' });
+  });
+  th.append(botao);
+  return th;
+}
+
+function comparar(a, b, { coluna, direcao }) {
+  const fator = direcao === 'asc' ? 1 : -1;
+  const x = a[coluna];
+  const y = b[coluna];
+  if (typeof x === 'number' || typeof y === 'number') return ((Number(x) || 0) - (Number(y) || 0)) * fator;
+  return String(x ?? '').localeCompare(String(y ?? ''), 'pt-BR', { sensitivity: 'base' }) * fator;
+}
 
 function mostrarPagamentos() {
   const lista = pagamentosLista.filter((p) => (pessoaAtual ? chavePessoa(p) === pessoaAtual : true));
   const tabela = el('tabela-pagamentos');
 
   const cab = document.createElement('tr');
-  for (const [titulo, esquerda] of [['Dia', true], ['Notas'], ['Pago no dia'], ['Ainda em aberto'],
-    ['Principais categorias', true], ['', true]]) {
-    const th = document.createElement('th');
-    th.scope = 'col';
-    th.textContent = titulo;
-    if (esquerda) th.className = 'esquerda';
-    cab.append(th);
+  const ordenarDias = (nova) => { ordemDias = nova; mostrarPagamentos(); };
+  for (const [titulo, chave, esquerda] of [['Dia', 'dia', true], ['Notas', 'qtd'], ['Pago no dia', 'pago'],
+    ['Ainda em aberto', 'aberto'], ['Principais categorias', null, true], ['', null, true]]) {
+    cab.append(thOrdenavel(titulo, chave, ordemDias, ordenarDias, esquerda));
   }
   tabela.tHead.replaceChildren(cab);
 
@@ -615,7 +649,8 @@ function mostrarPagamentos() {
     d.categorias.set(cat, (d.categorias.get(cat) ?? 0) + (Number(p.valor) || 0));
     dias.set(p.data_pagamento, d);
   }
-  const listaDias = [...dias.values()].sort((a, b) => (a.dia < b.dia ? 1 : -1));
+  for (const d of dias.values()) d.qtd = d.notas.length;
+  const listaDias = [...dias.values()].sort((a, b) => comparar(a, b, ordemDias));
 
   const linhas = [];
   if (!listaDias.length) {
@@ -677,21 +712,24 @@ function detalheDoDia(d) {
   tabela.className = 'tabela tabela--itens';
   const cab = document.createElement('tr');
   const mostrarPessoa = !pessoaAtual;
-  const colunas = [['Nota / título', true], ['Fornecedor', true], ['Categoria', true],
-    ...(mostrarPessoa ? [['Pessoa', true]] : []), ['Valor da nota'], ['Pago'], ['Em aberto'], ['Situação', true]];
-  for (const [titulo, esquerda] of colunas) {
-    const th = document.createElement('th');
-    th.scope = 'col';
-    th.textContent = titulo;
-    if (esquerda) th.className = 'esquerda';
-    cab.append(th);
+  const colunas = [['Nota / título', 'titulo', true], ['Fornecedor', 'fornecedor', true], ['Categoria', 'categoria', true],
+    ...(mostrarPessoa ? [['Pessoa', 'usuario_nome', true]] : []), ['Valor da nota', 'valor_titulo'], ['Pago', 'valor'],
+    ['Em aberto', 'pendente_atual'], ['Situação', 'situacao_ordem', true]];
+  const ordenarNotas = (nova) => { ordemNotas = nova; mostrarPagamentos(); };
+  for (const [titulo, chave, esquerda] of colunas) {
+    cab.append(thOrdenavel(titulo, chave, ordemNotas, ordenarNotas, esquerda));
   }
   tabela.createTHead().append(cab);
   const corpo = tabela.createTBody();
   let somaNotas = 0;
   let somaPago = 0;
   let somaAberto = 0;
-  for (const p of [...d.notas].sort((a, b) => (Number(b.valor) || 0) - (Number(a.valor) || 0))) {
+  // Situação para ordenar: sem baixa do banco, em aberto, baixada
+  for (const p of d.notas) {
+    const pend = Math.max(0, Number(p.pendente_atual) || 0);
+    p.situacao_ordem = Number(p.aguardando_baixa) === 1 ? 'a' : (pend > 0.009 ? 'b' : 'c');
+  }
+  for (const p of [...d.notas].sort((a, b) => comparar(a, b, ordemNotas))) {
     const pendente = Math.max(0, Number(p.pendente_atual) || 0);
     somaNotas += Number(p.valor_titulo) || 0;
     somaPago += Number(p.valor) || 0;
