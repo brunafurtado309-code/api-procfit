@@ -1269,3 +1269,49 @@ button.barra:hover { background: var(--verde-suave); color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   .segmento, button { transition: none; }
 }
+
+/* ===== 17. Gráficos (js/graficos.js) ===== */
+.grafico-rolagem { margin-top: 1rem; overflow-x: auto; }
+.grafico { display: block; max-width: none; }
+.grafico--rosca { min-width: 0; width: 220px; flex: 0 0 220px; }
+.grafico-grade { stroke: var(--linha); stroke-width: 1; }
+.grafico-eixo { font-family: var(--fonte); font-size: 12px; fill: var(--tinta-suave); }
+.grafico-centro { font-family: var(--fonte-titulo); font-size: 20px; font-weight: 700; fill: var(--tinta); }
+.grafico-barra { transition: opacity 0.15s ease; }
+.grafico-barra:hover, .grafico-fatia:hover { opacity: 0.8; cursor: default; }
+.grafico-legenda {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  font-size: var(--texto-pequeno);
+  color: var(--tinta-suave);
+}
+.grafico-legenda li { display: inline-flex; align-items: center; gap: 0.4rem; }
+.grafico-legenda__cor { display: inline-block; width: 0.85rem; height: 0.85rem; border-radius: 3px; flex: 0 0 auto; }
+.grafico-rosca {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.5rem 2rem;
+  margin-top: 1rem;
+}
+.grafico-rosca__lista {
+  list-style: none;
+  flex: 1 1 16rem;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+.grafico-rosca__lista li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.95rem;
+}
+.grafico-rosca__nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grafico-rosca__lista strong { font-variant-numeric: tabular-nums; white-space: nowrap; }

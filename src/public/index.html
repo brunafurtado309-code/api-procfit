@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="css/style.css">
   <script src="js/modulos.js" defer></script>
   <script src="js/pedido.js" defer></script>
+  <script src="js/graficos.js" defer></script>
   <script src="js/app.js" defer></script>
 </head>
 <body>
@@ -78,6 +79,26 @@
           <span class="amostra amostra--listrada"></span> sem custo cadastrado
         </p>
       </section>
+
+      <!-- Gráficos: evolução no período, lojas e produtos -->
+      <section class="bloco" aria-labelledby="titulo-dia-a-dia">
+        <h2 id="titulo-dia-a-dia">Venda dia a dia</h2>
+        <p class="bloco__descricao">Venda líquida de cada dia do período. Passe o mouse na coluna para ver o valor exato.</p>
+        <div id="grafico-dias"></div>
+      </section>
+
+      <div class="duas-colunas">
+        <section class="bloco" aria-labelledby="titulo-lojas">
+          <h2 id="titulo-lojas">Por loja</h2>
+          <p class="bloco__descricao">Participação de cada loja na venda líquida.</p>
+          <div id="grafico-lojas"></div>
+        </section>
+        <section class="bloco" aria-labelledby="titulo-produtos">
+          <h2 id="titulo-produtos">Produtos mais vendidos</h2>
+          <p class="bloco__descricao">Os 10 produtos com maior venda líquida no período.</p>
+          <div class="barras" id="barras-produtos"></div>
+        </section>
+      </div>
 
       <section class="bloco" aria-labelledby="titulo-composicao">
         <h2 id="titulo-composicao">Como a venda se forma</h2>

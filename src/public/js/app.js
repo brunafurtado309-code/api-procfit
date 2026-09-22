@@ -1028,6 +1028,8 @@ async function carregar({ automatico = false } = {}) {
     mostrarComposicao(porVendedor.total);
     mostrarTabela(TABELA_VENDEDORES, porVendedor.vendedores, porVendedor.total);
     mostrarTabela(TABELA_CAIXA, porOperador.operadores, porOperador.total);
+    // Gráficos carregam à parte: se falharem, o resto do painel continua
+    carregarGraficos(filtros, minhaCarga);
 
     filtrosCarregados = { ...filtros };
     diaDaUltimaCarga = hojeISO();
@@ -1058,6 +1060,58 @@ async function carregar({ automatico = false } = {}) {
       : erro.message, true);
   } finally {
     if (minhaCarga === cargaAtual) carregando = false;
+  }
+}
+
+// ===== Gráficos (js/graficos.js) =====
+async function carregarGraficos(filtros, minhaCarga) {
+  try {
+    const [dias, lojas, produtos] = await Promise.all([
+      buscar('por-dia', filtros),
+      buscar('por-loja', filtros),
+      buscar('top-produtos', { ...filtros, limite: 10 }),
+    ]);
+    if (minhaCarga !== cargaAtual) return;
+
+    graficos.colunas(el('grafico-dias'), {
+      titulo: 'Venda líquida por dia',
+      rotulos: dias.map((d) => d.dia.slice(8, 10) + '/' + d.dia.slice(5, 7)),
+      series: [{ nome: 'Venda líquida', valores: dias.map((d) => d.venda_liquida) }],
+    });
+
+    graficos.rosca(el('grafico-lojas'), {
+      titulo: 'Venda por loja',
+      itens: lojas.map((l) => ({ nome: l.loja || `Empresa ${l.empresa}`, valor: Number(l.venda_liquida) || 0 })),
+      rotuloCentro: 'venda líquida',
+    });
+
+    const maximo = Math.max(0, ...produtos.map((p) => Number(p.venda_liquida) || 0));
+    el('barras-produtos').replaceChildren(...produtos.map((p) => {
+      const linha = document.createElement('div');
+      linha.className = 'barra barra--previsao';
+      const rotulo = document.createElement('span');
+      rotulo.className = 'barra-rotulo';
+      rotulo.textContent = p.descricao ?? `Produto ${p.produto}`;
+      rotulo.title = rotulo.textContent;
+      const trilho = document.createElement('span');
+      trilho.className = 'barra-trilho';
+      const preenchida = document.createElement('span');
+      preenchida.className = 'barra-preenchida';
+      preenchida.style.width = `${maximo ? Math.max(2, (Number(p.venda_liquida) / maximo) * 100) : 0}%`;
+      trilho.append(preenchida);
+      const valor = document.createElement('span');
+      valor.className = 'barra-valor';
+      valor.textContent = moeda.format(Number(p.venda_liquida) || 0);
+      const nota = document.createElement('small');
+      nota.textContent = `${(Number(p.quantidade) || 0).toLocaleString('pt-BR')} un.`
+        + `${p.margem_pct != null ? ` · margem ${String(p.margem_pct).replace('.', ',')}%` : ''}`;
+      valor.append(nota);
+      linha.append(rotulo, trilho, valor);
+      return linha;
+    }));
+  } catch (erro) {
+    console.error('Gráficos:', erro);
+    el('grafico-dias').textContent = 'Não foi possível carregar os gráficos agora.';
   }
 }
 

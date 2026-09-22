@@ -95,6 +95,24 @@ Quando uma aba mostra outra coisa (ex.: Despachos no financeiro), ela vira uma p
 (`financeiro.html#boletos`) e a atual é um `<span class="aba aba--ativa">`. O financeiro lê o
 `#aba` do endereço ao abrir. A barra de filtros, os cartões-filtro e a lista seguem o mesmo padrão.
 
+## Gráficos
+
+Todo gráfico usa `js/graficos.js` (SVG puro, sem biblioteca externa: o painel não carrega
+scripts de fora). Inclua o script na página antes do JS da tela.
+
+| Preciso mostrar... | Use | Exemplo |
+|---|---|---|
+| Evolução no tempo (dia, semana, mês) | `graficos.colunas` com uma série | venda dia a dia |
+| Comparação de duas medidas no tempo | `graficos.colunas` com duas séries | vencido × baixado por mês |
+| Composição por partes do total | `graficos.colunas` com `empilhado: true` | vencidos × a vencer por semana |
+| Participação no total (até 6 partes) | `graficos.rosca` | venda por loja, gasto por grupo |
+| Ranking com nomes longos | lista de barras (`.barras`) | produtos, fornecedores |
+
+Regras: cores só do padrão (verdes; laranja `graficos.ALERTA` para o que é problema);
+valor exato na dica ao passar o mouse; número importante também escrito em texto ao lado
+(o gráfico ajuda a ver, o texto garante a leitura); nada de gráfico de pizza com muitas fatias
+(a rosca junta o resto em "Outros").
+
 ## Cuidados que já deram problema
 
 - **Não reaproveitar nome de classe com outro sentido.** A barra da venda (vendas) e as

@@ -237,21 +237,26 @@ function mostrarBaixas(lista) {
     })
     .filter((m) => m.venceu > 0);
 
-  el('barras-baixas').replaceChildren(...(meses.length ? meses.map((m) => {
-    const linha = document.createElement('div');
+  // Gráfico: do que já venceu em cada mês, quanto foi baixado
+  const area = el('barras-baixas');
+  graficos.colunas(area, {
+    titulo: 'Vencido × baixado por mês',
+    rotulos: meses.map((m) => nomeMes(m.mes).replace(/\/\d{4}$/, '')),
+    series: [
+      { nome: 'Já venceu', valores: meses.map((m) => m.venceu), cor: 'var(--verde-claro)' },
+      { nome: 'Baixado como pago', valores: meses.map((m) => m.venceu - m.semBaixa), cor: 'var(--verde)' },
+    ],
+    vazio: 'Nenhum vencimento nos últimos meses.',
+  });
+  // Percentual de cada mês, em laranja quando está abaixo do normal
+  // (fica num elemento separado: o gráfico pode ser redesenhado depois, quando a tela aparece)
+  const resumo = el('baixas-resumo');
+  resumo.replaceChildren();
+  for (const [k, m] of meses.entries()) {
     const ruim = m.pct !== null && m.pct < BAIXA_MINIMA;
-    linha.className = `barra${ruim ? ' barra--atraso' : ' barra--previsao'}`;
-    const trilho = span('', 'barra-trilho');
-    const preenchida = span('', 'barra-preenchida');
-    preenchida.style.width = `${Math.max(2, (m.pct ?? 0) * 100)}%`;
-    trilho.append(preenchida);
-    const valor = span(`${Math.round((m.pct ?? 0) * 100)}% baixado`, 'barra-valor');
-    valor.append(Object.assign(document.createElement('small'), {
-      textContent: m.semBaixa > 0.01 ? `${milhoes(m.semBaixa)} vencidos sem baixa` : 'tudo baixado',
-    }));
-    linha.append(span(nomeMes(m.mes), 'barra-rotulo'), trilho, valor);
-    return linha;
-  }) : [span('Nenhum vencimento nos últimos meses.', 'explica')]));
+    if (k) resumo.append(' · ');
+    resumo.append(span(`${nomeMes(m.mes)} ${Math.round((m.pct ?? 0) * 100)}% baixado`, ruim ? 'negativo' : null));
+  }
 
   // Aviso no topo quando algum mês está com poucas baixas
   const ruins = meses.filter((m) => m.pct !== null && m.pct < BAIXA_MINIMA);
@@ -279,10 +284,12 @@ function mostrarCategorias(lista) {
     grupos.set(c.grupo, g);
   }
   const listaGrupos = [...grupos.values()].sort((a, b) => b.lancado - a.lancado);
-  const maxGrupo = Math.max(0, ...listaGrupos.map((g) => g.lancado));
-  el('barras-grupos').replaceChildren(...(listaGrupos.length ? listaGrupos.map((g) => barra({
-    rotulo: g.grupo, valor: g.lancado, nota: `em aberto ${dinheiro(g.aberto)}`, maximo: maxGrupo,
-  })) : [span('Nenhum título no período.', 'explica')]));
+  graficos.rosca(el('barras-grupos'), {
+    titulo: 'Gasto por grupo',
+    itens: listaGrupos.map((g) => ({ nome: g.grupo, valor: g.lancado })),
+    rotuloCentro: 'lançado no período',
+    vazio: 'Nenhum título no período.',
+  });
 
   const maiores = lista.slice(0, 12);
   const maxCategoria = Math.max(0, ...maiores.map((c) => Number(c.lancado) || 0));
@@ -328,19 +335,19 @@ function mostrarLongoPrazo({ anos, credores }) {
 }
 
 function mostrarPrevisao(lista) {
-  const area = el('barras-previsao');
-  if (!lista.length) {
-    area.replaceChildren(span('Nada em aberto nas próximas semanas.', 'explica'));
-    return;
-  }
-  const maximo = Math.max(...lista.map((p) => Number(p.pendente) || 0));
-  area.replaceChildren(...lista.map((p) => barra({
-    rotulo: p.semana === 'VENCIDO' ? 'Já vencidos' : `semana de ${dataBR(p.semana)}`,
-    valor: p.pendente,
-    nota: plural(p.titulos, 'título', 'títulos'),
-    maximo,
-    classe: p.semana === 'VENCIDO' ? 'barra--atraso' : 'barra--previsao',
-  })));
+  const vencido = lista.find((p) => p.semana === 'VENCIDO');
+  const semanas = lista.filter((p) => p.semana !== 'VENCIDO');
+  const rotulos = [...(vencido ? ['Vencidos'] : []), ...semanas.map((p) => dataBR(p.semana).slice(0, 5))];
+  graficos.colunas(el('barras-previsao'), {
+    titulo: 'Saídas previstas por semana',
+    rotulos,
+    empilhado: true,
+    series: [
+      { nome: 'Já vencido', cor: graficos.ALERTA, valores: [...(vencido ? [vencido.pendente] : []), ...semanas.map(() => 0)] },
+      { nome: 'Vence na semana', cor: 'var(--verde)', valores: [...(vencido ? [0] : []), ...semanas.map((p) => p.pendente)] },
+    ],
+    vazio: 'Nada em aberto nas próximas semanas.',
+  });
 }
 
 function mostrarFornecedores(lista) {
