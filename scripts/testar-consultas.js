@@ -24,6 +24,9 @@ const testes = [
     const inicio = new Date(Date.now() - 89 * 86400000).toISOString().slice(0, 10);
     const lista = await pagar.pagamentos({ inicio, fim: hoje });
     const identificados = lista.filter((p) => p.usuario != null).length;
+    const semBaixa = lista.filter((p) => Number(p.aguardando_baixa) === 1);
+    console.log(`       ${semBaixa.length} enviados ao banco e ainda sem baixa`
+      + ` (R$ ${semBaixa.reduce((t, p) => t + (Number(p.valor) || 0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`);
     console.log(`       ${lista.length} pagamentos em 90 dias, ${identificados} com a pessoa identificada`
       + ` (${lista.length ? Math.round((identificados / lista.length) * 100) : 0}%)`);
   }],

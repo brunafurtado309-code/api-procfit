@@ -517,13 +517,17 @@ function mostrarPessoas() {
     const k = chavePessoa(p);
     const g = pessoas.get(k) ?? {
       chave: k, nome: p.usuario_nome ?? (p.usuario == null ? 'Não identificado' : `Usuário ${p.usuario}`),
-      total: 0, qtd: 0, caixa: 0, banco: 0, somaDias: 0, ultimo: null,
+      total: 0, qtd: 0, caixa: 0, banco: 0, somaDias: 0, ultimo: null, aguardando: 0,
     };
     const valor = Number(p.valor) || 0;
+    if (Number(p.aguardando_baixa)) {
+      g.aguardando += valor;
+      g.qtdAguardando = (g.qtdAguardando ?? 0) + 1;
+    }
     g.total += valor;
     g.qtd += 1;
     if (p.canal === 'Caixa') g.caixa += valor;
-    if (p.canal === 'Banco') g.banco += valor;
+    if (p.canal === 'Banco' || Number(p.aguardando_baixa)) g.banco += valor;
     if (p.dias_para_lancar != null) g.somaDias += valor * Math.max(0, Number(p.dias_para_lancar));
     if (p.lancado_em && (!g.ultimo || p.lancado_em > g.ultimo)) g.ultimo = p.lancado_em;
     pessoas.set(k, g);
@@ -533,7 +537,7 @@ function mostrarPessoas() {
     const k = String(p.usuario);
     if (!pessoas.has(k)) {
       pessoas.set(k, {
-        chave: k, nome: p.usuario_nome ?? `Usuário ${p.usuario}`, total: 0, qtd: 0, caixa: 0, banco: 0, somaDias: 0, ultimo: null,
+        chave: k, nome: p.usuario_nome ?? `Usuário ${p.usuario}`, total: 0, qtd: 0, caixa: 0, banco: 0, somaDias: 0, ultimo: null, aguardando: 0,
       });
     }
   }
@@ -561,8 +565,15 @@ function mostrarPessoas() {
     atraso.className = `cartao-nota${diasMedio > 7 ? ' negativo' : ''}`;
     atraso.textContent = g.chave === 'sem' ? 'origem sem pessoa registrada'
       : g.qtd === 0 ? 'nenhum pagamento neste período'
-        : `lança em média ${plural(diasMedio, 'dia', 'dias')} depois do pagamento`;
+        : g.qtd === (g.qtdAguardando ?? 0) ? 'nenhuma baixa lançada no período'
+          : `lança em média ${plural(diasMedio, 'dia', 'dias')} depois do pagamento`;
     botao.append(titulo, valor, nota, atraso);
+    if (g.aguardando > 0.009) {
+      const pendenteBanco = document.createElement('p');
+      pendenteBanco.className = 'cartao-nota negativo';
+      pendenteBanco.textContent = `${compacto(g.aguardando)} enviados ao banco e ainda sem baixa`;
+      botao.append(pendenteBanco);
+    }
     botao.addEventListener('click', () => {
       pessoaAtual = ativo ? null : g.chave;
       diaAberto = null;
@@ -595,9 +606,10 @@ function mostrarPagamentos() {
   // Agrupa por dia do pagamento
   const dias = new Map();
   for (const p of lista) {
-    const d = dias.get(p.data_pagamento) ?? { dia: p.data_pagamento, notas: [], pago: 0, aberto: 0, categorias: new Map() };
+    const d = dias.get(p.data_pagamento) ?? { dia: p.data_pagamento, notas: [], pago: 0, aberto: 0, aguardando: 0, categorias: new Map() };
     d.notas.push(p);
     d.pago += Number(p.valor) || 0;
+    if (Number(p.aguardando_baixa)) d.aguardando += Number(p.valor) || 0;
     d.aberto += Math.max(0, Number(p.pendente_atual) || 0);
     const cat = p.categoria ?? 'Sem categoria';
     d.categorias.set(cat, (d.categorias.get(cat) ?? 0) + (Number(p.valor) || 0));
@@ -629,7 +641,8 @@ function mostrarPagamentos() {
     linha.append(
       comAuxiliar(dataBR(d.dia), semana, 'esquerda sem-quebra'),
       td(inteiro(d.notas.length)),
-      td(dinheiro(d.pago), 'coluna-final'),
+      comAuxiliar(dinheiro(d.pago), d.aguardando > 0.009 ? `${compacto(d.aguardando)} sem baixa do banco` : null,
+        'coluna-final', 'qtd negativo'),
       td(d.aberto > 0.009 ? dinheiro(d.aberto) : '—', d.aberto > 0.009 ? 'negativo' : null),
       td(principais || '—', 'esquerda'),
       td(botao, 'esquerda'),
@@ -684,7 +697,10 @@ function detalheDoDia(d) {
     somaPago += Number(p.valor) || 0;
     somaAberto += pendente;
     const quitada = pendente <= 0.009;
-    const etiqueta = span(quitada ? 'Baixada' : 'Em aberto', `situacao ${quitada ? 'situacao--faturada' : 'situacao--devolucao'}`);
+    const aguardando = Number(p.aguardando_baixa) === 1;
+    const etiqueta = aguardando
+      ? span('Enviada ao banco, sem baixa', 'situacao situacao--sem')
+      : span(quitada ? 'Baixada' : 'Em aberto', `situacao ${quitada ? 'situacao--faturada' : 'situacao--devolucao'}`);
     const tr = document.createElement('tr');
     tr.append(
       comAuxiliar(p.titulo ?? '—', p.vencimento ? `vence ${dataBR(p.vencimento)}` : null, 'esquerda sem-quebra'),
@@ -692,7 +708,7 @@ function detalheDoDia(d) {
       comAuxiliar(p.categoria ?? 'Sem categoria', p.grupo, 'esquerda'),
       ...(mostrarPessoa ? [comAuxiliar(p.usuario_nome ?? 'Não identificado', p.canal, 'esquerda')] : []),
       td(dinheiro(p.valor_titulo)),
-      td(dinheiro(p.valor)),
+      aguardando ? comAuxiliar(dinheiro(p.valor), 'enviado, sem baixa') : td(dinheiro(p.valor)),
       td(pendente > 0.009 ? dinheiro(pendente) : '—', pendente > 0.009 ? 'negativo' : null),
       td(etiqueta, 'esquerda'),
     );

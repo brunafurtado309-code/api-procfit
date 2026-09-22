@@ -274,7 +274,7 @@ async function pagamentos(filtros) {
     .input('fim', sql.VarChar(10), filtros.fim)
     .input('busca', sql.VarChar(60), filtros.busca ?? null)
     .query(`
-      SELECT TOP 5000
+      SELECT
         TX.TITULO_PAGAR                                         AS id,
         LTRIM(RTRIM(T.TITULO))                                  AS titulo,
         T.ENTIDADE                                              AS cod_fornecedor,
@@ -289,6 +289,7 @@ async function pagamentos(filtros) {
         CONVERT(varchar(16), COALESCE(PC.DATA_HORA, PE.DATA_HORA), 120) AS lancado_em,
         DATEDIFF(day, CAST(TX.DATA AS date), CAST(COALESCE(PC.DATA_HORA, PE.DATA_HORA) AS date)) AS dias_para_lancar,
         PE.CONTA_BANCARIA                                       AS conta_bancaria,
+        0                                                       AS aguardando_baixa,
         T.VALOR                                                 AS valor_titulo,
         CONVERT(varchar(10), T.VENCIMENTO, 23)                  AS vencimento,
         SP.PENDENTE                                             AS pendente_atual,
@@ -327,7 +328,67 @@ async function pagamentos(filtros) {
           OR T.TITULO LIKE '%' + @busca + '%'
           OR CAST(T.ENTIDADE AS varchar(20)) = @busca
           OR E.NOME LIKE '%' + @busca + '%')
-      ORDER BY TX.DATA DESC, TX.TITULO_PAGAR;
+
+      UNION ALL
+
+      -- Enviados ao banco (PAGAMENTOS_ESCRITURAIS) e ainda SEM baixa no PROCFIT.
+      -- Validado em set/2026: a pessoa continua enviando os lotes, mas a baixa pelo banco
+      -- (origem 258) parou em agosto. Sem esta parte, o caixa de quem paga pelo banco fica vazio.
+      -- Se o título foi enviado em mais de um lote, vale o lote mais recente.
+      SELECT
+        EB.TITULO_PAGAR, LTRIM(RTRIM(T.TITULO)), T.ENTIDADE, LTRIM(RTRIM(E.NOME)),
+        CONVERT(varchar(10), EB.DATA_PAGAMENTO, 23),
+        EB.PAGAMENTO_TOTAL,
+        'Banco (aguardando baixa)',
+        EB.USUARIO_LOGADO,
+        COALESCE(NULLIF(LTRIM(RTRIM(U.NOME)), ''), LTRIM(RTRIM(U.LOGIN))),
+        CONVERT(varchar(16), EB.DATA_HORA, 120),
+        NULL,
+        EB.CONTA_BANCARIA,
+        1,
+        T.VALOR,
+        CONVERT(varchar(10), T.VENCIMENTO, 23),
+        SP.PENDENTE,
+        CAT.categoria,
+        CAT.grupo
+      FROM (
+        SELECT ET.TITULO_PAGAR AS TITULO_PAGAR_E, ET.TITULO_PAGAR, ET.PAGAMENTO_TOTAL,
+               PE2.USUARIO_LOGADO, PE2.DATA_HORA, PE2.CONTA_BANCARIA,
+               COALESCE(PE2.DATA_PAGAMENTO, PE2.MOVIMENTO, PE2.DATA_HORA) AS DATA_PAGAMENTO,
+               ROW_NUMBER() OVER (PARTITION BY ET.TITULO_PAGAR ORDER BY PE2.DATA_HORA DESC) AS ORDEM
+        FROM PAGAMENTOS_ESCRITURAIS_TITULOS ET WITH (NOLOCK)
+        JOIN PAGAMENTOS_ESCRITURAIS PE2 WITH (NOLOCK) ON PE2.PAGAMENTO_ESCRITURAL = ET.PAGAMENTO_ESCRITURAL
+      ) EB
+      JOIN TITULOS_PAGAR T WITH (NOLOCK) ON T.TITULO_PAGAR = EB.TITULO_PAGAR
+      LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = EB.USUARIO_LOGADO
+      LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = T.ENTIDADE
+      -- Quanto do título ainda falta pagar hoje (mesma regra da tela: crédito - débito)
+      OUTER APPLY (
+        SELECT SUM(ISNULL(X.CREDITO, 0)) - SUM(ISNULL(X.DEBITO, 0)) AS PENDENTE
+        FROM TITULOS_PAGAR_TRANSACOES X WITH (NOLOCK)
+        WHERE X.TITULO_PAGAR = EB.TITULO_PAGAR
+      ) SP
+      -- Categoria principal do título (a de maior valor no rateio) e o grupo dela
+      OUTER APPLY (
+        SELECT TOP 1
+          COALESCE(LTRIM(RTRIM(CF.DESCRICAO)), CONCAT('Categoria ', C.CLASSIF_FINANCEIRA)) AS categoria,
+          COALESCE(LTRIM(RTRIM(G.DESCRICAO)), 'Sem grupo') AS grupo
+        FROM TITULOS_PAGAR_CLASSIFICACOES C WITH (NOLOCK)
+        LEFT JOIN CLASSIF_FINANCEIRAS CF WITH (NOLOCK) ON CF.CLASSIF_FINANCEIRA = C.CLASSIF_FINANCEIRA
+        LEFT JOIN CLASSIF_FINANCEIRAS_GRUPOS G WITH (NOLOCK) ON G.CLASSIF_FINANCEIRA_GRUPO = CF.CLASSIF_FINANCEIRA_GRUPO
+        WHERE C.TITULO_PAGAR = EB.TITULO_PAGAR
+        ORDER BY C.VALOR DESC
+      ) CAT
+      WHERE EB.ORDEM = 1
+        AND SP.PENDENTE > 0.009
+        AND EB.DATA_PAGAMENTO >= CAST(@inicio AS date)
+        AND EB.DATA_PAGAMENTO <  DATEADD(day, 1, CAST(@fim AS date))
+        AND (@busca IS NULL
+          OR T.TITULO LIKE '%' + @busca + '%'
+          OR CAST(T.ENTIDADE AS varchar(20)) = @busca
+          OR E.NOME LIKE '%' + @busca + '%')
+
+      ORDER BY data_pagamento DESC, id;
     `);
   return recordset;
 }
