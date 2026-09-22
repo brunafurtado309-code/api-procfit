@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="css/style.css">
   <script src="js/modulos.js" defer></script>
   <script src="js/pedido.js" defer></script>
+  <script src="js/graficos.js" defer></script>
   <script src="js/despachos.js" defer></script>
 </head>
 <body>
@@ -97,6 +98,12 @@
 
       <!-- Cartões: clicar filtra a lista pela situação -->
       <section class="cartoes" id="cartoes" aria-label="Situação dos despachos"></section>
+
+      <section class="bloco">
+        <h2>Recebido × falta receber, por dia</h2>
+        <p class="bloco__descricao">Pela data do recebimento do despacho. Em laranja, o que as notas ficaram devendo.</p>
+        <div id="grafico-despachos"></div>
+      </section>
 
       <section class="bloco">
         <h2 id="titulo-lista">Despachos</h2>

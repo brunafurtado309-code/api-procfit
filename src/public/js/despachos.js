@@ -118,6 +118,7 @@ async function carregar() {
   try {
     const { resumo, lista } = await buscar('despachos', filtrosAtuais());
     acertos = lista;
+    mostrarGraficoDespachos(lista);
     mostrarResumo(resumo);
     mostrarCartoes(resumo);
     mostrarMarcadores();
@@ -269,6 +270,30 @@ function etiquetaSituacao(situacao) {
   const etiqueta = span(info.texto);
   etiqueta.className = `situacao ${info.classe}`;
   return etiqueta;
+}
+
+// Recebido × falta receber por dia (colunas empilhadas)
+function mostrarGraficoDespachos(lista) {
+  const dias = new Map();
+  for (const a of lista) {
+    const dia = String(a.data_recebimento ?? '').slice(0, 10);
+    if (!dia) continue;
+    const d = dias.get(dia) ?? { recebido: 0, falta: 0 };
+    d.recebido += Number(a.total_informado) || 0;
+    d.falta += Math.max(0, Number(a.a_descoberto) || 0);
+    dias.set(dia, d);
+  }
+  const ordenados = [...dias.entries()].sort((x, y) => (x[0] < y[0] ? -1 : 1));
+  graficos.colunas(el('grafico-despachos'), {
+    titulo: 'Recebido e falta receber por dia',
+    empilhado: true,
+    rotulos: ordenados.map(([dia]) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}`),
+    series: [
+      { nome: 'Recebido', valores: ordenados.map(([, d]) => d.recebido), cor: 'var(--verde)' },
+      { nome: 'Falta receber', valores: ordenados.map(([, d]) => d.falta), cor: graficos.ALERTA },
+    ],
+    vazio: 'Nenhum despacho no período.',
+  });
 }
 
 function mostrarLista() {

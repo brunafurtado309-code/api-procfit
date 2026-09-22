@@ -6,6 +6,7 @@
   <title>Clientes e crédito | Painel financeiro | Belo Norte</title>
   <link rel="stylesheet" href="css/style.css">
   <script src="js/modulos.js" defer></script>
+  <script src="js/graficos.js" defer></script>
   <script src="js/clientes.js" defer></script>
 </head>
 <body>
@@ -77,6 +78,12 @@
 
       <!-- Cartões: classe de crédito (clicar filtra a lista) -->
       <section class="cartoes cartoes--cinco" id="cartoes" aria-label="Classes de crédito"></section>
+
+      <section class="bloco">
+        <h2>Carteira por classe de crédito</h2>
+        <p class="bloco__descricao">Quanto do valor em aberto está com clientes de cada classe.</p>
+        <div id="grafico-classes"></div>
+      </section>
 
       <section class="bloco">
         <h2>Como a classe é calculada</h2>

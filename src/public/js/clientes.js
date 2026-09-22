@@ -102,6 +102,17 @@ function mostrarResumo(r) {
   el('ind-concentracao').replaceChildren(pct(r.concentracao_20), span('do total em aberto'));
   el('ind-risco').replaceChildren(inteiro(r.atrasados_comprando), span('atraso +30 dias e comprou no mês'));
   el('ind-vencido').classList.toggle('negativo', r.vencido > 0.01);
+  // Rosca: em aberto por classe (A verde forte ... D laranja)
+  const coresClasse = { A: 'var(--verde)', B: 'var(--verde-vivo)', C: '#E3A26F', D: 'var(--alerta)', N: 'var(--verde-claro)' };
+  graficos.rosca(el('grafico-classes'), {
+    titulo: 'Em aberto por classe de crédito',
+    itens: ['A', 'B', 'C', 'D', 'N'].map((k) => ({
+      nome: `${CLASSES[k].titulo} (${inteiro(r.por_classe[k].clientes)})`, valor: r.por_classe[k].aberto, cor: coresClasse[k],
+    })),
+    rotuloCentro: 'em aberto',
+    maximoFatias: 5,
+    ordenar: false,
+  });
   el('ind-risco').classList.toggle('negativo', r.atrasados_comprando > 0);
 }
 

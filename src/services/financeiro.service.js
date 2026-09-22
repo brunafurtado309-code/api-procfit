@@ -141,6 +141,7 @@ const cartoes = (query) => repo.cartoes(montarFiltros(query));
 const porCliente = (query) => repo.porCliente(montarFiltros(query));
 const indicadores = (query) => repo.indicadores(montarFiltros(query));
 const previsao = (query) => repo.previsao(montarFiltros(query));
+const baixasPorMes = (query) => repo.baixasPorMes(montarFiltros(query));
 
 const MESES_PADRAO = 12;
 const MESES_MAXIMO = 60;
@@ -163,6 +164,6 @@ function fichaCliente(query, params) {
 }
 
 module.exports = {
-  resumo, cartoes, indicadores, previsao, porFaixaAtraso, porCliente, titulos, fichaCliente,
+  resumo, cartoes, indicadores, previsao, porFaixaAtraso, porCliente, titulos, fichaCliente, baixasPorMes,
   montarFiltros, // usado pela exportação para Excel (mesmas regras da tela)
 };

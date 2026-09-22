@@ -1301,6 +1301,7 @@ button.barra:hover { background: var(--verde-suave); color: inherit; }
 .grafico-rosca__lista {
   list-style: none;
   flex: 1 1 16rem;
+  max-width: 36rem;
   margin: 0;
   padding: 0;
   display: grid;

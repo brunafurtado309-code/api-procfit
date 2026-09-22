@@ -89,7 +89,9 @@ const graficos = (() => {
     const totais = rotulos.map((_, i) => (empilhado
       ? series.reduce((t, s) => t + Math.max(0, Number(s.valores[i]) || 0), 0)
       : Math.max(...series.map((s) => Number(s.valores[i]) || 0))));
-    const topo = escala(Math.max(...totais, 0));
+    // Passo "redondo" entre as linhas (1, 2, 2,5 ou 5 × 10^n) e 4 faixas no eixo
+    const passo = escala(Math.max(...totais, 0) / 4);
+    const topo = passo * 4;
     const y = (v) => margem.topo + areaA - (Math.max(0, v) / topo) * areaA;
 
     const svg = criar('svg', {
@@ -99,7 +101,7 @@ const graficos = (() => {
 
     // Linhas de grade e valores do eixo
     for (let k = 0; k <= 4; k += 1) {
-      const valor = (topo / 4) * k;
+      const valor = passo * k;
       const yy = y(valor);
       svg.append(criar('line', { x1: margem.esquerda, x2: largura - margem.direita, y1: yy, y2: yy, class: 'grafico-grade' }));
       svg.append(criar('text', { x: margem.esquerda - 8, y: yy + 4, class: 'grafico-eixo', 'text-anchor': 'end' }, formatoEixo(valor)));
@@ -144,7 +146,9 @@ const graficos = (() => {
   function rosca(alvo, opcoes) {
     const formato = FORMATOS[opcoes.formato ?? 'moeda'];
     const maximoFatias = opcoes.maximoFatias ?? 6;
-    let itens = opcoes.itens.filter((i) => Number(i.valor) > 0).sort((a, b) => b.valor - a.valor);
+    // ordenar: false mantém a ordem recebida (ex.: classes A, B, C, D)
+    let itens = opcoes.itens.filter((i) => Number(i.valor) > 0);
+    if (opcoes.ordenar !== false) itens.sort((a, b) => b.valor - a.valor);
     if (itens.length > maximoFatias) {
       const resto = itens.slice(maximoFatias - 1).reduce((t, i) => t + Number(i.valor), 0);
       itens = [...itens.slice(0, maximoFatias - 1), { nome: 'Outros', valor: resto }];

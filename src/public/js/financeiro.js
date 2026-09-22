@@ -310,15 +310,55 @@ function mostrarPrevisao(semanas) {
     }));
     return;
   }
-  desenharBarras(
-    el('previsao'),
-    semanas.map((s) => ({
-      rotulo: `semana de ${dataBR(s.semana)}`,
-      valor: s.pendente,
-      nota: `${numero(s.titulos)} títulos`,
-    })),
-    { cor: 'previsao' },
-  );
+  graficos.colunas(el('previsao'), {
+    titulo: 'Recebimentos previstos por semana',
+    rotulos: semanas.map((s) => dataBR(s.semana).slice(0, 5)),
+    series: [{ nome: 'Vence na semana', valores: semanas.map((s) => s.pendente) }],
+  });
+}
+
+// Do que já venceu em cada mês, quanto foi baixado. Mês ruim = recebimento sem baixa no PROCFIT.
+const MESES_NOMES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+async function carregarBaixasReceber(filtrosDaTela) {
+  try {
+    const lista = (await buscar('baixas-mes', filtrosDaTela))
+      .map((m) => {
+        const venceu = Number(m.ja_venceu) || 0;
+        const semBaixa = Number(m.vencido_sem_baixa) || 0;
+        return { ...m, venceu, semBaixa, pct: venceu > 0 ? 1 - semBaixa / venceu : null };
+      })
+      .filter((m) => m.venceu > 0);
+    const nome = (mes) => `${MESES_NOMES[Number(mes.slice(5, 7)) - 1]}/${mes.slice(2, 4)}`;
+    graficos.colunas(el('grafico-baixas-receber'), {
+      titulo: 'Vencido × baixado por mês',
+      rotulos: lista.map((m) => nome(m.mes)),
+      series: [
+        { nome: 'Já venceu', valores: lista.map((m) => m.venceu), cor: 'var(--verde-claro)' },
+        { nome: 'Baixado como recebido', valores: lista.map((m) => m.venceu - m.semBaixa), cor: 'var(--verde)' },
+      ],
+      vazio: 'Nenhum vencimento nos últimos meses.',
+    });
+    const resumo = el('baixas-receber-resumo');
+    resumo.replaceChildren();
+    lista.forEach((m, k) => {
+      const parte = document.createElement('span');
+      parte.textContent = `${nome(m.mes)} ${Math.round((m.pct ?? 0) * 100)}% baixado`;
+      if (m.pct !== null && m.pct < 0.8) parte.className = 'negativo';
+      if (k) resumo.append(' · ');
+      resumo.append(parte);
+    });
+    const ruins = lista.filter((m) => m.pct !== null && m.pct < 0.8);
+    const aviso = el('aviso-baixas-receber');
+    aviso.hidden = ruins.length === 0;
+    if (ruins.length) {
+      const total = ruins.reduce((t, m) => t + m.semBaixa, 0);
+      aviso.textContent = `Atenção: ${ruins.map((m) => nome(m.mes)).join(', ')} com menos de 80% baixado `
+        + `(${dinheiro(total)} vencidos sem baixa). Se esses valores já entraram no banco, a inadimplência acima `
+        + 'está maior do que a realidade: é preciso lançar as baixas no PROCFIT.';
+    }
+  } catch (erro) {
+    el('grafico-baixas-receber').textContent = 'Não foi possível carregar este gráfico agora.';
+  }
 }
 
 // Nome do cliente clicável: abre a ficha com tudo dele
@@ -614,6 +654,7 @@ async function carregar() {
     mostrarIndicadores(indicadores);
     mostrarFaixas(faixas);
     mostrarPrevisao(previsaoSemanas);
+    carregarBaixasReceber(filtrosDaTela);
     mostrarRanking(ranking);
     trocarVisao(porCliente);
     if (porCliente) mostrarClientes(dados);

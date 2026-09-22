@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="css/style.css">
   <script src="js/modulos.js" defer></script>
   <script src="js/pedido.js" defer></script>
+  <script src="js/graficos.js" defer></script>
   <script src="js/financeiro.js" defer></script>
 </head>
 <body>
@@ -154,7 +155,15 @@
       <section class="bloco" aria-labelledby="titulo-previsao">
         <h2 id="titulo-previsao">Previsão de recebimento</h2>
         <p class="explica">O que vence nas próximas semanas, pelos títulos em aberto.</p>
-        <div id="previsao" class="barras barras--previsao"></div>
+        <div id="previsao"></div>
+      </section>
+
+      <section class="bloco" aria-labelledby="titulo-baixas-receber">
+        <h2 id="titulo-baixas-receber">Baixas em dia?</h2>
+        <p class="explica">Do que já venceu em cada mês, quanto foi baixado como recebido no PROCFIT.</p>
+        <p id="aviso-baixas-receber" class="aviso-alerta" hidden></p>
+        <div id="grafico-baixas-receber"></div>
+        <p id="baixas-receber-resumo" class="explica"></p>
       </section>
 
       <section class="bloco" id="bloco-clientes" aria-labelledby="titulo-clientes" hidden>

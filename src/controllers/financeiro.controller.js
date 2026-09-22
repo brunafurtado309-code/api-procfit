@@ -36,5 +36,6 @@ module.exports = {
   porFaixaAtraso: acao(service.porFaixaAtraso),
   titulos: acao(service.titulos),
   fichaCliente: acao(service.fichaCliente),
+  baixasPorMes: acao(service.baixasPorMes),
   excel: download(exportacao.exportarTitulos),
 };

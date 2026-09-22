@@ -14,6 +14,7 @@ const testes = [
   ['Contas a receber: títulos por nota', () => financeiro.titulos({ ordem: 'nota', limite: 5, pagina: 1 })],
   ['Contas a receber: títulos por título', () => financeiro.titulos({ ordem: 'titulo', limite: 5, pagina: 1 })],
   ['Clientes e crédito', () => financeiro.analiseClientes({})],
+  ['Contas a receber: baixas por mês', () => financeiro.baixasPorMes({})],
   ['Despachos (lista)', () => despachos.lista({})],
   ['Contas a pagar: pessoas que cuidam de caixa', async () => {
     const pessoas = await pagar.pessoasPagamento();

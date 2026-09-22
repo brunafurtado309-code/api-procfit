@@ -545,6 +545,29 @@ async function analiseClientes(filtros) {
   return recordset;
 }
 
+// Saúde das baixas do contas a receber: por mês de vencimento (últimos 6 meses até o atual),
+// quanto já venceu e quanto disso continua sem baixa. Mês com pouca baixa = recebimento que
+// entrou e não foi baixado no PROCFIT (mesma leitura do contas a pagar).
+async function baixasPorMes(filtros) {
+  const request = await criarRequest(filtros);
+  const { recordset } = await request.query(`
+    ${SALDOS},
+    ${TITULOS}
+    SELECT
+      LEFT(vencimento, 7)                                                            AS mes,
+      SUM(CASE WHEN dias_atraso >= 0 THEN valor ELSE 0 END)                          AS ja_venceu,
+      SUM(CASE WHEN dias_atraso > 0 AND pendente > 0.009 THEN pendente ELSE 0 END)   AS vencido_sem_baixa
+    FROM TITULOS
+    WHERE vencimento >= CONVERT(varchar(10), DATEADD(month, -5, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)), 23)
+      AND vencimento <  CONVERT(varchar(10), DATEADD(month, 1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)), 23)
+      AND ${FILTRO_COMUM}
+    GROUP BY LEFT(vencimento, 7)
+    ORDER BY 1
+  `);
+  return recordset;
+}
+
 module.exports = {
   resumo, cartoes, indicadores, previsao, porFaixaAtraso, porCliente, titulos, fichaCliente, analiseClientes,
+  baixasPorMes,
 };
