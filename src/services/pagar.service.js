@@ -7,7 +7,8 @@ const excel = require('../utils/excel');
 const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
 const SITUACAO_TEXTO = { ABERTO: 'Em aberto', PARCIAL: 'Pago em parte', PAGO: 'Pago', CANCELADO: 'Cancelado' };
 const CARTAO_TEXTO = {
-  aberto: 'Em aberto', vencidos: 'Vencidos', '7dias': 'Vencem em 7 dias', '30dias': 'Vencem em 30 dias', pago: 'Pagos',
+  aberto: 'Em aberto', vencidos: 'Vencidos', enviados: 'Enviados ao banco, sem baixa', '7dias': 'Vencem em 7 dias',
+  '30dias': 'Vencem em 30 dias', pago: 'Pagos',
 };
 
 function data(valor, nome) {
@@ -69,7 +70,9 @@ async function exportar(query) {
       { titulo: 'Juros e multa', chave: 'juros_multa', tipo: 'moeda', largura: 12, somar: true },
       { titulo: 'Pendente', chave: 'pendente', tipo: 'moeda', largura: 14, somar: true },
       { titulo: 'Último pagamento', chave: 'ultimo_pagamento', tipo: 'data', largura: 14 },
-      { titulo: 'Situação', valor: (t) => SITUACAO_TEXTO[t.situacao] ?? t.situacao, largura: 13 },
+      { titulo: 'Situação', valor: (t) => (t.enviado_banco && Number(t.pendente) > 0.009
+        ? 'Enviado ao banco, sem baixa' : SITUACAO_TEXTO[t.situacao] ?? t.situacao), largura: 22 },
+      { titulo: 'Enviado ao banco em', chave: 'enviado_banco', tipo: 'data', largura: 14 },
     ],
     linhas: titulos,
     totais: true,

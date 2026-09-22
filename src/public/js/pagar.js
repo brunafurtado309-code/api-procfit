@@ -25,6 +25,7 @@ const chave = {
 const CARTOES = [
   { id: 'aberto', titulo: 'Em aberto', valor: 'aberto', qtd: 'aberto_titulos' },
   { id: 'vencidos', titulo: 'Vencidos', valor: 'vencido', qtd: 'vencido_titulos', alerta: true },
+  { id: 'enviados', titulo: 'Enviados ao banco, sem baixa', valor: 'enviado', qtd: 'enviado_titulos', alerta: true },
   { id: '7dias', titulo: 'Vencem em 7 dias', valor: 'proximos_7', qtd: 'proximos_7_titulos' },
   { id: '30dias', titulo: 'Vencem em 30 dias', valor: 'proximos_30', qtd: 'proximos_30_titulos' },
   { id: 'pago', titulo: 'Pagos', valor: 'pago', qtd: 'pago_titulos' },
@@ -153,7 +154,9 @@ function mostrarResumo(r) {
   el('total-explica').textContent =
     `${plural(r.aberto_titulos, 'título', 'títulos')} em aberto · ${plural(r.fornecedores, 'fornecedor', 'fornecedores')}`;
   // Indicadores ao lado do número grande: valor resumido (o exato está nos cartões logo abaixo)
-  el('ind-vencido').replaceChildren(compacto(r.vencido), span(plural(r.vencido_titulos, 'título', 'títulos')));
+  el('ind-vencido').replaceChildren(compacto(r.vencido), span(Number(r.vencido_enviado) > 0.009
+    ? `${plural(r.vencido_titulos, 'título', 'títulos')} · ${compacto(r.vencido_enviado)} já enviados ao banco`
+    : plural(r.vencido_titulos, 'título', 'títulos')));
   el('ind-7').replaceChildren(compacto(r.proximos_7), span(plural(r.proximos_7_titulos, 'título', 'títulos')));
   el('ind-30').replaceChildren(compacto(r.proximos_30), span(plural(r.proximos_30_titulos, 'título', 'títulos')));
   el('ind-fornecedores').replaceChildren(inteiro(r.fornecedores), span('com valor em aberto · ver lista'));
@@ -173,7 +176,9 @@ function mostrarCartoes(r) {
     valor.textContent = dinheiro(r[c.valor]);
     const nota = document.createElement('p');
     nota.className = 'cartao-nota';
-    nota.textContent = plural(r[c.qtd], 'título', 'títulos');
+    nota.textContent = c.id === 'vencidos' && Number(r.vencido_enviado) > 0.009
+      ? `${plural(r[c.qtd], 'título', 'títulos')} · ${compacto(r.vencido_enviado)} já enviados ao banco`
+      : plural(r[c.qtd], 'título', 'títulos');
     botao.append(titulo, valor, nota);
     botao.addEventListener('click', () => {
       cartaoAtual = c.id;
@@ -469,7 +474,11 @@ function mostrarLista(limite) {
       const linha = document.createElement('tr');
       const info = prazo(t);
       if (info?.alerta && Number(t.dias_atraso) > 0) linha.className = 'linha-vencida';
-      const etiqueta = span(SITUACAO[t.situacao]?.texto ?? t.situacao, `situacao ${SITUACAO[t.situacao]?.classe ?? ''}`);
+      // Em aberto mas já enviado ao banco: provavelmente pago, falta a baixa no PROCFIT
+      const enviado = t.enviado_banco && Number(t.pendente) > 0.009;
+      const etiqueta = enviado
+        ? span(`Enviado ao banco em ${dataBR(t.enviado_banco).slice(0, 5)}`, 'situacao situacao--sem')
+        : span(SITUACAO[t.situacao]?.texto ?? t.situacao, `situacao ${SITUACAO[t.situacao]?.classe ?? ''}`);
       linha.append(
         comAuxiliar(dataBR(t.vencimento), info?.texto, 'esquerda sem-quebra', info?.alerta ? 'qtd negativo' : 'qtd'),
         td(t.titulo ?? '—', 'esquerda sem-quebra'),
@@ -614,7 +623,8 @@ async function carregarPagamentos() {
 
 const chavePessoa = (p) => (p.usuario == null ? 'sem' : String(p.usuario));
 let entradasLista = [];
-let formaAtual = null; // null = todas as formas
+let formaAtual = null; // (não usado mais: o filtro de forma fica dentro do dia aberto)
+let formaDia = null;   // forma escolhida dentro do dia aberto (null = todas)
 
 // Filtra pela forma escolhida (vale para entradas e saídas)
 const daForma = (item) => (formaAtual ? item.forma === formaAtual : true);
@@ -684,33 +694,7 @@ function mostrarPessoas() {
     });
     return botao;
   }));
-  mostrarFormas();
   mostrarPagamentos();
-}
-
-// Filtro por forma de pagamento (dinheiro, PIX, cartão...), com as formas que aparecem no período
-function mostrarFormas() {
-  const daPessoa = (item) => (pessoaAtual ? chavePessoa(item) === pessoaAtual : true);
-  const formas = new Map();
-  for (const item of [...entradasLista, ...pagamentosLista].filter(daPessoa)) {
-    const f = item.forma ?? 'Outra';
-    formas.set(f, (formas.get(f) ?? 0) + (Number(item.valor) || 0));
-  }
-  const area = el('formas-caixa');
-  const botao = (rotulo, valor) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = `botao-secundario${formaAtual === valor ? ' atalho--ativo' : ''}`;
-    b.textContent = rotulo;
-    b.addEventListener('click', () => {
-      formaAtual = valor;
-      diaAberto = null;
-      mostrarPessoas();
-    });
-    return b;
-  };
-  area.replaceChildren(span('Forma:', 'formas-caixa__rotulo'), botao('Todas', null),
-    ...[...formas.entries()].sort((a, b) => b[1] - a[1]).map(([f]) => botao(f, f)));
 }
 
 // Caixa por dia: cada linha é um dia (entrou, saiu, saldo); clicar abre as entradas e as saídas.
@@ -823,6 +807,7 @@ function mostrarPagamentos() {
     );
     const alternar = () => {
       diaAberto = aberto ? null : d.dia;
+      formaDia = null; // cada dia abre mostrando todas as formas
       mostrarPagamentos();
     };
     botao.addEventListener('click', (evento) => { evento.stopPropagation(); alternar(); });
@@ -856,16 +841,63 @@ function detalheDoDia(d) {
     return tabela;
   };
 
+  // ---- Filtro de forma do dia (dinheiro, PIX, cartão...) ----
+  const formas = new Map();
+  for (const item of [...d.entradas, ...d.saidas]) {
+    const f = item.forma ?? 'Outra';
+    const g = formas.get(f) ?? { entrou: 0, saiu: 0 };
+    if (d.entradas.includes(item)) g.entrou += Number(item.valor) || 0;
+    else g.saiu += Number(item.valor) || 0;
+    formas.set(f, g);
+  }
+  const daFormaDia = (item) => (formaDia ? (item.forma ?? 'Outra') === formaDia : true);
+  const entradasDia = d.entradas.filter(daFormaDia);
+  const saidasDia = d.saidas.filter(daFormaDia);
+  const somaDia = (lista) => lista.reduce((t, x) => t + (Number(x.valor) || 0), 0);
+  const entrouDia = somaDia(entradasDia);
+  const saiuDia = somaDia(saidasDia);
+
+  const filtro = document.createElement('div');
+  filtro.className = 'atalhos formas-caixa';
+  filtro.setAttribute('aria-label', 'Forma de pagamento do dia');
+  const botaoForma = (rotulo, valor, nota) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `botao-secundario${formaDia === valor ? ' atalho--ativo' : ''}`;
+    b.textContent = rotulo;
+    if (nota) b.title = nota;
+    b.addEventListener('click', (evento) => {
+      evento.stopPropagation();
+      formaDia = valor;
+      mostrarPagamentos();
+    });
+    return b;
+  };
+  filtro.append(span('Forma:', 'formas-caixa__rotulo'), botaoForma('Todas', null),
+    ...[...formas.entries()].sort((a, b) => (b[1].entrou + b[1].saiu) - (a[1].entrou + a[1].saiu))
+      .map(([f, g]) => botaoForma(f, f, `Entrou ${dinheiro(g.entrou)} · saiu ${dinheiro(g.saiu)}`)));
+  celula.append(filtro);
+
+  // Resumo do dia na forma escolhida (ex.: quanto de DINHEIRO entrou e saiu, para conferir o caixa)
+  const resumo = document.createElement('p');
+  resumo.className = 'caixa-resumo-dia';
+  resumo.append(
+    span(formaDia ? `${formaDia}:` : 'Todas as formas:', 'caixa-resumo-dia__rotulo'),
+    span(`Entrou ${dinheiro(entrouDia)}`, 'positivo'), ' · ', span(`Saiu ${dinheiro(saiuDia)}`), ' · ',
+    span(`Saldo ${dinheiro(entrouDia - saiuDia)}`, entrouDia - saiuDia < 0 ? 'negativo' : null),
+  );
+  celula.append(resumo);
+
   // ---- Entradas ----
   const tituloEntradas = document.createElement('h4');
   tituloEntradas.className = 'caixa-subtitulo';
-  tituloEntradas.textContent = `Entrou · ${dinheiro(d.entrou)} (${plural(d.entradas.length, 'lançamento', 'lançamentos')})`;
+  tituloEntradas.textContent = `Entrou · ${dinheiro(entrouDia)} (${plural(entradasDia.length, 'lançamento', 'lançamentos')})`;
   celula.append(tituloEntradas);
-  if (d.entradas.length) {
+  if (entradasDia.length) {
     const tabela = tabelaCom([['Origem', 'origem', true], ['Cliente', 'contraparte', true], ['Documento', 'documento', true],
       ...(mostrarPessoa ? [['Pessoa', 'usuario_nome', true]] : []), ['Forma', 'forma', true], ['Valor', 'valor']]);
     const corpo = tabela.createTBody();
-    for (const e of [...d.entradas].sort((a, b) => comparar(a, b, ordemNotas))) {
+    for (const e of [...entradasDia].sort((a, b) => comparar(a, b, ordemNotas))) {
       const tr = document.createElement('tr');
       tr.append(
         td(e.origem, 'esquerda'),
@@ -879,30 +911,36 @@ function detalheDoDia(d) {
     }
     celula.append(tabela);
   } else {
-    celula.append(span('Nenhuma entrada neste dia.', 'explica'));
+    celula.append(span(formaDia ? `Nenhuma entrada em ${formaDia} neste dia.` : 'Nenhuma entrada neste dia.', 'explica'));
   }
 
   // ---- Saídas ----
   const tituloSaidas = document.createElement('h4');
   tituloSaidas.className = 'caixa-subtitulo';
-  tituloSaidas.textContent = `Saiu · ${dinheiro(d.saiu)} (${plural(d.saidas.length, 'nota', 'notas')})`;
+  tituloSaidas.textContent = `Saiu · ${dinheiro(saiuDia)} (${plural(saidasDia.length, 'nota', 'notas')})`;
   celula.append(tituloSaidas);
-  if (d.saidas.length) {
+  if (saidasDia.length) {
     const tabela = tabelaCom([['Nota / título', 'titulo', true], ['Fornecedor', 'fornecedor', true], ['Categoria', 'categoria', true],
       ...(mostrarPessoa ? [['Pessoa', 'usuario_nome', true]] : []), ['Forma', 'forma', true], ['Valor da nota', 'valor_titulo'],
       ['Pago', 'valor'], ['Em aberto', 'pendente_atual'], ['Situação', 'situacao_ordem', true]]);
     const corpo = tabela.createTBody();
-    for (const p of d.saidas) {
+    for (const p of saidasDia) {
       const pend = Math.max(0, Number(p.pendente_atual) || 0);
       p.situacao_ordem = Number(p.aguardando_baixa) === 1 ? 'a' : (pend > 0.009 ? 'b' : 'c');
     }
-    for (const p of [...d.saidas].sort((a, b) => comparar(a, b, ordemNotas))) {
+    for (const p of [...saidasDia].sort((a, b) => comparar(a, b, ordemNotas))) {
       const pendente = Math.max(0, Number(p.pendente_atual) || 0);
       const quitada = pendente <= 0.009;
       const aguardando = Number(p.aguardando_baixa) === 1;
-      const etiqueta = aguardando
-        ? span('Enviada ao banco, sem baixa', 'situacao situacao--sem')
-        : span(quitada ? 'Baixada' : 'Em aberto', `situacao ${quitada ? 'situacao--faturada' : 'situacao--devolucao'}`);
+      // Pagamento pelo caixa: o recibo só sai com o pagamento feito, então é sempre pago.
+      // Se o título ainda tem saldo, é porque o caixa pagou só uma parte dele.
+      const peloCaixa = p.canal === 'Caixa';
+      let etiqueta;
+      if (aguardando) etiqueta = span('Enviada ao banco, sem baixa', 'situacao situacao--sem');
+      else if (peloCaixa) {
+        etiqueta = span(quitada ? 'Paga no caixa' : 'Paga em parte no caixa',
+          `situacao ${quitada ? 'situacao--faturada' : 'situacao--devolucao'}`);
+      } else etiqueta = span(quitada ? 'Baixada' : 'Em aberto', `situacao ${quitada ? 'situacao--faturada' : 'situacao--devolucao'}`);
       const tr = document.createElement('tr');
       tr.append(
         comAuxiliar(p.titulo ?? '—', p.vencimento ? `vence ${dataBR(p.vencimento)}` : null, 'esquerda sem-quebra'),
@@ -919,7 +957,7 @@ function detalheDoDia(d) {
     }
     celula.append(tabela);
   } else {
-    celula.append(span('Nenhuma saída neste dia.', 'explica'));
+    celula.append(span(formaDia ? `Nenhuma saída em ${formaDia} neste dia.` : 'Nenhuma saída neste dia.', 'explica'));
   }
 
   linha.append(celula);

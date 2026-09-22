@@ -604,6 +604,10 @@ a.aba, span.aba { display: inline-block; text-decoration: none; }
 .cartoes.cartoes--cinco {
   grid-template-columns: repeat(auto-fill, minmax(max(11rem, calc((100% - 3rem) / 5)), 1fr));
 }
+/* Seis cartões numa linha (ex.: Contas a pagar) */
+.cartoes.cartoes--seis {
+  grid-template-columns: repeat(auto-fill, minmax(max(10rem, calc((100% - 3.75rem) / 6)), 1fr));
+}
 .tabela td.sem-quebra { white-space: nowrap; }
 /* Título vencido: faixa laranja à esquerda da linha */
 .tabela tr.linha-vencida > td:first-child { box-shadow: inset 3px 0 0 var(--alerta); }
@@ -698,7 +702,12 @@ button.cartao { display: flex; flex-direction: column; justify-content: flex-sta
 .caixa-pessoa { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--linha); }
 .caixa-pessoa__titulo { margin: 0; font-family: var(--fonte-titulo); font-size: 1.1rem; }
 /* Filtro de forma de pagamento do caixa */
-.formas-caixa { margin-top: 0.75rem; align-items: center; }
+.formas-caixa { margin: 0.25rem 0 0.5rem; align-items: center; }
+/* Resumo do dia aberto na forma escolhida */
+.caixa-resumo-dia { margin: 0.25rem 0 0.5rem; font-size: 0.95rem; }
+.caixa-resumo-dia__rotulo { font-weight: 700; margin-right: 0.4rem; }
+.caixa-resumo-dia .positivo { color: var(--verde); font-weight: 600; }
+.caixa-resumo-dia .negativo { color: var(--alerta); font-weight: 600; }
 .formas-caixa__rotulo { font-size: var(--texto-pequeno); font-weight: 700; color: var(--tinta-suave); margin-right: 0.25rem; }
 /* Linhas do cartão da pessoa: Entrou / Saiu / Saldo */
 .cartao-linha { display: flex; justify-content: space-between; gap: 1rem; margin: 0.3rem 0 0; font-size: 0.95rem; }

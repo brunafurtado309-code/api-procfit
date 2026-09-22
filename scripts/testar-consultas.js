@@ -9,6 +9,12 @@ const despachos = require('../src/repositories/despachos.repository');
 
 const testes = [
   ['Contas a pagar (tela)', () => pagar.painel({ situacao: 'aberto' })],
+  ['Contas a pagar: enviados ao banco sem baixa', async () => {
+    const { resumo } = await pagar.painel({ situacao: 'enviados' });
+    console.log(`       ${resumo.enviado_titulos ?? 0} títulos enviados ao banco e sem baixa`
+      + ` (R$ ${Number(resumo.enviado ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}),`
+      + ` sendo R$ ${Number(resumo.vencido_enviado ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} já vencidos`);
+  }],
   ['Contas a pagar: lista de fornecedores', () => pagar.fornecedores({})],
   ['Contas a pagar ordenado por vencimento', () => pagar.painel({ situacao: 'aberto', ordem: 'vencimento', direcao: 'desc' })],
   ['Contas a receber: títulos por vencimento', () => financeiro.titulos({ ordem: 'vencimento', limite: 5, pagina: 1 })],

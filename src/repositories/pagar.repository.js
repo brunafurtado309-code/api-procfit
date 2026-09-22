@@ -58,6 +58,9 @@ const SALDOS = `
       S.JUROS_MULTA                           AS juros_multa,
       S.PENDENTE                              AS pendente,
       CONVERT(varchar(10), S.ULTIMO_PAGAMENTO, 23) AS ultimo_pagamento,
+      -- Último envio do título ao banco (tela de pagamento pelo banco). Título em aberto com envio =
+      -- pagamento mandado ao banco e ainda SEM baixa no PROCFIT (provavelmente pago).
+      CONVERT(varchar(10), EB.ENVIADO_EM, 23) AS enviado_banco,
       CASE
         WHEN S.PENDENTE > 0.009 AND S.PAGO > 0.009 THEN 'PARCIAL'
         WHEN S.PENDENTE > 0.009                    THEN 'ABERTO'
@@ -67,6 +70,12 @@ const SALDOS = `
     FROM TITULOS_PAGAR T WITH (NOLOCK)
     JOIN SALDOS S ON S.TITULO_PAGAR = T.TITULO_PAGAR
     LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = T.ENTIDADE
+    LEFT JOIN (
+      SELECT ET.TITULO_PAGAR, MAX(COALESCE(PE.DATA_PAGAMENTO, PE.MOVIMENTO, PE.DATA_HORA)) AS ENVIADO_EM
+      FROM PAGAMENTOS_ESCRITURAIS_TITULOS ET WITH (NOLOCK)
+      JOIN PAGAMENTOS_ESCRITURAIS PE WITH (NOLOCK) ON PE.PAGAMENTO_ESCRITURAL = ET.PAGAMENTO_ESCRITURAL
+      GROUP BY ET.TITULO_PAGAR
+    ) EB ON EB.TITULO_PAGAR = T.TITULO_PAGAR
   )`;
 
 // Filtro de período (vencimento) e pesquisa: valem para tudo na tela
@@ -89,6 +98,7 @@ const FILTRO_BUSCA = `
 const FILTRO_SITUACAO = {
   aberto: 'pendente > 0.009',
   vencidos: 'pendente > 0.009 AND dias_atraso > 0',
+  enviados: 'pendente > 0.009 AND enviado_banco IS NOT NULL',
   '7dias': 'pendente > 0.009 AND dias_atraso BETWEEN -7 AND 0',
   '30dias': 'pendente > 0.009 AND dias_atraso BETWEEN -30 AND 0',
   pago: "situacao = 'PAGO'",
@@ -136,6 +146,10 @@ async function painel(filtros) {
       SUM(CASE WHEN situacao = 'PAGO' THEN pago ELSE 0 END)                            AS pago,
       COUNT(CASE WHEN situacao = 'PAGO' THEN 1 END)                                    AS pago_titulos,
       COUNT(DISTINCT CASE WHEN pendente > 0.009 THEN cod_fornecedor END)               AS fornecedores,
+      -- Enviados ao banco e ainda sem baixa (e quanto disso já venceu)
+      SUM(CASE WHEN pendente > 0.009 AND enviado_banco IS NOT NULL THEN pendente ELSE 0 END)  AS enviado,
+      COUNT(CASE WHEN pendente > 0.009 AND enviado_banco IS NOT NULL THEN 1 END)              AS enviado_titulos,
+      SUM(CASE WHEN pendente > 0.009 AND dias_atraso > 0 AND enviado_banco IS NOT NULL THEN pendente ELSE 0 END) AS vencido_enviado,
       -- Aging do vencido (faixas de dias de atraso)
       SUM(CASE WHEN pendente > 0.009 AND dias_atraso BETWEEN 1 AND 30 THEN pendente ELSE 0 END)  AS atraso_1_30,
       COUNT(CASE WHEN pendente > 0.009 AND dias_atraso BETWEEN 1 AND 30 THEN 1 END)              AS atraso_1_30_titulos,
@@ -183,7 +197,7 @@ async function painel(filtros) {
     -- 4) Lista de títulos do cartão escolhido
     SELECT TOP (${LIMITE_LISTA})
       id, empresa, titulo, cod_fornecedor, fornecedor, forma, emissao, vencimento, dias_atraso,
-      valor, pago, descontos, retencoes, juros_multa, pendente, ultimo_pagamento, situacao
+      valor, pago, descontos, retencoes, juros_multa, pendente, ultimo_pagamento, situacao, enviado_banco
     FROM TITULOS
     WHERE ${FILTRO_BASE} AND ${situacao}
     ORDER BY ${[`${coluna} ${direcao}`, ...['vencimento_data', 'titulo'].filter((c) => c !== coluna)].join(', ')};
