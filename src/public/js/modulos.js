@@ -10,6 +10,7 @@ const modulos = (() => {
   const PAGINAS = {
     vendas: { titulo: 'Vendas', pagina: 'index.html' },
     financeiro: { titulo: 'Financeiro', pagina: 'financeiro.html' },
+    admin: { titulo: 'Administrativo', pagina: 'admin.html' },
   };
 
   const lerChave = () => sessionStorage.getItem('apiKey') ?? '';

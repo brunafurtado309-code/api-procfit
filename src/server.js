@@ -11,6 +11,7 @@ const { exigirChave } = require('./middlewares/auth');
 const errorHandler = require('./middlewares/errorHandler');
 const vendasRoutes = require('./routes/vendas.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
+const adminRoutes = require('./routes/admin.routes');
 
 const app = express();
 
@@ -58,6 +59,7 @@ app.get('/acessos', exigirChave(), (req, res) => res.json({ setores: req.setores
 // Rotas protegidas por chave, cada uma no seu setor
 app.use('/vendas', exigirChave('vendas'), vendasRoutes);
 app.use('/financeiro', exigirChave('financeiro'), financeiroRoutes);
+app.use('/admin', exigirChave('admin'), adminRoutes);
 
 // Painel visual (arquivos da pasta src/public)
 app.use('/painel', express.static(path.join(__dirname, 'public')));

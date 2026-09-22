@@ -6,6 +6,7 @@ require('dotenv').config();
 const financeiro = require('../src/repositories/financeiro.repository');
 const pagar = require('../src/repositories/pagar.repository');
 const despachos = require('../src/repositories/despachos.repository');
+const admin = require('../src/repositories/admin.repository');
 
 const testes = [
   ['Contas a pagar (tela)', () => pagar.painel({ situacao: 'aberto' })],
@@ -23,6 +24,14 @@ const testes = [
   ['Clientes e crédito', () => financeiro.analiseClientes({})],
   ['Contas a receber: baixas por mês', () => financeiro.baixasPorMes({})],
   ['Despachos (lista)', () => despachos.lista({})],
+  ['Administrativo: usuários e atividade (30 dias)', async () => {
+    const fim = new Date().toISOString().slice(0, 10);
+    const inicio = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
+    const { usuarios } = await admin.usuarios({ inicio, fim });
+    const usaram = usuarios.filter((u) => Number(u.acoes) > 0);
+    console.log(`       ${usuarios.length} usuários cadastrados, ${usaram.length} com ações em 30 dias`
+      + ` (${usuarios.reduce((t, u) => t + Number(u.acoes || 0), 0)} ações no total)`);
+  }],
   ['Caixa: entradas (recebimentos e retornos de despacho)', async () => {
     const fim = new Date().toISOString().slice(0, 10);
     const inicio = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
