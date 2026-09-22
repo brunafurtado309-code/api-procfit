@@ -17,6 +17,8 @@ router.get('/clientes', controller.porCliente);
 router.get('/faixas-atraso', controller.porFaixaAtraso);
 router.get('/titulos', controller.titulos);
 router.get('/baixas-mes', controller.baixasPorMes);
+router.get('/recebimentos', controller.recebimentos);
+router.get('/recebimentos/excel', controller.recebimentosExcel);
 // Excel do que está filtrado na tela (mesmos filtros da lista)
 router.get('/excel', controller.excel);
 // Detalhe do pedido (produtos, nota e cupom gerados)

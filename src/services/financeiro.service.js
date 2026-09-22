@@ -143,6 +143,71 @@ const indicadores = (query) => repo.indicadores(montarFiltros(query));
 const previsao = (query) => repo.previsao(montarFiltros(query));
 const baixasPorMes = (query) => repo.baixasPorMes(montarFiltros(query));
 
+// ===== Recebimentos (todas as baixas de título, com a origem) =====
+const ORIGENS_TEXTO = Object.fromEntries(
+  Object.values(repo.ORIGENS_RECEBIMENTO).map((o) => [String(o.id), o.nome]),
+);
+
+function filtrosRecebimentos(query) {
+  const { inicio, fim, busca } = montarFiltros(query);
+  const filtros = { inicio, fim, busca };
+  if (query.origem) {
+    const origem = Number(query.origem);
+    if (!ORIGENS_TEXTO[String(origem)]) throw new AppError('"origem" não é uma tela conhecida');
+    filtros.origem = origem;
+  }
+  if (query.usuario) {
+    const usuario = Number(query.usuario);
+    if (!Number.isInteger(usuario)) throw new AppError('"usuario" deve ser um número');
+    filtros.usuario = usuario;
+  }
+  if (query.ordem) {
+    if (!repo.ORDENACAO_RECEBIMENTOS[query.ordem]) {
+      throw new AppError(`"ordem" deve ser: ${Object.keys(repo.ORDENACAO_RECEBIMENTOS).join(', ')}`);
+    }
+    filtros.ordem = query.ordem;
+  }
+  filtros.direcao = query.direcao === 'asc' ? 'asc' : 'desc';
+  return filtros;
+}
+
+const recebimentos = (query) => repo.recebimentos(filtrosRecebimentos(query));
+
+// Colunas da planilha de recebimentos
+const COLUNAS_RECEBIMENTOS = [
+  { titulo: 'Recebimento', chave: 'dia', tipo: 'data', largura: 12 },
+  { titulo: 'Lançado em', chave: 'lancado_em', largura: 17 },
+  { titulo: 'Origem', chave: 'origem', largura: 22 },
+  { titulo: 'Quem lançou', chave: 'usuario_nome', largura: 28 },
+  { titulo: 'Título', chave: 'titulo', largura: 16 },
+  { titulo: 'Nota fiscal', chave: 'nota', tipo: 'codigo', largura: 11 },
+  { titulo: 'Pedido', chave: 'pedido', tipo: 'codigo', largura: 10 },
+  { titulo: 'Cód. cliente', chave: 'cod_cliente', tipo: 'codigo', largura: 11 },
+  { titulo: 'Cliente', chave: 'cliente', largura: 40 },
+  { titulo: 'Vencimento', chave: 'vencimento', tipo: 'data', largura: 12 },
+  { titulo: 'Forma', chave: 'forma', largura: 14 },
+  { titulo: 'Valor do título', chave: 'valor_titulo', tipo: 'moeda', largura: 14, somar: true },
+  { titulo: 'Recebido', chave: 'recebido', tipo: 'moeda', largura: 14, somar: true },
+  { titulo: 'Lote', chave: 'lote', tipo: 'codigo', largura: 9 },
+];
+
+async function exportarRecebimentos(query) {
+  const filtros = filtrosRecebimentos(query);
+  const lista = await repo.recebimentos(filtros);
+  const dataBR = (d) => d.split('-').reverse().join('/');
+  const workbook = excel.novaPlanilha();
+  excel.adicionarTabela(workbook, 'Recebimentos', {
+    titulo: 'Recebimentos | Belo Norte',
+    subtitulo: `${lista.length} baixas de título · recebimento de ${dataBR(filtros.inicio)} até ${dataBR(filtros.fim)}`
+      + `${filtros.origem ? ` · ${ORIGENS_TEXTO[String(filtros.origem)]}` : ''}`
+      + `${filtros.busca ? ` · pesquisa "${filtros.busca}"` : ''} · gerado em ${new Date().toLocaleString('pt-BR')}`,
+    colunas: COLUNAS_RECEBIMENTOS,
+    linhas: lista,
+    totais: true,
+  });
+  return { workbook, nomeArquivo: `recebimentos_${filtros.inicio}_a_${filtros.fim}.xlsx` };
+}
+
 const MESES_PADRAO = 12;
 const MESES_MAXIMO = 60;
 
@@ -165,5 +230,5 @@ function fichaCliente(query, params) {
 
 module.exports = {
   resumo, cartoes, indicadores, previsao, porFaixaAtraso, porCliente, titulos, fichaCliente, baixasPorMes,
-  montarFiltros, // usado pela exportação para Excel (mesmas regras da tela)
+  recebimentos, exportarRecebimentos, montarFiltros, // usado pela exportação para Excel (mesmas regras da tela)
 };

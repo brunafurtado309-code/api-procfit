@@ -696,6 +696,9 @@ button.cartao { display: flex; flex-direction: column; justify-content: flex-sta
 .bloco .cartoes { margin-top: 1rem; }
 /* Linha de dia que abre as notas */
 .tabela tr.linha-dia { cursor: pointer; }
+/* Barra escolhida (ex.: pessoa filtrada nos recebimentos) */
+.barra--ativa .barra-rotulo { color: var(--verde); font-weight: 700; }
+.barra--ativa .barra-preenchida { background: var(--verde-escuro); }
 /* Filtro dentro de um bloco (ex.: período dos pagamentos) */
 .filtros--bloco { margin-top: 0.75rem; }
 /* Caixa da pessoa escolhida (abaixo dos cartões das pessoas) */

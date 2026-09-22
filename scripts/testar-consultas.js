@@ -23,6 +23,16 @@ const testes = [
   ['Contas a receber: títulos por título', () => financeiro.titulos({ ordem: 'titulo', limite: 5, pagina: 1 })],
   ['Clientes e crédito', () => financeiro.analiseClientes({})],
   ['Contas a receber: baixas por mês', () => financeiro.baixasPorMes({})],
+  ['Contas a receber: recebimentos (30 dias, todas as origens)', async () => {
+    const fim = new Date().toISOString().slice(0, 10);
+    const inicio = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
+    const lista = await financeiro.recebimentos({ inicio, fim });
+    const porOrigem = {};
+    for (const r of lista) porOrigem[r.origem] = (porOrigem[r.origem] ?? 0) + 1;
+    const semPessoa = lista.filter((r) => r.usuario == null).length;
+    console.log(`       ${lista.length} baixas · ${Object.entries(porOrigem).map(([o, n]) => `${n} ${o}`).join(' · ')}`
+      + `${semPessoa ? ` · ${semPessoa} sem pessoa identificada` : ''}`);
+  }],
   ['Despachos (lista)', () => despachos.lista({})],
   ['Administrativo: recebimentos detalhados (30 dias)', async () => {
     const fim = new Date().toISOString().slice(0, 10);

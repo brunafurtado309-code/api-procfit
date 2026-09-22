@@ -3,11 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Clientes e crédito | Painel financeiro | Belo Norte</title>
+  <title>Recebimentos | Painel financeiro | Belo Norte</title>
   <link rel="stylesheet" href="css/style.css">
   <script src="js/modulos.js" defer></script>
+  <script src="js/pedido.js" defer></script>
   <script src="js/graficos.js" defer></script>
-  <script src="js/clientes.js" defer></script>
+  <script src="js/recebimentos.js" defer></script>
 </head>
 <body>
   <header class="topo">
@@ -33,17 +34,17 @@
       <a class="aba" href="financeiro.html#boletos">Boletos e prazos</a>
       <a class="aba" href="financeiro.html#cobranca">Cobrança</a>
       <a class="aba" href="despachos.html">Despachos</a>
-      <span class="aba aba--ativa" aria-current="page">Clientes e crédito</span>
-        <a class="aba" href="recebimentos.html">Recebimentos</a>
+      <a class="aba" href="clientes.html">Clientes e crédito</a>
+      <span class="aba aba--ativa" aria-current="page">Recebimentos</span>
     </nav>
 
     <section class="barra-filtros" aria-label="Filtros">
       <div class="barra-filtros__linha">
         <form id="form-pesquisa" class="pesquisa" role="search">
           <label class="campo campo--busca">
-            <span class="sr-only">Encontrar cliente</span>
+            <span class="sr-only">Encontrar recebimento</span>
             <input id="pesquisa-termo" type="search" maxlength="60" autocomplete="off"
-                   placeholder="Encontrar cliente pelo nome ou código">
+                   placeholder="Encontrar por título, nota, pedido, código ou nome do cliente">
           </label>
           <button type="submit">Pesquisar</button>
           <button id="limpar-pesquisa" type="button" class="botao-secundario" hidden>Limpar</button>
@@ -52,6 +53,19 @@
           <button id="baixar-excel" type="button" class="botao-secundario">Baixar Excel</button>
         </div>
       </div>
+
+      <form id="filtros" class="filtros">
+        <label>Recebimento de <input type="date" id="inicio"></label>
+        <label>até <input type="date" id="fim"></label>
+        <div class="atalhos" id="atalhos" aria-label="Períodos prontos">
+          <button type="button" class="botao-secundario" data-dias="0">Hoje</button>
+          <button type="button" class="botao-secundario" data-dias="7">Últimos 7 dias</button>
+          <button type="button" class="botao-secundario atalho--ativo" data-dias="30">Últimos 30 dias</button>
+          <button type="button" class="botao-secundario" data-dias="mes">Este mês</button>
+        </div>
+        <button type="submit" class="filtros__aplicar">Atualizar</button>
+      </form>
+
       <div id="marcadores" class="marcadores" hidden></div>
       <p id="status" class="status" role="status" aria-live="polite"></p>
     </section>
@@ -60,48 +74,44 @@
       <section class="destaque">
         <div class="painel-topo">
           <div>
-            <h2>Carteira em aberto (clientes)</h2>
-            <p id="total-aberto" class="valor-grande">—</p>
+            <h2>Recebido no período</h2>
+            <p id="total-recebido" class="valor-grande">—</p>
             <p id="total-explica" class="explica"></p>
           </div>
           <dl class="indicadores">
-            <dt>Vencido</dt>
-            <dd id="ind-vencido">—</dd>
-            <dt>Pago em dia</dt>
-            <dd id="ind-em-dia">—</dd>
-            <dt>20 maiores devedores</dt>
-            <dd id="ind-concentracao">—</dd>
-            <dt>Atraso e comprando</dt>
-            <dd id="ind-risco">—</dd>
+            <dt>Clientes</dt>
+            <dd id="ind-clientes">—</dd>
+            <dt>Pessoas que lançaram</dt>
+            <dd id="ind-pessoas">—</dd>
+            <dt>Pagamentos parciais</dt>
+            <dd id="ind-parciais">—</dd>
+            <dt>Maior forma</dt>
+            <dd id="ind-forma">—</dd>
           </dl>
         </div>
       </section>
 
-      <!-- Cartões: classe de crédito (clicar filtra a lista) -->
-      <section class="cartoes cartoes--cinco" id="cartoes" aria-label="Classes de crédito"></section>
+      <!-- Cartões por origem: clicar filtra a lista -->
+      <section class="cartoes cartoes--cinco" id="cartoes" aria-label="Origem do recebimento"></section>
+
+      <div class="duas-colunas">
+        <section class="bloco">
+          <h2>Recebido por dia</h2>
+          <p class="bloco__descricao">Pela data do recebimento, separado pela tela em que a baixa foi feita.</p>
+          <div id="grafico-dias"></div>
+        </section>
+        <section class="bloco">
+          <h2>Quem lançou</h2>
+          <p class="bloco__descricao">Quanto cada pessoa baixou no período. Clique para ver só os dela.</p>
+          <div class="barras" id="barras-pessoas"></div>
+        </section>
+      </div>
 
       <section class="bloco">
-        <h2>Carteira por classe de crédito</h2>
-        <p class="bloco__descricao">Quanto do valor em aberto está com clientes de cada classe.</p>
-        <div id="grafico-classes"></div>
-      </section>
-
-      <section class="bloco">
-        <h2>Como a classe é calculada</h2>
-        <p class="bloco__descricao">Pelo histórico real de pagamento dos últimos 12 meses (recebível de cartão fica de fora).
-          <strong>A</strong>: paga em dia (até 3 dias depois do vencimento) e não tem vencido.
-          <strong>B</strong>: tem algum vencido, ou paga com 4 a 15 dias de atraso.
-          <strong>C</strong>: vencido há mais de 30 dias, ou paga com mais de 15 dias de atraso.
-          <strong>D</strong>: vencido há mais de 60 dias.
-          <strong>Sem histórico</strong>: nenhum pagamento nos últimos 12 meses.</p>
-        <p class="aviso-alerta">Enquanto houver baixas atrasadas no PROCFIT, alguns clientes podem aparecer com atraso
-          que já foi pago no banco. Confira o "Último pagamento" antes de bloquear alguém.</p>
-      </section>
-
-      <section class="bloco">
-        <h2 id="titulo-lista">Clientes</h2>
+        <h2 id="titulo-lista">Recebimentos</h2>
+        <p class="bloco__descricao">Cada linha é um título baixado. Clique no nome da coluna para ordenar e no pedido para ver a venda.</p>
         <div class="tabela-rolagem">
-          <table class="tabela" id="tabela-clientes-credito">
+          <table class="tabela" id="tabela-recebimentos">
             <thead></thead>
             <tbody></tbody>
             <tfoot></tfoot>

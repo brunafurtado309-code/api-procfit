@@ -548,6 +548,102 @@ async function analiseClientes(filtros) {
 // Saúde das baixas do contas a receber: por mês de vencimento (últimos 6 meses até o atual),
 // quanto já venceu e quanto disso continua sem baixa. Mês com pouca baixa = recebimento que
 // entrou e não foi baixado no PROCFIT (mesma leitura do contas a pagar).
+// RECEBIMENTOS: toda baixa de título (transação 12), venha de onde vier.
+// As quatro origens do PROCFIT, identificadas em set/2026 por TAB_MASTER_ORIGEM:
+//   668401 Bancos por títulos (financeiro)    356928 Recebimento no caixa
+//   249008 Cofre da loja (automático)         455510 Retorno de despacho
+// De cada origem vem QUEM lançou e QUANDO lançou; a data do recebimento é a da transação.
+const ORIGENS_RECEBIMENTO = {
+  bancos: { id: 668401, nome: 'Bancos por títulos' },
+  caixa: { id: 356928, nome: 'Recebimento no caixa' },
+  cofre: { id: 249008, nome: 'Cofre da loja' },
+  despacho: { id: 455510, nome: 'Retorno de despacho' },
+};
+
+const ORDENACAO_RECEBIMENTOS = {
+  dia: 'TX.DATA',
+  cliente: 'E.NOME COLLATE Latin1_General_CI_AI',
+  titulo: 'T.TITULO',
+  recebido: 'TX.DEBITO',
+  vencimento: 'T.VENCIMENTO',
+};
+
+async function recebimentos(filtros) {
+  const pool = await getPool();
+  const coluna = ORDENACAO_RECEBIMENTOS[filtros.ordem] ?? 'TX.DATA';
+  const direcao = filtros.direcao === 'asc' ? 'ASC' : 'DESC';
+  const request = pool
+    .request()
+    .input('inicio', sql.VarChar(10), filtros.inicio)
+    .input('fim', sql.VarChar(10), filtros.fim)
+    .input('busca', sql.VarChar(60), filtros.busca ?? null)
+    .input('origem', sql.Int, filtros.origem ?? null)
+    .input('usuario', sql.Int, filtros.usuario ?? null);
+
+  const { recordset } = await request.query(`
+    SELECT TOP 20000
+      CONVERT(varchar(10), TX.DATA, 23)                                  AS dia,
+      CONVERT(varchar(16), COALESCE(RB.DATA_HORA, RC.DATA_HORA, CF.DATA_HORA, RD.DATA_HORA), 120) AS lancado_em,
+      TX.TAB_MASTER_ORIGEM                                               AS origem_id,
+      CASE TX.TAB_MASTER_ORIGEM
+        WHEN ${ORIGENS_RECEBIMENTO.bancos.id}   THEN '${ORIGENS_RECEBIMENTO.bancos.nome}'
+        WHEN ${ORIGENS_RECEBIMENTO.caixa.id}    THEN '${ORIGENS_RECEBIMENTO.caixa.nome}'
+        WHEN ${ORIGENS_RECEBIMENTO.cofre.id}    THEN '${ORIGENS_RECEBIMENTO.cofre.nome}'
+        WHEN ${ORIGENS_RECEBIMENTO.despacho.id} THEN '${ORIGENS_RECEBIMENTO.despacho.nome}'
+        ELSE CONCAT('Outra tela (', TX.TAB_MASTER_ORIGEM, ')') END       AS origem,
+      TX.REG_MASTER_ORIGEM                                               AS lote,
+      COALESCE(RB.USUARIO_LOGADO, RC.USUARIO_LOGADO, CF.USUARIO_LOGADO, RD.USUARIO_LOGADO) AS usuario,
+      COALESCE(NULLIF(LTRIM(RTRIM(U.NOME)), ''), LTRIM(RTRIM(U.LOGIN)))  AS usuario_nome,
+      LTRIM(RTRIM(T.TITULO))                                             AS titulo,
+      NF.NF_NUMERO                                                       AS nota,
+      COALESCE(NULLIF(T.PEDIDO_PREVENDA, 0), NULLIF(NF.PEDIDO_CLIENTE, 0)) AS pedido,
+      T.ENTIDADE                                                         AS cod_cliente,
+      LTRIM(RTRIM(E.NOME))                                               AS cliente,
+      CONVERT(varchar(10), T.VENCIMENTO, 23)                             AS vencimento,
+      T.VALOR                                                            AS valor_titulo,
+      TX.DEBITO                                                          AS recebido,
+      CASE COALESCE(RB.MODALIDADE, RC.MODALIDADE, DT.MODALIDADE, T.MODALIDADE)
+        WHEN 0 THEN 'Carteira'  WHEN 1 THEN 'Boleto'   WHEN 2 THEN 'Depósito'
+        WHEN 3 THEN 'Cheque'    WHEN 4 THEN 'Dinheiro' WHEN 5 THEN 'Débito em conta'
+        WHEN 6 THEN 'Cartão crédito' WHEN 7 THEN 'Promissória' WHEN 8 THEN 'Vale'
+        WHEN 9 THEN 'Devolução' WHEN 11 THEN 'PIX'     WHEN 12 THEN 'Cartão débito'
+        WHEN 13 THEN 'Convênio' ELSE 'Outra' END                         AS forma
+    FROM TITULOS_RECEBER_TRANSACOES TX WITH (NOLOCK)
+    JOIN TITULOS_RECEBER T WITH (NOLOCK) ON T.TITULO_RECEBER = TX.TITULO_RECEBER
+    LEFT JOIN NF_FATURAMENTO NF WITH (NOLOCK)
+      ON T.TAB_MASTER_ORIGEM = ${TAB_NOTA_FISCAL} AND NF.NF_FATURAMENTO = T.REG_MASTER_ORIGEM
+    LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = T.ENTIDADE
+    LEFT JOIN RECEBIMENTOS_BANCOS RB WITH (NOLOCK)
+      ON TX.TAB_MASTER_ORIGEM = ${ORIGENS_RECEBIMENTO.bancos.id} AND RB.RECEBIMENTO_BANCO = TX.REG_MASTER_ORIGEM
+    LEFT JOIN RECEBIMENTOS_CAIXA RC WITH (NOLOCK)
+      ON TX.TAB_MASTER_ORIGEM = ${ORIGENS_RECEBIMENTO.caixa.id} AND RC.RECEBIMENTO_CAIXA = TX.REG_MASTER_ORIGEM
+    LEFT JOIN COFRES_LOJAS_LANCAMENTOS CF WITH (NOLOCK)
+      ON TX.TAB_MASTER_ORIGEM = ${ORIGENS_RECEBIMENTO.cofre.id} AND CF.COFRE_LANCAMENTO = TX.REG_MASTER_ORIGEM
+    LEFT JOIN RECEBIMENTOS_FATURAMENTO_DESPACHO_DETALHES DT WITH (NOLOCK)
+      ON TX.TAB_MASTER_ORIGEM = ${ORIGENS_RECEBIMENTO.despacho.id}
+     AND DT.RECEBIMENTO_FATURAMENTO_DESPACHO_DETALHE = TX.REG_MASTER_ORIGEM
+    LEFT JOIN RECEBIMENTOS_FATURAMENTO_DESPACHO RD WITH (NOLOCK)
+      ON RD.RECEBIMENTO_FATURAMENTO_DESPACHO = DT.RECEBIMENTO_FATURAMENTO_DESPACHO
+    LEFT JOIN USUARIOS U WITH (NOLOCK)
+      ON U.USUARIO = COALESCE(RB.USUARIO_LOGADO, RC.USUARIO_LOGADO, CF.USUARIO_LOGADO, RD.USUARIO_LOGADO)
+    WHERE TX.TRANSACAO_FINANCEIRA = 12
+      AND ISNULL(TX.DEBITO, 0) > 0
+      AND TX.DATA >= CAST(@inicio AS date)
+      AND TX.DATA <  DATEADD(day, 1, CAST(@fim AS date))
+      AND (@origem IS NULL OR TX.TAB_MASTER_ORIGEM = @origem)
+      AND (@usuario IS NULL
+        OR COALESCE(RB.USUARIO_LOGADO, RC.USUARIO_LOGADO, CF.USUARIO_LOGADO, RD.USUARIO_LOGADO) = @usuario)
+      AND (@busca IS NULL
+        OR T.TITULO LIKE '%' + @busca + '%'
+        OR CAST(NF.NF_NUMERO AS varchar(20)) = @busca
+        OR CAST(T.PEDIDO_PREVENDA AS varchar(20)) = @busca
+        OR CAST(T.ENTIDADE AS varchar(20)) = @busca
+        OR E.NOME LIKE '%' + @busca + '%')
+    ORDER BY ${coluna} ${direcao}, TX.TITULO_RECEBER;
+  `);
+  return recordset;
+}
+
 async function baixasPorMes(filtros) {
   const request = await criarRequest(filtros);
   const { recordset } = await request.query(`
@@ -569,5 +665,5 @@ async function baixasPorMes(filtros) {
 
 module.exports = {
   resumo, cartoes, indicadores, previsao, porFaixaAtraso, porCliente, titulos, fichaCliente, analiseClientes,
-  baixasPorMes,
+  baixasPorMes, recebimentos, ORIGENS_RECEBIMENTO, ORDENACAO_RECEBIMENTOS,
 };

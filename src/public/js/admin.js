@@ -236,134 +236,137 @@ async function abrirUsuario(u) {
       + `${plural(lancamentos.length, 'ação', 'ações')} de ${dataBR(el('inicio').value)} a ${dataBR(el('fim').value)}`;
 
     const partes = [];
+    const totalRecebido = recebimentos.reduce((t, r) => t + (Number(r.recebido) || 0), 0);
+    const lotes = new Set(recebimentos.map((r) => r.lote)).size;
 
-    // O que ela mais faz
-    const tituloResumo = document.createElement('h3');
-    tituloResumo.textContent = 'O que faz no sistema';
-    partes.push(tituloResumo);
-    const maximo = Math.max(0, ...porAcao.map((a) => Number(a.acoes) || 0));
-    const barras = document.createElement('div');
-    barras.className = 'barras';
-    barras.replaceChildren(...(porAcao.length ? porAcao.map((a) => {
-      const linha = document.createElement('div');
-      linha.className = 'barra barra--previsao';
-      const trilho = span('', 'barra-trilho');
-      const preenchida = span('', 'barra-preenchida');
-      preenchida.style.width = `${maximo ? Math.max(2, (Number(a.acoes) / maximo) * 100) : 0}%`;
-      trilho.append(preenchida);
-      const valor = span(inteiro(a.acoes), 'barra-valor');
-      valor.append(Object.assign(document.createElement('small'), { textContent: `${a.area} · última ${dataHoraBR(a.ultima)}` }));
-      linha.append(span(a.acao, 'barra-rotulo'), trilho, valor);
-      return linha;
-    }) : [span('Nenhuma ação no período.', 'explica')]));
-    partes.push(barras);
+    // 1) Três números no topo: o resumo da pessoa no período
+    const resumo = document.createElement('dl');
+    resumo.className = 'indicadores indicadores--janela';
+    const indicador = (rotulo, valor, nota) => {
+      const dt = document.createElement('dt');
+      dt.textContent = rotulo;
+      const dd = document.createElement('dd');
+      dd.append(valor);
+      if (nota) dd.append(span(nota));
+      resumo.append(dt, dd);
+    };
+    indicador('Ações no período', inteiro(lancamentos.length), porAcao.length
+      ? `${porAcao[0].acao.toLowerCase()} é a principal` : 'nenhuma ação');
+    indicador('Títulos baixados', inteiro(recebimentos.length), `em ${plural(lotes, 'lançamento', 'lançamentos')}`);
+    indicador('Valor recebido', dinheiro(totalRecebido), 'títulos baixados por ela');
+    partes.push(resumo);
 
-    // Recebimentos título a título (cliente, nota, pedido, valor)
+    // 2) O que ela mais faz (as cinco principais)
+    if (porAcao.length) {
+      const maximo = Math.max(...porAcao.map((a) => Number(a.acoes) || 0));
+      const barras = document.createElement('div');
+      barras.className = 'barras';
+      barras.replaceChildren(...porAcao.slice(0, 5).map((a) => {
+        const linha = document.createElement('div');
+        linha.className = 'barra barra--previsao';
+        const trilho = span('', 'barra-trilho');
+        const preenchida = span('', 'barra-preenchida');
+        preenchida.style.width = `${maximo ? Math.max(2, (Number(a.acoes) / maximo) * 100) : 0}%`;
+        trilho.append(preenchida);
+        const valor = span(inteiro(a.acoes), 'barra-valor');
+        valor.append(Object.assign(document.createElement('small'), { textContent: a.area }));
+        linha.append(span(a.acao, 'barra-rotulo'), trilho, valor);
+        return linha;
+      }));
+      partes.push(barras);
+    }
+
+    // 3) Recebimentos: os 20 mais recentes, em poucas colunas. O resto vai no Excel.
     if (recebimentos.length) {
-      const total = recebimentos.reduce((t, r) => t + (Number(r.recebido) || 0), 0);
-      const tituloReceb = document.createElement('h3');
-      tituloReceb.textContent = 'Recebimentos lançados';
-      partes.push(tituloReceb);
-      const explica = document.createElement('p');
-      explica.className = 'bloco__descricao';
-      const lotes = new Set(recebimentos.map((r) => r.lote)).size;
-      explica.textContent = `${plural(recebimentos.length, 'título baixado', 'títulos baixados')} em `
-        + `${plural(lotes, 'lançamento', 'lançamentos')} · ${dinheiro(total)}. O período é pela data do `
-        + 'lançamento; a data do recebimento informada aparece na coluna "Recebimento".';
-      partes.push(explica);
+      const MOSTRAR = 20;
+      const titulo = document.createElement('h3');
+      titulo.textContent = 'Últimos recebimentos';
+      partes.push(titulo);
+
+      const tabela = document.createElement('table');
+      tabela.className = 'tabela tabela--itens';
+      const cab = document.createElement('tr');
+      for (const [texto, esquerda] of [['Lançado em', true], ['Cliente', true], ['Nota / pedido', true],
+        ['Forma', true], ['Recebido']]) {
+        const th = document.createElement('th');
+        th.scope = 'col';
+        th.textContent = texto;
+        if (esquerda) th.className = 'esquerda';
+        cab.append(th);
+      }
+      tabela.createTHead().append(cab);
+      const corpo = tabela.createTBody();
+      for (const r of recebimentos.slice(0, MOSTRAR)) {
+        const parcial = Number(r.recebido) + 0.009 < Number(r.valor_titulo);
+        const tr = document.createElement('tr');
+        tr.append(
+          comAuxiliar(dataHoraBR(r.lancado_em), `recebido em ${dataBR(r.dia)}`, 'esquerda sem-quebra'),
+          td(r.cliente ?? `Cliente ${r.cod_cliente}`, 'esquerda'),
+          comAuxiliar(r.nota ? `NF ${r.nota}` : 'sem nota', r.pedido ? `pedido ${r.pedido}` : null, 'esquerda'),
+          td(r.forma ?? '—', 'esquerda'),
+          comAuxiliar(dinheiro(r.recebido), parcial ? `parcial de ${dinheiro(r.valor_titulo)}` : null,
+            null, 'qtd negativo'),
+        );
+        corpo.append(tr);
+      }
+      tabela.createTFoot().append((() => {
+        const linha = document.createElement('tr');
+        const rotulo = td(recebimentos.length > MOSTRAR
+          ? `${plural(recebimentos.length, 'título', 'títulos')} no período · os ${MOSTRAR} últimos acima`
+          : `Total (${plural(recebimentos.length, 'título', 'títulos')})`, 'esquerda');
+        rotulo.colSpan = 4;
+        linha.append(rotulo, td(dinheiro(totalRecebido)));
+        return linha;
+      })());
+      partes.push(tabela);
 
       const acoes = document.createElement('p');
       const botaoExcel = document.createElement('button');
       botaoExcel.type = 'button';
       botaoExcel.className = 'botao-secundario';
-      botaoExcel.textContent = 'Baixar Excel dos recebimentos';
+      botaoExcel.textContent = 'Baixar Excel com todos os recebimentos';
       botaoExcel.addEventListener('click', () => baixarExcel(u.usuario, 'recebimentos'));
       acoes.append(botaoExcel);
       partes.push(acoes);
-
-      const tabela = document.createElement('table');
-      tabela.className = 'tabela tabela--itens';
-      const cab = document.createElement('tr');
-      for (const [titulo, esquerda] of [['Lançado em', true], ['Recebimento', true], ['Título', true], ['Nota', true],
-        ['Pedido', true], ['Cliente', true], ['Vencimento', true], ['Forma', true], ['Valor do título'], ['Recebido']]) {
-        const th = document.createElement('th');
-        th.scope = 'col';
-        th.textContent = titulo;
-        if (esquerda) th.className = 'esquerda';
-        cab.append(th);
-      }
-      tabela.createTHead().append(cab);
-      const corpo = tabela.createTBody();
-      const MAXIMO = 300;
-      for (const r of recebimentos.slice(0, MAXIMO)) {
-        const tr = document.createElement('tr');
-        const parcial = Number(r.recebido) + 0.009 < Number(r.valor_titulo);
-        tr.append(
-          comAuxiliar(dataHoraBR(r.lancado_em), `lote ${r.lote}`, 'esquerda sem-quebra'),
-          td(dataBR(r.dia), 'esquerda sem-quebra'),
-          td(r.titulo ?? '—', 'esquerda sem-quebra'),
-          td(r.nota ? `NF ${r.nota}` : '—', 'esquerda'),
-          td(r.pedido ?? '—', 'esquerda'),
-          comAuxiliar(r.cliente ?? `Cliente ${r.cod_cliente}`, `código ${r.cod_cliente}`, 'esquerda'),
-          td(dataBR(r.vencimento), 'esquerda sem-quebra'),
-          td(r.forma ?? '—', 'esquerda'),
-          td(dinheiro(r.valor_titulo)),
-          comAuxiliar(dinheiro(r.recebido), parcial ? 'pagamento parcial' : null, null, 'qtd negativo'),
-        );
-        corpo.append(tr);
-      }
-      const rodape = document.createElement('tr');
-      const rotulo = td(recebimentos.length > MAXIMO
-        ? `Total (${plural(recebimentos.length, 'título', 'títulos')}; mostrando os ${MAXIMO} mais recentes)`
-        : `Total (${plural(recebimentos.length, 'título', 'títulos')})`, 'esquerda');
-      rotulo.colSpan = 9;
-      rodape.append(rotulo, td(dinheiro(total)));
-      tabela.createTFoot().append(rodape);
-      partes.push(tabela);
     }
 
-    // Linha do tempo, dia a dia
-    const tituloLinha = document.createElement('h3');
-    tituloLinha.textContent = 'Dia a dia';
-    partes.push(tituloLinha);
-    const porDia = new Map();
-    for (const l of lancamentos) {
-      if (!porDia.has(l.dia)) porDia.set(l.dia, []);
-      porDia.get(l.dia).push(l);
-    }
-    for (const [dia, acoes] of porDia) {
+    // 4) Dia a dia: fechado, para quem quiser conferir hora a hora
+    if (lancamentos.length) {
+      const porDia = new Map();
+      for (const l of lancamentos) {
+        if (!porDia.has(l.dia)) porDia.set(l.dia, []);
+        porDia.get(l.dia).push(l);
+      }
       const detalhes = document.createElement('details');
       detalhes.className = 'mais-detalhes';
-      const resumo = document.createElement('summary');
-      const semana = new Date(`${dia}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'long' });
-      resumo.textContent = `${dataBR(dia)} (${semana}) · ${plural(acoes.length, 'ação', 'ações')}`;
+      const resumoDias = document.createElement('summary');
+      resumoDias.textContent = `Ver o dia a dia (${plural(lancamentos.length, 'ação', 'ações')} em `
+        + `${plural(porDia.size, 'dia', 'dias')})`;
+      detalhes.append(resumoDias);
       const tabela = document.createElement('table');
       tabela.className = 'tabela tabela--itens';
       const cab = document.createElement('tr');
-      for (const [titulo, esquerda] of [['Hora', true], ['Área', true], ['O que fez', true], ['Documento', true]]) {
+      for (const texto of ['Dia', 'Hora', 'Área', 'O que fez', 'Documento']) {
         const th = document.createElement('th');
         th.scope = 'col';
-        th.textContent = titulo;
-        if (esquerda) th.className = 'esquerda';
+        th.className = 'esquerda';
+        th.textContent = texto;
         cab.append(th);
       }
       tabela.createTHead().append(cab);
       const corpo = tabela.createTBody();
-      for (const l of acoes) {
-        const tr = document.createElement('tr');
+      for (const l of lancamentos.slice(0, 500)) {
         const fora = Number(l.hora.slice(0, 2)) < 6 || Number(l.hora.slice(0, 2)) >= 20;
-        tr.append(
-          td(l.hora, fora ? 'esquerda negativo' : 'esquerda'),
-          td(l.area, 'esquerda'),
-          td(l.acao, 'esquerda'),
-          td(l.referencia ?? '—', 'esquerda'),
-        );
+        const tr = document.createElement('tr');
+        tr.append(td(dataBR(l.dia), 'esquerda sem-quebra'), td(l.hora, fora ? 'esquerda negativo' : 'esquerda'),
+          td(l.area, 'esquerda'), td(l.acao, 'esquerda'), td(l.referencia ?? '—', 'esquerda'));
         corpo.append(tr);
       }
-      detalhes.append(resumo, tabela);
+      detalhes.append(tabela);
       partes.push(detalhes);
+    } else {
+      partes.push(span('Nenhuma ação registrada para esta pessoa no período.', 'explica'));
     }
-    if (!porDia.size) partes.push(span('Nenhuma ação registrada para esta pessoa no período.', 'explica'));
 
     el('usuario-corpo').replaceChildren(...partes);
   } catch (erro) {
