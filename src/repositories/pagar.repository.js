@@ -287,7 +287,12 @@ async function pagamentos(filtros) {
         COALESCE(NULLIF(LTRIM(RTRIM(U.NOME)), ''), LTRIM(RTRIM(U.LOGIN))) AS usuario_nome,
         CONVERT(varchar(16), COALESCE(PC.DATA_HORA, PE.DATA_HORA), 120) AS lancado_em,
         DATEDIFF(day, CAST(TX.DATA AS date), CAST(COALESCE(PC.DATA_HORA, PE.DATA_HORA) AS date)) AS dias_para_lancar,
-        PE.CONTA_BANCARIA                                       AS conta_bancaria
+        PE.CONTA_BANCARIA                                       AS conta_bancaria,
+        T.VALOR                                                 AS valor_titulo,
+        CONVERT(varchar(10), T.VENCIMENTO, 23)                  AS vencimento,
+        SP.PENDENTE                                             AS pendente_atual,
+        CAT.categoria,
+        CAT.grupo
       FROM TITULOS_PAGAR_TRANSACOES TX WITH (NOLOCK)
       JOIN TITULOS_PAGAR T WITH (NOLOCK) ON T.TITULO_PAGAR = TX.TITULO_PAGAR
       LEFT JOIN PAGAMENTOS_CAIXA PC WITH (NOLOCK)
@@ -297,6 +302,23 @@ async function pagamentos(filtros) {
       -- Da tabela de usuários, só NOME e LOGIN (ela guarda senhas)
       LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = COALESCE(PC.USUARIO_LOGADO, PE.USUARIO_LOGADO)
       LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = T.ENTIDADE
+      -- Quanto do título ainda falta pagar hoje (mesma regra da tela: crédito - débito)
+      OUTER APPLY (
+        SELECT SUM(ISNULL(X.CREDITO, 0)) - SUM(ISNULL(X.DEBITO, 0)) AS PENDENTE
+        FROM TITULOS_PAGAR_TRANSACOES X WITH (NOLOCK)
+        WHERE X.TITULO_PAGAR = TX.TITULO_PAGAR
+      ) SP
+      -- Categoria principal do título (a de maior valor no rateio) e o grupo dela
+      OUTER APPLY (
+        SELECT TOP 1
+          COALESCE(LTRIM(RTRIM(CF.DESCRICAO)), CONCAT('Categoria ', C.CLASSIF_FINANCEIRA)) AS categoria,
+          COALESCE(LTRIM(RTRIM(G.DESCRICAO)), 'Sem grupo') AS grupo
+        FROM TITULOS_PAGAR_CLASSIFICACOES C WITH (NOLOCK)
+        LEFT JOIN CLASSIF_FINANCEIRAS CF WITH (NOLOCK) ON CF.CLASSIF_FINANCEIRA = C.CLASSIF_FINANCEIRA
+        LEFT JOIN CLASSIF_FINANCEIRAS_GRUPOS G WITH (NOLOCK) ON G.CLASSIF_FINANCEIRA_GRUPO = CF.CLASSIF_FINANCEIRA_GRUPO
+        WHERE C.TITULO_PAGAR = TX.TITULO_PAGAR
+        ORDER BY C.VALOR DESC
+      ) CAT
       WHERE TX.TRANSACAO_FINANCEIRA = 11
         AND TX.DATA >= DATEADD(day, -@dias, CAST(GETDATE() AS date))
         AND (@busca IS NULL

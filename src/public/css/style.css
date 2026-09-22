@@ -683,6 +683,9 @@ button.cartao:hover { background: var(--verde-suave); border-color: var(--verde-
 /* Conteúdo do cartão sempre a partir do topo (botão centraliza por padrão) */
 button.cartao { display: flex; flex-direction: column; justify-content: flex-start; }
 .bloco .cartoes { margin-top: 1rem; }
+/* Linha de dia que abre as notas */
+.tabela tr.linha-dia { cursor: pointer; }
+.tabela tr.linha-dia--aberta { background: var(--verde-suave); }
 .cartao--ativo,
 button.cartao--ativo {
   border-color: var(--verde);
