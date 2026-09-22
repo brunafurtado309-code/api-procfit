@@ -492,4 +492,57 @@ async function previsao(filtros) {
   return recordset;
 }
 
-module.exports = { resumo, cartoes, indicadores, previsao, porFaixaAtraso, porCliente, titulos, fichaCliente };
+// Análise de CLIENTES e CRÉDITO: uma linha por cliente, com a exposição de hoje e o
+// comportamento de pagamento dos últimos 12 meses (pelo vencimento).
+// - Só clientes: recebível de cartão (adquirente) não é crédito dado ao cliente.
+// - "Pago em dia" aceita até 3 dias depois do vencimento (fim de semana, compensação).
+// - Atraso médio de pagamento é ponderado pelo valor do título.
+// - A data do pagamento é a do recebimento lançado (transação 12). Se as baixas
+//   estiverem atrasadas no PROCFIT, o cliente parece pior pagador do que é.
+// Datas em texto AAAA-MM-DD viram date com CAST (datetime estoura no formato DMY).
+async function analiseClientes(filtros) {
+  const request = await criarRequest(filtros);
+  const { recordset } = await request.query(`
+    ${SALDOS},
+    ${TITULOS},
+    BASE AS (
+      SELECT *,
+        CAST(vencimento AS date) AS venc_d,
+        CAST(emissao AS date) AS emis_d,
+        CASE WHEN ultimo_recebimento IS NOT NULL
+             THEN DATEDIFF(day, CAST(vencimento AS date), CAST(ultimo_recebimento AS date)) END AS dias_pagamento
+      FROM TITULOS
+      WHERE tipo_devedor = 'CLIENTE' AND ${FILTRO_COMUM}
+    )
+    SELECT
+      cod_cliente,
+      MAX(cliente)                                                             AS cliente,
+      SUM(CASE WHEN pendente > 0.009 THEN pendente ELSE 0 END)                 AS aberto,
+      COUNT(CASE WHEN pendente > 0.009 THEN 1 END)                             AS titulos_abertos,
+      SUM(CASE WHEN pendente > 0.009 AND dias_atraso > 0 THEN pendente ELSE 0 END) AS vencido,
+      MAX(CASE WHEN pendente > 0.009 AND dias_atraso > 0 THEN dias_atraso END) AS maior_atraso,
+      SUM(CASE WHEN emis_d >= DATEADD(day, -365, CAST(GETDATE() AS date)) THEN valor ELSE 0 END) AS vendido_12m,
+      SUM(CASE WHEN emis_d >= DATEADD(day, -30, CAST(GETDATE() AS date)) THEN valor ELSE 0 END)  AS vendido_30d,
+      COUNT(CASE WHEN situacao = 'QUITADO' AND venc_d >= DATEADD(day, -365, CAST(GETDATE() AS date)) THEN 1 END) AS pagos_12m,
+      COUNT(CASE WHEN situacao = 'QUITADO' AND venc_d >= DATEADD(day, -365, CAST(GETDATE() AS date))
+                  AND dias_pagamento <= 3 THEN 1 END)                          AS pagos_em_dia_12m,
+      SUM(CASE WHEN situacao = 'QUITADO' AND venc_d >= DATEADD(day, -365, CAST(GETDATE() AS date))
+               THEN valor * CASE WHEN dias_pagamento > 0 THEN dias_pagamento ELSE 0 END ELSE 0 END)
+        / NULLIF(SUM(CASE WHEN situacao = 'QUITADO' AND venc_d >= DATEADD(day, -365, CAST(GETDATE() AS date))
+                          THEN valor ELSE 0 END), 0)                           AS atraso_medio_pagamento,
+      SUM(CASE WHEN ultimo_recebimento >= CONVERT(varchar(10), DATEADD(day, -365, GETDATE()), 23)
+               THEN recebido ELSE 0 END)                                       AS recebido_12m,
+      CONVERT(varchar(10), MAX(emis_d), 23)                                    AS ultima_compra,
+      CONVERT(varchar(10), MIN(emis_d), 23)                                    AS cliente_desde,
+      MAX(ultimo_recebimento)                                                  AS ultimo_pagamento
+    FROM BASE
+    GROUP BY cod_cliente
+    HAVING SUM(CASE WHEN pendente > 0.009 THEN pendente ELSE 0 END) > 0.009
+        OR SUM(CASE WHEN emis_d >= DATEADD(day, -365, CAST(GETDATE() AS date)) THEN valor ELSE 0 END) > 0.009
+  `);
+  return recordset;
+}
+
+module.exports = {
+  resumo, cartoes, indicadores, previsao, porFaixaAtraso, porCliente, titulos, fichaCliente, analiseClientes,
+};

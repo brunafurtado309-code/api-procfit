@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clientes e crédito | Painel financeiro | Belo Norte</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/modulos.js" defer></script>
+  <script src="js/clientes.js" defer></script>
+</head>
+<body>
+  <header class="topo">
+    <div>
+      <p class="marca">Belo Norte</p>
+      <h1>Painel financeiro</h1>
+    </div>
+    <div class="topo-acoes">
+      <nav id="modulos" class="modulos" aria-label="Módulos do painel" hidden></nav>
+      <button id="trocar-chave" class="botao-texto" type="button">Trocar chave</button>
+    </div>
+  </header>
+
+  <main class="conteudo conteudo--largo">
+    <nav class="divisao" aria-label="Parte do financeiro">
+      <a class="divisao__item divisao__item--ativa" href="financeiro.html" aria-current="page">Contas a receber</a>
+      <a class="divisao__item" href="pagar.html">Contas a pagar</a>
+    </nav>
+
+    <nav class="abas" aria-label="Visões do contas a receber">
+      <a class="aba" href="financeiro.html#titulos">Títulos em aberto</a>
+      <a class="aba" href="financeiro.html#parciais">Baixa parcial</a>
+      <a class="aba" href="financeiro.html#boletos">Boletos e prazos</a>
+      <a class="aba" href="financeiro.html#cobranca">Cobrança</a>
+      <a class="aba" href="despachos.html">Despachos</a>
+      <span class="aba aba--ativa" aria-current="page">Clientes e crédito</span>
+    </nav>
+
+    <section class="barra-filtros" aria-label="Filtros">
+      <div class="barra-filtros__linha">
+        <form id="form-pesquisa" class="pesquisa" role="search">
+          <label class="campo campo--busca">
+            <span class="sr-only">Encontrar cliente</span>
+            <input id="pesquisa-termo" type="search" maxlength="60" autocomplete="off"
+                   placeholder="Encontrar cliente pelo nome ou código">
+          </label>
+          <button type="submit">Pesquisar</button>
+          <button id="limpar-pesquisa" type="button" class="botao-secundario" hidden>Limpar</button>
+        </form>
+        <div class="barra-filtros__acoes">
+          <button id="baixar-excel" type="button" class="botao-secundario">Baixar Excel</button>
+        </div>
+      </div>
+      <div id="marcadores" class="marcadores" hidden></div>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <div id="painel" hidden>
+      <section class="destaque">
+        <div class="painel-topo">
+          <div>
+            <h2>Carteira em aberto (clientes)</h2>
+            <p id="total-aberto" class="valor-grande">—</p>
+            <p id="total-explica" class="explica"></p>
+          </div>
+          <dl class="indicadores">
+            <dt>Vencido</dt>
+            <dd id="ind-vencido">—</dd>
+            <dt>Pago em dia</dt>
+            <dd id="ind-em-dia">—</dd>
+            <dt>20 maiores devedores</dt>
+            <dd id="ind-concentracao">—</dd>
+            <dt>Atraso e comprando</dt>
+            <dd id="ind-risco">—</dd>
+          </dl>
+        </div>
+      </section>
+
+      <!-- Cartões: classe de crédito (clicar filtra a lista) -->
+      <section class="cartoes cartoes--cinco" id="cartoes" aria-label="Classes de crédito"></section>
+
+      <section class="bloco">
+        <h2>Como a classe é calculada</h2>
+        <p class="bloco__descricao">Pelo histórico real de pagamento dos últimos 12 meses (recebível de cartão fica de fora).
+          <strong>A</strong>: paga em dia (até 3 dias depois do vencimento) e não tem vencido.
+          <strong>B</strong>: tem algum vencido, ou paga com 4 a 15 dias de atraso.
+          <strong>C</strong>: vencido há mais de 30 dias, ou paga com mais de 15 dias de atraso.
+          <strong>D</strong>: vencido há mais de 60 dias.
+          <strong>Sem histórico</strong>: nenhum pagamento nos últimos 12 meses.</p>
+        <p class="aviso-alerta">Enquanto houver baixas atrasadas no PROCFIT, alguns clientes podem aparecer com atraso
+          que já foi pago no banco. Confira o "Último pagamento" antes de bloquear alguém.</p>
+      </section>
+
+      <section class="bloco">
+        <h2 id="titulo-lista">Clientes</h2>
+        <div class="tabela-rolagem">
+          <table class="tabela" id="tabela-clientes-credito">
+            <thead></thead>
+            <tbody></tbody>
+            <tfoot></tfoot>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>
