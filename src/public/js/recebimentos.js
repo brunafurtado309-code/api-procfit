@@ -27,6 +27,7 @@ const chave = {
 let lista = [];
 let origemAtual = null;   // código da tela de origem
 let pessoaAtual = null;   // código do usuário
+let formaAtual = null;    // nome da forma de pagamento
 
 // ===== API =====
 async function buscar(rota, parametros = {}) {
@@ -97,6 +98,7 @@ async function carregar() {
   try {
     lista = await buscar('recebimentos', filtrosAtuais());
     mostrarResumo();
+    mostrarSeletores();
     mostrarCartoes();
     mostrarGrafico();
     mostrarPessoas();
@@ -110,7 +112,32 @@ async function carregar() {
 
 const visiveis = () => lista
   .filter((r) => (origemAtual ? Number(r.origem_id) === origemAtual : true))
-  .filter((r) => (pessoaAtual ? Number(r.usuario) === pessoaAtual : true));
+  .filter((r) => (pessoaAtual ? Number(r.usuario) === pessoaAtual : true))
+  .filter((r) => (formaAtual ? (r.forma ?? 'Outra') === formaAtual : true));
+
+// Preenche os três seletores com o que existe no período e marca o que está escolhido
+function mostrarSeletores() {
+  const preencher = (id, itens, atual, rotuloTodos) => {
+    const seletor = el(id);
+    seletor.replaceChildren(Object.assign(document.createElement('option'), { value: '', textContent: rotuloTodos }),
+      ...itens.map(([valor, texto]) => Object.assign(document.createElement('option'),
+        { value: String(valor), textContent: texto })));
+    seletor.value = atual == null ? '' : String(atual);
+  };
+  const porChave = (chave, nome) => {
+    const mapa = new Map();
+    for (const r of lista) {
+      const k = r[chave];
+      if (k == null) continue;
+      mapa.set(k, r[nome] ?? String(k));
+    }
+    return [...mapa.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'pt-BR'));
+  };
+  preencher('filtro-origem', porChave('origem_id', 'origem'), origemAtual, 'Todas');
+  preencher('filtro-pessoa', porChave('usuario', 'usuario_nome'), pessoaAtual, 'Todos');
+  const formas = [...new Set(lista.map((r) => r.forma ?? 'Outra'))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  preencher('filtro-forma', formas.map((f) => [f, f]), formaAtual, 'Todas');
+}
 
 const soma = (itens) => itens.reduce((t, r) => t + (Number(r.recebido) || 0), 0);
 const parcial = (r) => Number(r.recebido) + 0.009 < Number(r.valor_titulo);
@@ -159,6 +186,7 @@ function mostrarCartoes() {
     botao.append(titulo, valor, nota);
     botao.addEventListener('click', () => {
       origemAtual = ativo ? null : o.id;
+      mostrarSeletores();
       mostrarCartoes();
       mostrarLista();
     });
@@ -197,6 +225,7 @@ function mostrarPessoas() {
       linha.type = 'button';
       linha.addEventListener('click', () => {
         pessoaAtual = pessoaAtual === p.id ? null : p.id;
+        mostrarSeletores();
         mostrarPessoas();
         mostrarLista();
       });
@@ -259,6 +288,7 @@ function mostrarMarcadores() {
     itens.push({ texto: `Lançado por ${lista.find((r) => Number(r.usuario) === pessoaAtual)?.usuario_nome ?? pessoaAtual}`,
       remover: () => { pessoaAtual = null; } });
   }
+  if (formaAtual) itens.push({ texto: `Forma: ${formaAtual}`, remover: () => { formaAtual = null; } });
   const termo = el('pesquisa-termo').value.trim();
   if (termo) {
     itens.push({ texto: `Pesquisa: ${termo}`,
@@ -274,6 +304,7 @@ function mostrarMarcadores() {
     botao.addEventListener('click', () => {
       item.remover();
       loteAberto = null;
+      mostrarSeletores();
       mostrarCartoes();
       mostrarPessoas();
       mostrarLista();
@@ -409,7 +440,7 @@ async function baixarExcel() {
   try {
     const url = new URL('/financeiro/recebimentos/excel', window.location.origin);
     for (const [nome, valor] of Object.entries({
-      ...filtrosAtuais(), origem: origemAtual, usuario: pessoaAtual, direcao: ordemLotes.direcao,
+      ...filtrosAtuais(), origem: origemAtual, usuario: pessoaAtual, forma: formaAtual, direcao: ordemLotes.direcao,
     })) {
       if (valor) url.searchParams.set(nome, valor);
     }
@@ -484,6 +515,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     carregar();
   });
   el('baixar-excel').addEventListener('click', baixarExcel);
+  el('baixar-excel-lista').addEventListener('click', baixarExcel);
+  // Seletores: mudam o filtro sem recarregar do servidor (os dados do período já estão na tela)
+  el('filtro-origem').addEventListener('change', (evento) => {
+    origemAtual = evento.target.value ? Number(evento.target.value) : null;
+    loteAberto = null;
+    mostrarCartoes();
+    mostrarLista();
+  });
+  el('filtro-pessoa').addEventListener('change', (evento) => {
+    pessoaAtual = evento.target.value ? Number(evento.target.value) : null;
+    loteAberto = null;
+    mostrarPessoas();
+    mostrarLista();
+  });
+  el('filtro-forma').addEventListener('change', (evento) => {
+    formaAtual = evento.target.value || null;
+    loteAberto = null;
+    mostrarLista();
+  });
 
   carregar();
 });

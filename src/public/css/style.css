@@ -699,6 +699,9 @@ button.cartao { display: flex; flex-direction: column; justify-content: flex-sta
 /* Barra escolhida (ex.: pessoa filtrada nos recebimentos) */
 .barra--ativa .barra-rotulo { color: var(--verde); font-weight: 700; }
 .barra--ativa .barra-preenchida { background: var(--verde-escuro); }
+/* Linha extra de filtros em seletores (origem, pessoa, forma) */
+.filtros--extras { margin-top: 0.75rem; gap: 1rem; }
+.filtros--extras .campo { min-width: 12rem; }
 /* Filtro dentro de um bloco (ex.: período dos pagamentos) */
 .filtros--bloco { margin-top: 0.75rem; }
 /* Caixa da pessoa escolhida (abaixo dos cartões das pessoas) */

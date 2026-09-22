@@ -66,6 +66,21 @@
         <button type="submit" class="filtros__aplicar">Atualizar</button>
       </form>
 
+      <div class="filtros filtros--extras">
+        <label class="campo">
+          <span>Origem</span>
+          <select id="filtro-origem"><option value="">Todas</option></select>
+        </label>
+        <label class="campo">
+          <span>Quem lançou</span>
+          <select id="filtro-pessoa"><option value="">Todos</option></select>
+        </label>
+        <label class="campo">
+          <span>Forma</span>
+          <select id="filtro-forma"><option value="">Todas</option></select>
+        </label>
+      </div>
+
       <div id="marcadores" class="marcadores" hidden></div>
       <p id="status" class="status" role="status" aria-live="polite"></p>
     </section>
@@ -108,8 +123,12 @@
       </div>
 
       <section class="bloco">
-        <h2 id="titulo-lista">Recebimentos</h2>
-        <p class="bloco__descricao">Cada linha é um título baixado. Clique no nome da coluna para ordenar e no pedido para ver a venda.</p>
+        <div class="bloco-topo">
+          <h2 id="titulo-lista">Recebimentos</h2>
+          <button id="baixar-excel-lista" type="button" class="botao-secundario">Baixar Excel desta lista</button>
+        </div>
+        <p class="bloco__descricao">Cada linha é um lançamento de baixa. Clique no lançamento para ver os títulos,
+          no nome da coluna para ordenar e no pedido para ver a venda.</p>
         <div class="tabela-rolagem">
           <table class="tabela" id="tabela-recebimentos">
             <thead></thead>

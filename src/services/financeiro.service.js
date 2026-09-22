@@ -167,6 +167,14 @@ function filtrosRecebimentos(query) {
     }
     filtros.ordem = query.ordem;
   }
+  if (query.forma) {
+    const codigo = repo.FORMAS_RECEBIMENTO[query.forma];
+    if (codigo === undefined) {
+      throw new AppError(`"forma" deve ser: ${Object.keys(repo.FORMAS_RECEBIMENTO).join(', ')}`);
+    }
+    filtros.forma = codigo;
+    filtros.formaNome = query.forma;
+  }
   filtros.direcao = query.direcao === 'asc' ? 'asc' : 'desc';
   return filtros;
 }
@@ -200,6 +208,7 @@ async function exportarRecebimentos(query) {
     titulo: 'Recebimentos | Belo Norte',
     subtitulo: `${lista.length} baixas de título · recebimento de ${dataBR(filtros.inicio)} até ${dataBR(filtros.fim)}`
       + `${filtros.origem ? ` · ${ORIGENS_TEXTO[String(filtros.origem)]}` : ''}`
+      + `${filtros.formaNome ? ` · ${filtros.formaNome}` : ''}`
       + `${filtros.busca ? ` · pesquisa "${filtros.busca}"` : ''} · gerado em ${new Date().toLocaleString('pt-BR')}`,
     colunas: COLUNAS_RECEBIMENTOS,
     linhas: lista,

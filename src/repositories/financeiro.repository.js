@@ -560,6 +560,12 @@ const ORIGENS_RECEBIMENTO = {
   despacho: { id: 455510, nome: 'Retorno de despacho' },
 };
 
+// Forma de pagamento (para filtrar): nome na tela -> código no PROCFIT
+const FORMAS_RECEBIMENTO = {
+  Carteira: 0, Boleto: 1, Depósito: 2, Cheque: 3, Dinheiro: 4, 'Débito em conta': 5,
+  'Cartão crédito': 6, Promissória: 7, Vale: 8, Devolução: 9, PIX: 11, 'Cartão débito': 12, Convênio: 13,
+};
+
 const ORDENACAO_RECEBIMENTOS = {
   dia: 'TX.DATA',
   cliente: 'E.NOME COLLATE Latin1_General_CI_AI',
@@ -578,7 +584,8 @@ async function recebimentos(filtros) {
     .input('fim', sql.VarChar(10), filtros.fim)
     .input('busca', sql.VarChar(60), filtros.busca ?? null)
     .input('origem', sql.Int, filtros.origem ?? null)
-    .input('usuario', sql.Int, filtros.usuario ?? null);
+    .input('usuario', sql.Int, filtros.usuario ?? null)
+    .input('forma', sql.Int, filtros.forma ?? null);
 
   const { recordset } = await request.query(`
     SELECT TOP 20000
@@ -633,6 +640,8 @@ async function recebimentos(filtros) {
       AND (@origem IS NULL OR TX.TAB_MASTER_ORIGEM = @origem)
       AND (@usuario IS NULL
         OR COALESCE(RB.USUARIO_LOGADO, RC.USUARIO_LOGADO, CF.USUARIO_LOGADO, RD.USUARIO_LOGADO) = @usuario)
+      AND (@forma IS NULL
+        OR COALESCE(RB.MODALIDADE, RC.MODALIDADE, DT.MODALIDADE, T.MODALIDADE) = @forma)
       AND (@busca IS NULL
         OR T.TITULO LIKE '%' + @busca + '%'
         OR CAST(NF.NF_NUMERO AS varchar(20)) = @busca
@@ -665,5 +674,5 @@ async function baixasPorMes(filtros) {
 
 module.exports = {
   resumo, cartoes, indicadores, previsao, porFaixaAtraso, porCliente, titulos, fichaCliente, analiseClientes,
-  baixasPorMes, recebimentos, ORIGENS_RECEBIMENTO, ORDENACAO_RECEBIMENTOS,
+  baixasPorMes, recebimentos, ORIGENS_RECEBIMENTO, ORDENACAO_RECEBIMENTOS, FORMAS_RECEBIMENTO,
 };
