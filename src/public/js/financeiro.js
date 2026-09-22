@@ -906,6 +906,9 @@ document.addEventListener('DOMContentLoaded', () => {
     carregar();
   });
 
+  // Botão ao lado do título da lista: faz o mesmo que o "Baixar Excel" do topo
+  el('baixar-excel-lista')?.addEventListener('click', () => el('baixar-excel')?.click());
+
   el('baixar-excel')?.addEventListener('click', async () => {
     const botao = el('baixar-excel');
     botao.disabled = true;
