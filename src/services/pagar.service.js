@@ -95,8 +95,44 @@ async function pagamentos(query) {
   const dias = Math.round((new Date(`${fim}T12:00:00Z`) - new Date(`${inicio}T12:00:00Z`)) / UM_DIA) + 1;
   if (dias > 366) throw new AppError('Escolha um período de no máximo 1 ano');
   const busca = (query.busca ?? '').trim().slice(0, 60) || null;
-  const [lista, pessoas] = await Promise.all([repo.pagamentos({ inicio, fim, busca }), repo.pessoasPagamento()]);
-  return { inicio, fim, pagamentos: lista, pessoas };
+  const [lista, pessoas, entradas] = await Promise.all([
+    repo.pagamentos({ inicio, fim, busca }), repo.pessoasPagamento(), repo.entradasCaixa({ inicio, fim }),
+  ]);
+  return { inicio, fim, pagamentos: lista, entradas, pessoas };
 }
 
-module.exports = { painel, exportar, pagamentos };
+// Lista completa de fornecedores com valor em aberto (mesmos filtros da tela)
+async function fornecedores(query) {
+  return repo.fornecedores(montarFiltros(query));
+}
+
+async function exportarFornecedores(query) {
+  const filtros = montarFiltros(query);
+  const lista = await repo.fornecedores(filtros);
+  const dataBR = (iso) => (iso ? iso.split('-').reverse().join('/') : null);
+  const periodo = filtros.inicio || filtros.fim
+    ? ` · vencimento de ${dataBR(filtros.inicio) ?? 'o início'} até ${dataBR(filtros.fim) ?? 'o fim'}` : '';
+  const workbook = excel.novaPlanilha();
+  excel.adicionarTabela(workbook, 'Fornecedores', {
+    titulo: 'Fornecedores com valor em aberto | Belo Norte',
+    subtitulo: `${lista.length} fornecedores${periodo}${filtros.busca ? ` · pesquisa "${filtros.busca}"` : ''}`
+      + ` · gerado em ${new Date().toLocaleString('pt-BR')}`,
+    colunas: [
+      { titulo: 'Cód. fornecedor', chave: 'cod_fornecedor', tipo: 'codigo', largura: 12 },
+      { titulo: 'Fornecedor', chave: 'fornecedor', largura: 44 },
+      { titulo: 'Títulos em aberto', chave: 'titulos', tipo: 'inteiro', largura: 11, somar: true },
+      { titulo: 'Em aberto', chave: 'pendente', tipo: 'moeda', largura: 15, somar: true },
+      { titulo: 'Vencido', chave: 'vencido', tipo: 'moeda', largura: 15, somar: true },
+      { titulo: 'Títulos vencidos', chave: 'titulos_vencidos', tipo: 'inteiro', largura: 11, somar: true },
+      { titulo: 'Maior atraso (dias)', chave: 'maior_atraso', tipo: 'inteiro', largura: 12 },
+      { titulo: 'Vence em 30 dias', chave: 'proximos_30', tipo: 'moeda', largura: 15, somar: true },
+      { titulo: 'Próximo vencimento', chave: 'proximo_vencimento', tipo: 'data', largura: 13 },
+    ],
+    linhas: lista,
+    totais: true,
+  });
+  const hoje = new Date().toISOString().slice(0, 10);
+  return { workbook, nomeArquivo: `fornecedores-em-aberto_${hoje}.xlsx` };
+}
+
+module.exports = { painel, exportar, pagamentos, fornecedores, exportarFornecedores };

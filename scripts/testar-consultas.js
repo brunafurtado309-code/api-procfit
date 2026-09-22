@@ -9,6 +9,7 @@ const despachos = require('../src/repositories/despachos.repository');
 
 const testes = [
   ['Contas a pagar (tela)', () => pagar.painel({ situacao: 'aberto' })],
+  ['Contas a pagar: lista de fornecedores', () => pagar.fornecedores({})],
   ['Contas a pagar ordenado por vencimento', () => pagar.painel({ situacao: 'aberto', ordem: 'vencimento', direcao: 'desc' })],
   ['Contas a receber: títulos por vencimento', () => financeiro.titulos({ ordem: 'vencimento', limite: 5, pagina: 1 })],
   ['Contas a receber: títulos por nota', () => financeiro.titulos({ ordem: 'nota', limite: 5, pagina: 1 })],
@@ -16,6 +17,14 @@ const testes = [
   ['Clientes e crédito', () => financeiro.analiseClientes({})],
   ['Contas a receber: baixas por mês', () => financeiro.baixasPorMes({})],
   ['Despachos (lista)', () => despachos.lista({})],
+  ['Caixa: entradas (recebimentos e retornos de despacho)', async () => {
+    const fim = new Date().toISOString().slice(0, 10);
+    const inicio = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
+    const lista = await pagar.entradasCaixa({ inicio, fim });
+    const porOrigem = {};
+    for (const e of lista) porOrigem[e.origem] = (porOrigem[e.origem] ?? 0) + 1;
+    console.log(`       30 dias: ${Object.entries(porOrigem).map(([o, n]) => `${n} ${o}`).join(' · ') || 'nenhuma entrada'}`);
+  }],
   ['Contas a pagar: pessoas que cuidam de caixa', async () => {
     const pessoas = await pagar.pessoasPagamento();
     console.log(`       ${pessoas.map((p) => `${p.usuario} ${p.usuario_nome ?? ''}`.trim()).join(' | ') || 'nenhuma'}`);

@@ -80,8 +80,28 @@
             <dt>Vence em 30 dias</dt>
             <dd id="ind-30">—</dd>
             <dt>Fornecedores</dt>
-            <dd id="ind-fornecedores">—</dd>
+            <dd id="ind-fornecedores" class="indicador-clicavel" role="button" tabindex="0"
+                title="Ver a lista de todos os fornecedores">—</dd>
           </dl>
+        </div>
+      </section>
+
+      <!-- Lista completa de fornecedores (abre ao clicar no indicador "Fornecedores") -->
+      <section class="bloco" id="bloco-fornecedores" hidden>
+        <div class="bloco-topo">
+          <h2 id="titulo-fornecedores">Fornecedores com valor em aberto</h2>
+          <div class="barra-filtros__acoes">
+            <button id="fornecedores-excel" type="button" class="botao-secundario">Baixar Excel</button>
+            <button id="fornecedores-fechar" type="button" class="botao-secundario">Fechar</button>
+          </div>
+        </div>
+        <p class="bloco__descricao">Clique no nome do fornecedor para ver os títulos dele. Clique no nome da coluna para ordenar.</p>
+        <div class="tabela-rolagem">
+          <table class="tabela" id="tabela-fornecedores">
+            <thead></thead>
+            <tbody></tbody>
+            <tfoot></tfoot>
+          </table>
         </div>
       </section>
 
@@ -91,11 +111,11 @@
       <!-- Quem lançou os pagamentos: cada pessoa, por caixa ou banco -->
       <section class="bloco">
         <div class="bloco-topo">
-          <h2>Pagamentos por pessoa</h2>
+          <h2>Caixa por pessoa</h2>
         </div>
-        <p class="bloco__descricao">Clique numa pessoa para abrir o caixa dela e escolher o período. Clique no dia para ver
-          todas as notas: fornecedor, categoria (alimentação, combustível...), valor da nota, quanto foi pago e o que ainda está em aberto.
-          Pagamentos enviados ao banco que ainda não voltaram como baixa aparecem em laranja: "Enviada ao banco, sem baixa".</p>
+        <p class="bloco__descricao">Tudo o que entrou e saiu de dinheiro no caixa de cada pessoa. Entradas: recebimentos de
+          títulos e retornos de despacho lançados por ela. Saídas: pagamentos de títulos. Clique na pessoa, escolha o período e a
+          forma de pagamento, e clique no dia para ver cada lançamento.</p>
         <div class="cartoes" id="cartoes-pessoas" aria-label="Pessoas"></div>
 
         <!-- Caixa da pessoa escolhida: período e dias -->
@@ -103,7 +123,7 @@
           <h3 id="caixa-titulo" class="caixa-pessoa__titulo">Todos os caixas</h3>
           <!-- Período pela data do pagamento: datas livres ou atalhos -->
           <form id="filtro-pagamentos" class="filtros filtros--bloco">
-            <label>Pagamento de <input type="date" id="pag-inicio"></label>
+            <label>Período de <input type="date" id="pag-inicio"></label>
             <label>até <input type="date" id="pag-fim"></label>
             <div class="atalhos" id="periodo-pagamentos" aria-label="Períodos prontos">
               <button type="button" class="botao-secundario" data-dias="0">Hoje</button>
@@ -114,6 +134,7 @@
             </div>
             <button type="submit" class="filtros__aplicar">Aplicar</button>
           </form>
+          <div id="formas-caixa" class="atalhos formas-caixa" aria-label="Forma de pagamento"></div>
           <div class="tabela-rolagem">
             <table class="tabela" id="tabela-pagamentos">
               <thead></thead>

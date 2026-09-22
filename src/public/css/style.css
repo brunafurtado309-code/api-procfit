@@ -609,6 +609,10 @@ a.aba, span.aba { display: inline-block; text-decoration: none; }
 .tabela tr.linha-vencida > td:first-child { box-shadow: inset 3px 0 0 var(--alerta); }
 .tabela .qtd.negativo { color: var(--alerta); font-weight: 600; }
 .cartao-valor.negativo { color: var(--alerta); }
+/* Indicador que abre uma lista (ex.: Fornecedores no contas a pagar) */
+.indicador-clicavel { cursor: pointer; border-radius: 6px; }
+.indicador-clicavel:hover, .indicador-clicavel:focus-visible { color: var(--verde); outline: none; }
+.indicador-clicavel:hover span, .indicador-clicavel:focus-visible span { text-decoration: underline; }
 
 /* Aviso de atenção (dado que distorce a leitura): faixa laranja, sem caixa */
 .aviso-alerta {
@@ -693,6 +697,17 @@ button.cartao { display: flex; flex-direction: column; justify-content: flex-sta
 /* Caixa da pessoa escolhida (abaixo dos cartões das pessoas) */
 .caixa-pessoa { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--linha); }
 .caixa-pessoa__titulo { margin: 0; font-family: var(--fonte-titulo); font-size: 1.1rem; }
+/* Filtro de forma de pagamento do caixa */
+.formas-caixa { margin-top: 0.75rem; align-items: center; }
+.formas-caixa__rotulo { font-size: var(--texto-pequeno); font-weight: 700; color: var(--tinta-suave); margin-right: 0.25rem; }
+/* Linhas do cartão da pessoa: Entrou / Saiu / Saldo */
+.cartao-linha { display: flex; justify-content: space-between; gap: 1rem; margin: 0.3rem 0 0; font-size: 0.95rem; }
+.cartao-linha__rotulo { color: var(--tinta-suave); }
+.cartao-linha__valor { font-weight: 700; font-variant-numeric: tabular-nums; }
+.cartao-linha.positivo .cartao-linha__valor { color: var(--verde); }
+.cartao-linha.negativo .cartao-linha__valor { color: var(--alerta); }
+/* Títulos "Entrou" e "Saiu" dentro do dia aberto */
+.caixa-subtitulo { margin: 0.75rem 0 0.25rem; font-size: 0.95rem; font-weight: 700; color: var(--verde-escuro); }
 .tabela tr.linha-dia--aberta { background: var(--verde-suave); }
 .cartao--ativo,
 button.cartao--ativo {

@@ -156,7 +156,7 @@ function mostrarResumo(r) {
   el('ind-vencido').replaceChildren(compacto(r.vencido), span(plural(r.vencido_titulos, 'título', 'títulos')));
   el('ind-7').replaceChildren(compacto(r.proximos_7), span(plural(r.proximos_7_titulos, 'título', 'títulos')));
   el('ind-30').replaceChildren(compacto(r.proximos_30), span(plural(r.proximos_30_titulos, 'título', 'títulos')));
-  el('ind-fornecedores').replaceChildren(inteiro(r.fornecedores), span('com valor em aberto'));
+  el('ind-fornecedores').replaceChildren(inteiro(r.fornecedores), span('com valor em aberto · ver lista'));
   el('ind-vencido').classList.toggle('negativo', Number(r.vencido) > 0.01);
 }
 
@@ -496,6 +496,102 @@ function mostrarLista(limite) {
   }
 }
 
+// ===== Lista completa de fornecedores (indicador "Fornecedores") =====
+let listaFornecedores = [];
+let ordemFornecedores = { coluna: 'pendente', direcao: 'desc' };
+
+async function abrirFornecedores() {
+  const bloco = el('bloco-fornecedores');
+  bloco.hidden = false;
+  el('tabela-fornecedores').tBodies[0].replaceChildren(
+    Object.assign(document.createElement('tr'), { innerHTML: '<td class="vazio" colspan="7">Carregando os fornecedores…</td>' }));
+  bloco.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  try {
+    listaFornecedores = await buscar('pagar/fornecedores', filtrosAtuais());
+    mostrarFornecedoresLista();
+  } catch (erro) {
+    el('tabela-fornecedores').tBodies[0].replaceChildren(
+      Object.assign(document.createElement('tr'), { innerHTML: '<td class="vazio" colspan="7"></td>' }));
+    el('tabela-fornecedores').tBodies[0].querySelector('td').textContent = erro.message;
+  }
+}
+
+function mostrarFornecedoresLista() {
+  const tabela = el('tabela-fornecedores');
+  el('titulo-fornecedores').textContent = `Fornecedores com valor em aberto (${inteiro(listaFornecedores.length)})`;
+  const ordenar = (nova) => { ordemFornecedores = nova; mostrarFornecedoresLista(); };
+  const cab = document.createElement('tr');
+  for (const [titulo, chave, esquerda] of [['Fornecedor', 'fornecedor', true], ['Títulos', 'titulos'],
+    ['Em aberto', 'pendente'], ['Vencido', 'vencido'], ['Maior atraso', 'maior_atraso'],
+    ['Vence em 30 dias', 'proximos_30'], ['Próximo vencimento', 'proximo_vencimento', true]]) {
+    cab.append(thOrdenavel(titulo, chave, ordemFornecedores, ordenar, esquerda));
+  }
+  tabela.tHead.replaceChildren(cab);
+  const lista = [...listaFornecedores].sort((a, b) => comparar(a, b, ordemFornecedores));
+  tabela.tBodies[0].replaceChildren(...(lista.length ? lista.map((f) => {
+    const linha = document.createElement('tr');
+    if (Number(f.vencido) > 0.009) linha.className = 'linha-vencida';
+    const nome = document.createElement('button');
+    nome.type = 'button';
+    nome.className = 'link-pedido';
+    nome.textContent = f.fornecedor ?? `Fornecedor ${f.cod_fornecedor}`;
+    nome.title = 'Ver os títulos deste fornecedor';
+    nome.addEventListener('click', () => {
+      el('pesquisa-termo').value = String(f.cod_fornecedor);
+      el('limpar-pesquisa').hidden = false;
+      abrirLista = true;
+      carregar();
+    });
+    const celulaNome = td(nome, 'esquerda');
+    celulaNome.append(span(`código ${f.cod_fornecedor}`, 'qtd'));
+    linha.append(
+      celulaNome,
+      td(inteiro(f.titulos)),
+      td(dinheiro(f.pendente), 'coluna-final'),
+      Number(f.vencido) > 0.009
+        ? comAuxiliar(dinheiro(f.vencido), plural(f.titulos_vencidos, 'título', 'títulos'), 'negativo', 'qtd negativo')
+        : td('—'),
+      td(f.maior_atraso ? plural(f.maior_atraso, 'dia', 'dias') : '—', f.maior_atraso ? 'negativo' : null),
+      td(Number(f.proximos_30) > 0.009 ? dinheiro(f.proximos_30) : '—'),
+      td(f.proximo_vencimento ? dataBR(f.proximo_vencimento) : '—', 'esquerda sem-quebra'),
+    );
+    return linha;
+  }) : [Object.assign(document.createElement('tr'), { innerHTML: '<td class="vazio" colspan="7">Nenhum fornecedor com valor em aberto.</td>' })]));
+  const soma = (campo) => listaFornecedores.reduce((t, f) => t + (Number(f[campo]) || 0), 0);
+  const rodape = document.createElement('tr');
+  rodape.append(td(`Total (${plural(listaFornecedores.length, 'fornecedor', 'fornecedores')})`, 'esquerda'),
+    td(inteiro(soma('titulos'))), td(dinheiro(soma('pendente'))), td(dinheiro(soma('vencido'))), td(''),
+    td(dinheiro(soma('proximos_30'))), td(''));
+  tabela.tFoot.replaceChildren(rodape);
+}
+
+async function baixarExcelFornecedores() {
+  const botao = el('fornecedores-excel');
+  botao.disabled = true;
+  try {
+    const url = new URL('/financeiro/pagar/fornecedores/excel', window.location.origin);
+    for (const [nome, valor] of Object.entries(filtrosAtuais())) if (valor) url.searchParams.set(nome, valor);
+    const resposta = await fetch(url, { headers: { 'x-api-key': chave.ler() ?? '' } });
+    if (!resposta.ok) {
+      const corpo = await resposta.json().catch(() => ({}));
+      throw new Error(corpo.erro || 'Não foi possível gerar a planilha.');
+    }
+    const nome = ((resposta.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/) || [])[1]
+      || 'fornecedores-em-aberto.xlsx';
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(await resposta.blob());
+    link.download = nome;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  } catch (erro) {
+    mostrarStatus(erro.message, true);
+  } finally {
+    botao.disabled = false;
+  }
+}
+
 // ===== Pagamentos por pessoa =====
 async function carregarPagamentos() {
   try {
@@ -508,50 +604,52 @@ async function carregarPagamentos() {
     el('pag-inicio').value = dados.inicio;
     el('pag-fim').value = dados.fim;
     pagamentosLista = dados.pagamentos;
+    entradasLista = dados.entradas ?? [];
     pessoasCaixa = dados.pessoas ?? [];
     mostrarPessoas();
   } catch (erro) {
-    el('cartoes-pessoas').replaceChildren(span(`Não foi possível carregar os pagamentos: ${erro.message}`, 'status--erro'));
+    el('cartoes-pessoas').replaceChildren(span(`Não foi possível carregar o caixa: ${erro.message}`, 'status--erro'));
   }
 }
 
 const chavePessoa = (p) => (p.usuario == null ? 'sem' : String(p.usuario));
+let entradasLista = [];
+let formaAtual = null; // null = todas as formas
+
+// Filtra pela forma escolhida (vale para entradas e saídas)
+const daForma = (item) => (formaAtual ? item.forma === formaAtual : true);
 
 function mostrarPessoas() {
-  // Agrupa por pessoa: total, quantidade, por canal e atraso médio de lançamento (ponderado pelo valor)
+  // Uma pessoa por cartão: o que ENTROU e o que SAIU no caixa dela no período
   const pessoas = new Map();
-  for (const p of pagamentosLista) {
-    const k = chavePessoa(p);
-    const g = pessoas.get(k) ?? {
-      chave: k, nome: p.usuario_nome ?? (p.usuario == null ? 'Não identificado' : `Usuário ${p.usuario}`),
-      total: 0, qtd: 0, caixa: 0, banco: 0, somaDias: 0, ultimo: null, aguardando: 0,
-    };
-    const valor = Number(p.valor) || 0;
-    if (Number(p.aguardando_baixa)) {
-      g.aguardando += valor;
-      g.qtdAguardando = (g.qtdAguardando ?? 0) + 1;
-    }
-    g.total += valor;
-    g.qtd += 1;
-    if (p.canal === 'Caixa') g.caixa += valor;
-    if (p.canal === 'Banco' || Number(p.aguardando_baixa)) g.banco += valor;
-    if (p.dias_para_lancar != null) g.somaDias += valor * Math.max(0, Number(p.dias_para_lancar));
-    if (p.lancado_em && (!g.ultimo || p.lancado_em > g.ultimo)) g.ultimo = p.lancado_em;
-    pessoas.set(k, g);
-  }
-  // Toda pessoa que cuida de caixa aparece, mesmo sem pagamento no período (fica com R$ 0,00)
-  for (const p of pessoasCaixa) {
-    const k = String(p.usuario);
+  const pessoa = (item) => {
+    const k = chavePessoa(item);
     if (!pessoas.has(k)) {
       pessoas.set(k, {
-        chave: k, nome: p.usuario_nome ?? `Usuário ${p.usuario}`, total: 0, qtd: 0, caixa: 0, banco: 0, somaDias: 0, ultimo: null, aguardando: 0,
+        chave: k, nome: item.usuario_nome ?? (item.usuario == null ? 'Não identificado' : `Usuário ${item.usuario}`),
+        entrou: 0, saiu: 0, qtdEntradas: 0, qtdSaidas: 0, aguardando: 0,
       });
     }
+    return pessoas.get(k);
+  };
+  for (const e of entradasLista.filter(daForma)) {
+    const g = pessoa(e);
+    g.entrou += Number(e.valor) || 0;
+    g.qtdEntradas += 1;
   }
-  const lista = [...pessoas.values()].sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome));
+  for (const p of pagamentosLista.filter(daForma)) {
+    const g = pessoa(p);
+    g.saiu += Number(p.valor) || 0;
+    g.qtdSaidas += 1;
+    if (Number(p.aguardando_baixa)) g.aguardando += Number(p.valor) || 0;
+  }
+  // Toda pessoa que cuida de caixa aparece, mesmo sem movimento no período
+  for (const p of pessoasCaixa) pessoa(p);
+
+  const lista = [...pessoas.values()].sort((a, b) => (b.entrou + b.saiu) - (a.entrou + a.saiu) || a.nome.localeCompare(b.nome));
   const escolhida = lista.find((g) => g.chave === pessoaAtual);
   el('caixa-titulo').textContent = escolhida ? `Caixa de ${escolhida.nome}` : 'Todos os caixas';
-  el('cartoes-pessoas').replaceChildren(...(lista.length ? lista.map((g) => {
+  el('cartoes-pessoas').replaceChildren(...lista.map((g) => {
     const botao = document.createElement('button');
     botao.type = 'button';
     const ativo = pessoaAtual === g.chave;
@@ -559,22 +657,20 @@ function mostrarPessoas() {
     botao.setAttribute('aria-pressed', String(ativo));
     const titulo = document.createElement('h3');
     titulo.textContent = g.nome;
-    const valor = document.createElement('p');
-    valor.className = 'cartao-valor';
-    valor.textContent = dinheiro(g.total);
-    const diasMedio = g.total ? Math.round(g.somaDias / g.total) : 0;
-    const canais = [g.caixa > 0.009 ? `caixa ${compacto(g.caixa)}` : null, g.banco > 0.009 ? `banco ${compacto(g.banco)}` : null]
-      .filter(Boolean).join(' · ');
+    const linhaValor = (rotulo, valor, classe) => {
+      const p = document.createElement('p');
+      p.className = `cartao-linha${classe ? ` ${classe}` : ''}`;
+      p.append(span(rotulo, 'cartao-linha__rotulo'), span(dinheiro(valor), 'cartao-linha__valor'));
+      return p;
+    };
+    const saldo = g.entrou - g.saiu;
     const nota = document.createElement('p');
     nota.className = 'cartao-nota';
-    nota.textContent = `${plural(g.qtd, 'pagamento', 'pagamentos')}${canais ? ` · ${canais}` : ''}`;
-    const atraso = document.createElement('p');
-    atraso.className = `cartao-nota${diasMedio > 7 ? ' negativo' : ''}`;
-    atraso.textContent = g.chave === 'sem' ? 'origem sem pessoa registrada'
-      : g.qtd === 0 ? 'nenhum pagamento neste período'
-        : g.qtd === (g.qtdAguardando ?? 0) ? 'nenhuma baixa lançada no período'
-          : `lança em média ${plural(diasMedio, 'dia', 'dias')} depois do pagamento`;
-    botao.append(titulo, valor, nota, atraso);
+    nota.textContent = g.qtdEntradas + g.qtdSaidas
+      ? `${plural(g.qtdEntradas, 'entrada', 'entradas')} · ${plural(g.qtdSaidas, 'saída', 'saídas')}`
+      : 'nenhum movimento neste período';
+    botao.append(titulo, linhaValor('Entrou', g.entrou, 'positivo'), linhaValor('Saiu', g.saiu),
+      linhaValor('Saldo', saldo, saldo < 0 ? 'negativo' : null), nota);
     if (g.aguardando > 0.009) {
       const pendenteBanco = document.createElement('p');
       pendenteBanco.className = 'cartao-nota negativo';
@@ -587,12 +683,37 @@ function mostrarPessoas() {
       mostrarPessoas();
     });
     return botao;
-  }) : [span(`Nenhum pagamento entre ${dataBR(el('pag-inicio').value)} e ${dataBR(el('pag-fim').value)}.`, 'explica')]));
+  }));
+  mostrarFormas();
   mostrarPagamentos();
 }
 
-// Caixa por dia: cada linha é um dia; clicar abre todas as notas pagas naquele dia,
-// com fornecedor, categoria, valor da nota, quanto foi pago e quanto ainda falta.
+// Filtro por forma de pagamento (dinheiro, PIX, cartão...), com as formas que aparecem no período
+function mostrarFormas() {
+  const daPessoa = (item) => (pessoaAtual ? chavePessoa(item) === pessoaAtual : true);
+  const formas = new Map();
+  for (const item of [...entradasLista, ...pagamentosLista].filter(daPessoa)) {
+    const f = item.forma ?? 'Outra';
+    formas.set(f, (formas.get(f) ?? 0) + (Number(item.valor) || 0));
+  }
+  const area = el('formas-caixa');
+  const botao = (rotulo, valor) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `botao-secundario${formaAtual === valor ? ' atalho--ativo' : ''}`;
+    b.textContent = rotulo;
+    b.addEventListener('click', () => {
+      formaAtual = valor;
+      diaAberto = null;
+      mostrarPessoas();
+    });
+    return b;
+  };
+  area.replaceChildren(span('Forma:', 'formas-caixa__rotulo'), botao('Todas', null),
+    ...[...formas.entries()].sort((a, b) => b[1] - a[1]).map(([f]) => botao(f, f)));
+}
+
+// Caixa por dia: cada linha é um dia (entrou, saiu, saldo); clicar abre as entradas e as saídas.
 let diaAberto = null;
 // Ordem da tabela de dias e da tabela de notas (clicar no nome da coluna)
 let ordemDias = { coluna: 'dia', direcao: 'desc' };
@@ -633,36 +754,44 @@ function comparar(a, b, { coluna, direcao }) {
 }
 
 function mostrarPagamentos() {
-  const lista = pagamentosLista.filter((p) => (pessoaAtual ? chavePessoa(p) === pessoaAtual : true));
+  const daPessoa = (item) => (pessoaAtual ? chavePessoa(item) === pessoaAtual : true);
+  const entradas = entradasLista.filter(daPessoa).filter(daForma);
+  const saidas = pagamentosLista.filter(daPessoa).filter(daForma);
   const tabela = el('tabela-pagamentos');
 
   const cab = document.createElement('tr');
   const ordenarDias = (nova) => { ordemDias = nova; mostrarPagamentos(); };
-  for (const [titulo, chave, esquerda] of [['Dia', 'dia', true], ['Notas', 'qtd'], ['Pago no dia', 'pago'],
-    ['Ainda em aberto', 'aberto'], ['Principais categorias', null, true], ['', null, true]]) {
+  for (const [titulo, chave, esquerda] of [['Dia', 'dia', true], ['Entrou', 'entrou'], ['Saiu', 'saiu'],
+    ['Saldo do dia', 'saldo'], ['Formas', null, true], ['', null, true]]) {
     cab.append(thOrdenavel(titulo, chave, ordemDias, ordenarDias, esquerda));
   }
   tabela.tHead.replaceChildren(cab);
 
-  // Agrupa por dia do pagamento
+  // Agrupa entradas (dia do recebimento) e saídas (dia do pagamento)
   const dias = new Map();
-  for (const p of lista) {
-    const d = dias.get(p.data_pagamento) ?? { dia: p.data_pagamento, notas: [], pago: 0, aberto: 0, aguardando: 0, categorias: new Map() };
-    d.notas.push(p);
-    d.pago += Number(p.valor) || 0;
-    if (Number(p.aguardando_baixa)) d.aguardando += Number(p.valor) || 0;
-    d.aberto += Math.max(0, Number(p.pendente_atual) || 0);
-    const cat = p.categoria ?? 'Sem categoria';
-    d.categorias.set(cat, (d.categorias.get(cat) ?? 0) + (Number(p.valor) || 0));
-    dias.set(p.data_pagamento, d);
+  const dia = (d) => {
+    if (!dias.has(d)) dias.set(d, { dia: d, entradas: [], saidas: [], entrou: 0, saiu: 0, aguardando: 0, formas: new Map() });
+    return dias.get(d);
+  };
+  for (const e of entradas) {
+    const d = dia(e.dia);
+    d.entradas.push(e);
+    d.entrou += Number(e.valor) || 0;
+    d.formas.set(e.forma ?? 'Outra', (d.formas.get(e.forma ?? 'Outra') ?? 0) + (Number(e.valor) || 0));
   }
-  for (const d of dias.values()) d.qtd = d.notas.length;
+  for (const p of saidas) {
+    const d = dia(p.data_pagamento);
+    d.saidas.push(p);
+    d.saiu += Number(p.valor) || 0;
+    if (Number(p.aguardando_baixa)) d.aguardando += Number(p.valor) || 0;
+  }
+  for (const d of dias.values()) d.saldo = d.entrou - d.saiu;
   const listaDias = [...dias.values()].sort((a, b) => comparar(a, b, ordemDias));
 
   const linhas = [];
   if (!listaDias.length) {
     const linha = document.createElement('tr');
-    const vazio = td('Nenhum pagamento no período.', 'vazio');
+    const vazio = td('Nenhum movimento no período com esse filtro.', 'vazio');
     vazio.colSpan = 6;
     linha.append(vazio);
     linhas.push(linha);
@@ -671,22 +800,25 @@ function mostrarPagamentos() {
     const aberto = diaAberto === d.dia;
     const linha = document.createElement('tr');
     linha.className = `linha-dia${aberto ? ' linha-dia--aberta' : ''}`;
-    const principais = [...d.categorias.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2)
+    const formas = [...d.formas.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
       .map(([nome, valor]) => `${nome} ${compacto(valor)}`).join(' · ');
     const botao = document.createElement('button');
     botao.type = 'button';
     botao.className = 'botao-expandir';
     botao.setAttribute('aria-expanded', String(aberto));
-    botao.setAttribute('aria-label', aberto ? 'Fechar o dia' : 'Ver as notas do dia');
+    botao.setAttribute('aria-label', aberto ? 'Fechar o dia' : 'Ver as entradas e saídas do dia');
     botao.textContent = aberto ? '▾' : '▸';
     const semana = new Date(`${d.dia}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'long' });
     linha.append(
       comAuxiliar(dataBR(d.dia), semana, 'esquerda sem-quebra'),
-      td(inteiro(d.notas.length)),
-      comAuxiliar(dinheiro(d.pago), d.aguardando > 0.009 ? `${compacto(d.aguardando)} sem baixa do banco` : null,
-        'coluna-final', 'qtd negativo'),
-      td(d.aberto > 0.009 ? dinheiro(d.aberto) : '—', d.aberto > 0.009 ? 'negativo' : null),
-      td(principais || '—', 'esquerda'),
+      comAuxiliar(d.entrou > 0.009 ? dinheiro(d.entrou) : '—',
+        d.entradas.length ? plural(d.entradas.length, 'entrada', 'entradas') : null, 'coluna-final'),
+      comAuxiliar(d.saiu > 0.009 ? dinheiro(d.saiu) : '—',
+        d.aguardando > 0.009 ? `${compacto(d.aguardando)} sem baixa do banco`
+          : (d.saidas.length ? plural(d.saidas.length, 'saída', 'saídas') : null),
+        null, d.aguardando > 0.009 ? 'qtd negativo' : 'qtd'),
+      td(dinheiro(d.saldo), d.saldo < 0 ? 'negativo' : null),
+      td(formas || '—', 'esquerda'),
       td(botao, 'esquerda'),
     );
     const alternar = () => {
@@ -700,72 +832,96 @@ function mostrarPagamentos() {
   }
   tabela.tBodies[0].replaceChildren(...linhas);
 
-  const totalPago = listaDias.reduce((t, d) => t + d.pago, 0);
-  const totalAberto = listaDias.reduce((t, d) => t + d.aberto, 0);
-  const totalNotas = listaDias.reduce((t, d) => t + d.notas.length, 0);
+  const total = (campo) => listaDias.reduce((t, d) => t + d[campo], 0);
   const rodape = document.createElement('tr');
-  rodape.append(td(`Total (${plural(listaDias.length, 'dia', 'dias')})`, 'esquerda'), td(inteiro(totalNotas)),
-    td(dinheiro(totalPago)), td(totalAberto > 0.009 ? dinheiro(totalAberto) : '—'), td(''), td(''));
+  rodape.append(td(`Total (${plural(listaDias.length, 'dia', 'dias')})`, 'esquerda'), td(dinheiro(total('entrou'))),
+    td(dinheiro(total('saiu'))), td(dinheiro(total('saldo')), total('saldo') < 0 ? 'negativo' : null), td(''), td(''));
   tabela.tFoot.replaceChildren(rodape);
 }
 
-// Notas de um dia: todas, com fornecedor, categoria, valor, pago e o que ainda está em aberto
+// Um dia aberto: primeiro o que ENTROU, depois o que SAIU
 function detalheDoDia(d) {
   const linha = document.createElement('tr');
   linha.className = 'linha-itens';
   const celula = document.createElement('td');
   celula.colSpan = 6;
-  const tabela = document.createElement('table');
-  tabela.className = 'tabela tabela--itens';
-  const cab = document.createElement('tr');
   const mostrarPessoa = !pessoaAtual;
-  const colunas = [['Nota / título', 'titulo', true], ['Fornecedor', 'fornecedor', true], ['Categoria', 'categoria', true],
-    ...(mostrarPessoa ? [['Pessoa', 'usuario_nome', true]] : []), ['Valor da nota', 'valor_titulo'], ['Pago', 'valor'],
-    ['Em aberto', 'pendente_atual'], ['Situação', 'situacao_ordem', true]];
   const ordenarNotas = (nova) => { ordemNotas = nova; mostrarPagamentos(); };
-  for (const [titulo, chave, esquerda] of colunas) {
-    cab.append(thOrdenavel(titulo, chave, ordemNotas, ordenarNotas, esquerda));
+  const tabelaCom = (colunas) => {
+    const tabela = document.createElement('table');
+    tabela.className = 'tabela tabela--itens';
+    const cab = document.createElement('tr');
+    for (const [titulo, chave, esquerda] of colunas) cab.append(thOrdenavel(titulo, chave, ordemNotas, ordenarNotas, esquerda));
+    tabela.createTHead().append(cab);
+    return tabela;
+  };
+
+  // ---- Entradas ----
+  const tituloEntradas = document.createElement('h4');
+  tituloEntradas.className = 'caixa-subtitulo';
+  tituloEntradas.textContent = `Entrou · ${dinheiro(d.entrou)} (${plural(d.entradas.length, 'lançamento', 'lançamentos')})`;
+  celula.append(tituloEntradas);
+  if (d.entradas.length) {
+    const tabela = tabelaCom([['Origem', 'origem', true], ['Cliente', 'contraparte', true], ['Documento', 'documento', true],
+      ...(mostrarPessoa ? [['Pessoa', 'usuario_nome', true]] : []), ['Forma', 'forma', true], ['Valor', 'valor']]);
+    const corpo = tabela.createTBody();
+    for (const e of [...d.entradas].sort((a, b) => comparar(a, b, ordemNotas))) {
+      const tr = document.createElement('tr');
+      tr.append(
+        td(e.origem, 'esquerda'),
+        comAuxiliar(e.contraparte ?? `Cliente ${e.cod_contraparte}`, e.cod_contraparte ? `código ${e.cod_contraparte}` : null, 'esquerda'),
+        td(e.documento ?? '—', 'esquerda'),
+        ...(mostrarPessoa ? [td(e.usuario_nome ?? 'Não identificado', 'esquerda')] : []),
+        td(e.forma ?? '—', 'esquerda'),
+        td(dinheiro(e.valor)),
+      );
+      corpo.append(tr);
+    }
+    celula.append(tabela);
+  } else {
+    celula.append(span('Nenhuma entrada neste dia.', 'explica'));
   }
-  tabela.createTHead().append(cab);
-  const corpo = tabela.createTBody();
-  let somaNotas = 0;
-  let somaPago = 0;
-  let somaAberto = 0;
-  // Situação para ordenar: sem baixa do banco, em aberto, baixada
-  for (const p of d.notas) {
-    const pend = Math.max(0, Number(p.pendente_atual) || 0);
-    p.situacao_ordem = Number(p.aguardando_baixa) === 1 ? 'a' : (pend > 0.009 ? 'b' : 'c');
+
+  // ---- Saídas ----
+  const tituloSaidas = document.createElement('h4');
+  tituloSaidas.className = 'caixa-subtitulo';
+  tituloSaidas.textContent = `Saiu · ${dinheiro(d.saiu)} (${plural(d.saidas.length, 'nota', 'notas')})`;
+  celula.append(tituloSaidas);
+  if (d.saidas.length) {
+    const tabela = tabelaCom([['Nota / título', 'titulo', true], ['Fornecedor', 'fornecedor', true], ['Categoria', 'categoria', true],
+      ...(mostrarPessoa ? [['Pessoa', 'usuario_nome', true]] : []), ['Forma', 'forma', true], ['Valor da nota', 'valor_titulo'],
+      ['Pago', 'valor'], ['Em aberto', 'pendente_atual'], ['Situação', 'situacao_ordem', true]]);
+    const corpo = tabela.createTBody();
+    for (const p of d.saidas) {
+      const pend = Math.max(0, Number(p.pendente_atual) || 0);
+      p.situacao_ordem = Number(p.aguardando_baixa) === 1 ? 'a' : (pend > 0.009 ? 'b' : 'c');
+    }
+    for (const p of [...d.saidas].sort((a, b) => comparar(a, b, ordemNotas))) {
+      const pendente = Math.max(0, Number(p.pendente_atual) || 0);
+      const quitada = pendente <= 0.009;
+      const aguardando = Number(p.aguardando_baixa) === 1;
+      const etiqueta = aguardando
+        ? span('Enviada ao banco, sem baixa', 'situacao situacao--sem')
+        : span(quitada ? 'Baixada' : 'Em aberto', `situacao ${quitada ? 'situacao--faturada' : 'situacao--devolucao'}`);
+      const tr = document.createElement('tr');
+      tr.append(
+        comAuxiliar(p.titulo ?? '—', p.vencimento ? `vence ${dataBR(p.vencimento)}` : null, 'esquerda sem-quebra'),
+        comAuxiliar(p.fornecedor ?? `Fornecedor ${p.cod_fornecedor}`, `código ${p.cod_fornecedor}`, 'esquerda'),
+        comAuxiliar(p.categoria ?? 'Sem categoria', p.grupo, 'esquerda'),
+        ...(mostrarPessoa ? [comAuxiliar(p.usuario_nome ?? 'Não identificado', p.canal, 'esquerda')] : []),
+        td(p.forma ?? '—', 'esquerda'),
+        td(dinheiro(p.valor_titulo)),
+        aguardando ? comAuxiliar(dinheiro(p.valor), 'enviado, sem baixa') : td(dinheiro(p.valor)),
+        td(pendente > 0.009 ? dinheiro(pendente) : '—', pendente > 0.009 ? 'negativo' : null),
+        td(etiqueta, 'esquerda'),
+      );
+      corpo.append(tr);
+    }
+    celula.append(tabela);
+  } else {
+    celula.append(span('Nenhuma saída neste dia.', 'explica'));
   }
-  for (const p of [...d.notas].sort((a, b) => comparar(a, b, ordemNotas))) {
-    const pendente = Math.max(0, Number(p.pendente_atual) || 0);
-    somaNotas += Number(p.valor_titulo) || 0;
-    somaPago += Number(p.valor) || 0;
-    somaAberto += pendente;
-    const quitada = pendente <= 0.009;
-    const aguardando = Number(p.aguardando_baixa) === 1;
-    const etiqueta = aguardando
-      ? span('Enviada ao banco, sem baixa', 'situacao situacao--sem')
-      : span(quitada ? 'Baixada' : 'Em aberto', `situacao ${quitada ? 'situacao--faturada' : 'situacao--devolucao'}`);
-    const tr = document.createElement('tr');
-    tr.append(
-      comAuxiliar(p.titulo ?? '—', p.vencimento ? `vence ${dataBR(p.vencimento)}` : null, 'esquerda sem-quebra'),
-      comAuxiliar(p.fornecedor ?? `Fornecedor ${p.cod_fornecedor}`, `código ${p.cod_fornecedor}`, 'esquerda'),
-      comAuxiliar(p.categoria ?? 'Sem categoria', p.grupo, 'esquerda'),
-      ...(mostrarPessoa ? [comAuxiliar(p.usuario_nome ?? 'Não identificado', p.canal, 'esquerda')] : []),
-      td(dinheiro(p.valor_titulo)),
-      aguardando ? comAuxiliar(dinheiro(p.valor), 'enviado, sem baixa') : td(dinheiro(p.valor)),
-      td(pendente > 0.009 ? dinheiro(pendente) : '—', pendente > 0.009 ? 'negativo' : null),
-      td(etiqueta, 'esquerda'),
-    );
-    corpo.append(tr);
-  }
-  const rotulo = td(`Total do dia (${plural(d.notas.length, 'nota', 'notas')})`, 'esquerda');
-  rotulo.colSpan = mostrarPessoa ? 4 : 3;
-  const rodape = document.createElement('tr');
-  rodape.append(rotulo, td(dinheiro(somaNotas)), td(dinheiro(somaPago)),
-    td(somaAberto > 0.009 ? dinheiro(somaAberto) : '—'), td(''));
-  tabela.createTFoot().append(rodape);
-  celula.append(tabela);
+
   linha.append(celula);
   return linha;
 }
@@ -845,6 +1001,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     carregar();
   });
   el('baixar-excel').addEventListener('click', baixarExcel);
+  // Indicador "Fornecedores": abre a lista completa (clique ou Enter)
+  el('ind-fornecedores').addEventListener('click', abrirFornecedores);
+  el('ind-fornecedores').addEventListener('keydown', (evento) => {
+    if (evento.key === 'Enter' || evento.key === ' ') { evento.preventDefault(); abrirFornecedores(); }
+  });
+  el('fornecedores-excel').addEventListener('click', baixarExcelFornecedores);
+  el('fornecedores-fechar').addEventListener('click', () => { el('bloco-fornecedores').hidden = true; });
   // Período dos pagamentos: atalhos preenchem as datas; datas digitadas valem ao clicar Aplicar
   const marcarPeriodo = (ativo) => {
     for (const item of el('periodo-pagamentos').querySelectorAll('[data-dias]')) {

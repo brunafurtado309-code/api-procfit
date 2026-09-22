@@ -290,6 +290,9 @@ async function pagamentos(filtros) {
         DATEDIFF(day, CAST(TX.DATA AS date), CAST(COALESCE(PC.DATA_HORA, PE.DATA_HORA) AS date)) AS dias_para_lancar,
         PE.CONTA_BANCARIA                                       AS conta_bancaria,
         0                                                       AS aguardando_baixa,
+        CASE T.MODALIDADE WHEN 0 THEN 'Carteira' WHEN 1 THEN 'Boleto' WHEN 2 THEN 'Depósito' WHEN 3 THEN 'Cheque'
+          WHEN 4 THEN 'Dinheiro' WHEN 5 THEN 'Débito em conta' WHEN 6 THEN 'Cartão crédito' WHEN 11 THEN 'PIX'
+          WHEN 12 THEN 'Cartão débito' ELSE 'Outra' END                 AS forma,
         T.VALOR                                                 AS valor_titulo,
         CONVERT(varchar(10), T.VENCIMENTO, 23)                  AS vencimento,
         SP.PENDENTE                                             AS pendente_atual,
@@ -346,6 +349,9 @@ async function pagamentos(filtros) {
         NULL,
         EB.CONTA_BANCARIA,
         1,
+        CASE T.MODALIDADE WHEN 0 THEN 'Carteira' WHEN 1 THEN 'Boleto' WHEN 2 THEN 'Depósito' WHEN 3 THEN 'Cheque'
+          WHEN 4 THEN 'Dinheiro' WHEN 5 THEN 'Débito em conta' WHEN 6 THEN 'Cartão crédito' WHEN 11 THEN 'PIX'
+          WHEN 12 THEN 'Cartão débito' ELSE 'Outra' END,
         T.VALOR,
         CONVERT(varchar(10), T.VENCIMENTO, 23),
         SP.PENDENTE,
@@ -406,6 +412,12 @@ async function pessoasPagamento() {
       UNION
       SELECT DISTINCT USUARIO_LOGADO FROM PAGAMENTOS_ESCRITURAIS WITH (NOLOCK)
       WHERE DATA_HORA >= DATEADD(year, -1, GETDATE())
+      UNION
+      SELECT DISTINCT USUARIO_LOGADO FROM RECEBIMENTOS_BANCOS WITH (NOLOCK)
+      WHERE DATA_HORA >= DATEADD(year, -1, GETDATE())
+      UNION
+      SELECT DISTINCT USUARIO_LOGADO FROM RECEBIMENTOS_FATURAMENTO_DESPACHO WITH (NOLOCK)
+      WHERE DATA_HORA >= DATEADD(year, -1, GETDATE())
     ) X
     LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = X.usuario
     WHERE X.usuario IS NOT NULL;
@@ -413,4 +425,96 @@ async function pessoasPagamento() {
   return recordset;
 }
 
-module.exports = { painel, pagamentos, pessoasPagamento, ORDENACAO, FILTRO_SITUACAO };
+// Todos os fornecedores com valor em aberto (a tela mostra só os 10 maiores; aqui vem a lista inteira)
+async function fornecedores(filtros) {
+  const pool = await getPool();
+  const { recordset } = await criarRequest(pool, filtros).query(`
+    ${SALDOS}
+    SELECT
+      cod_fornecedor,
+      MAX(fornecedor)                                                        AS fornecedor,
+      COUNT(*)                                                               AS titulos,
+      SUM(pendente)                                                          AS pendente,
+      SUM(CASE WHEN dias_atraso > 0 THEN pendente ELSE 0 END)                AS vencido,
+      COUNT(CASE WHEN dias_atraso > 0 THEN 1 END)                            AS titulos_vencidos,
+      MAX(CASE WHEN dias_atraso > 0 THEN dias_atraso END)                    AS maior_atraso,
+      CONVERT(varchar(10), MIN(CASE WHEN dias_atraso <= 0 THEN vencimento_data END), 23) AS proximo_vencimento,
+      SUM(CASE WHEN dias_atraso BETWEEN -30 AND 0 THEN pendente ELSE 0 END)  AS proximos_30
+    FROM TITULOS
+    WHERE ${FILTRO_BASE} AND pendente > 0.009
+    GROUP BY cod_fornecedor
+    ORDER BY SUM(pendente) DESC;
+  `);
+  return recordset;
+}
+
+// ENTRADAS de dinheiro por pessoa (o outro lado do caixa), pela data do recebimento:
+//  A) Recebimento de título a receber lançado na tela "Bancos por títulos" (RECEBIMENTOS_BANCOS):
+//     o valor vem da transação de recebimento (12) que aponta para ela (TAB_MASTER_ORIGEM 668401).
+//  B) Retorno de despacho: o que cada nota pagou (VALOR_PAGAMENTO), com a forma de cada pagamento.
+// Uso (set/2026): a Vanessa (82) lança 219 recebimentos e 73 retornos de despacho; a Mykaele (58), 6.
+const TAB_RECEBIMENTO_BANCOS = 668401;
+const FORMA_POR_CODIGO = (codigo) => `
+  CASE ${codigo} WHEN 0 THEN 'Carteira' WHEN 1 THEN 'Boleto' WHEN 2 THEN 'Depósito' WHEN 3 THEN 'Cheque'
+    WHEN 4 THEN 'Dinheiro' WHEN 5 THEN 'Débito em conta' WHEN 6 THEN 'Cartão crédito' WHEN 11 THEN 'PIX'
+    WHEN 12 THEN 'Cartão débito' WHEN 13 THEN 'Convênio' ELSE 'Outra' END`;
+
+async function entradasCaixa(filtros) {
+  const pool = await getPool();
+  const { recordset } = await pool
+    .request()
+    .input('inicio', sql.VarChar(10), filtros.inicio)
+    .input('fim', sql.VarChar(10), filtros.fim)
+    .query(`
+      SELECT
+        'Recebimento de título'                                           AS origem,
+        CONVERT(varchar(10), COALESCE(RB.DATA_RECEBIMENTO, RB.MOVIMENTO, TX.DATA), 23) AS dia,
+        RB.USUARIO_LOGADO                                                 AS usuario,
+        COALESCE(NULLIF(LTRIM(RTRIM(U.NOME)), ''), LTRIM(RTRIM(U.LOGIN))) AS usuario_nome,
+        ${FORMA_POR_CODIGO('COALESCE(RB.MODALIDADE, T.MODALIDADE)')}      AS forma,
+        TX.DEBITO                                                         AS valor,
+        T.ENTIDADE                                                        AS cod_contraparte,
+        LTRIM(RTRIM(E.NOME))                                              AS contraparte,
+        LTRIM(RTRIM(T.TITULO))                                            AS documento,
+        CONVERT(varchar(16), RB.DATA_HORA, 120)                           AS lancado_em
+      FROM TITULOS_RECEBER_TRANSACOES TX WITH (NOLOCK)
+      JOIN RECEBIMENTOS_BANCOS RB WITH (NOLOCK)
+        ON TX.TAB_MASTER_ORIGEM = ${TAB_RECEBIMENTO_BANCOS} AND RB.RECEBIMENTO_BANCO = TX.REG_MASTER_ORIGEM
+      JOIN TITULOS_RECEBER T WITH (NOLOCK) ON T.TITULO_RECEBER = TX.TITULO_RECEBER
+      LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = RB.USUARIO_LOGADO
+      LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = T.ENTIDADE
+      WHERE TX.TRANSACAO_FINANCEIRA = 12
+        AND ISNULL(TX.DEBITO, 0) > 0
+        AND COALESCE(RB.DATA_RECEBIMENTO, RB.MOVIMENTO, TX.DATA) >= CAST(@inicio AS date)
+        AND COALESCE(RB.DATA_RECEBIMENTO, RB.MOVIMENTO, TX.DATA) <  DATEADD(day, 1, CAST(@fim AS date))
+
+      UNION ALL
+
+      SELECT
+        'Retorno de despacho',
+        CONVERT(varchar(10), COALESCE(R.DATA_RECEBIMENTO, R.DATA_HORA), 23),
+        R.USUARIO_LOGADO,
+        COALESCE(NULLIF(LTRIM(RTRIM(U.NOME)), ''), LTRIM(RTRIM(U.LOGIN))),
+        ${FORMA_POR_CODIGO('DT.MODALIDADE')},
+        DT.VALOR_PAGAMENTO,
+        DT.ENTIDADE,
+        LTRIM(RTRIM(E.NOME)),
+        CONCAT('NF ', DT.NF_NUMERO, ' · acerto ', R.RECEBIMENTO_FATURAMENTO_DESPACHO),
+        CONVERT(varchar(16), R.DATA_HORA, 120)
+      FROM RECEBIMENTOS_FATURAMENTO_DESPACHO R WITH (NOLOCK)
+      JOIN RECEBIMENTOS_FATURAMENTO_DESPACHO_DETALHES DT WITH (NOLOCK)
+        ON DT.RECEBIMENTO_FATURAMENTO_DESPACHO = R.RECEBIMENTO_FATURAMENTO_DESPACHO
+      LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = R.USUARIO_LOGADO
+      LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = DT.ENTIDADE
+      WHERE ISNULL(DT.VALOR_PAGAMENTO, 0) > 0
+        AND COALESCE(R.DATA_RECEBIMENTO, R.DATA_HORA) >= CAST(@inicio AS date)
+        AND COALESCE(R.DATA_RECEBIMENTO, R.DATA_HORA) <  DATEADD(day, 1, CAST(@fim AS date))
+
+      ORDER BY dia DESC, origem;
+    `);
+  return recordset;
+}
+
+module.exports = {
+  painel, pagamentos, pessoasPagamento, fornecedores, entradasCaixa, ORDENACAO, FILTRO_SITUACAO,
+};

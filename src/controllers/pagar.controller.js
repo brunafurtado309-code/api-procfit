@@ -29,4 +29,6 @@ module.exports = {
   painel: acao(service.painel),
   excel: download(service.exportar),
   pagamentos: acao(service.pagamentos),
+  fornecedores: acao(service.fornecedores),
+  fornecedoresExcel: download(service.exportarFornecedores),
 };

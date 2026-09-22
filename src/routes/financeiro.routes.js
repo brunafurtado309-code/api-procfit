@@ -31,6 +31,8 @@ router.get('/despachos/:acerto', despachos.detalhe);
 router.get('/pagar', pagar.painel);
 router.get('/pagar/excel', pagar.excel);
 router.get('/pagar/pagamentos', pagar.pagamentos);
+router.get('/pagar/fornecedores', pagar.fornecedores);
+router.get('/pagar/fornecedores/excel', pagar.fornecedoresExcel);
 
 // Clientes e crédito (contas a receber)
 router.get('/clientes-credito', clientesCredito.analise);
