@@ -142,6 +142,10 @@ async function atividade(filtros) {
 // Detalhe dos RECEBIMENTOS lançados na tela "Bancos por títulos" (RECEBIMENTOS_BANCOS):
 // uma linha por título baixado, com cliente, nota fiscal, pedido, valor e forma.
 // A transação de recebimento (12) aponta para o lote (TAB_MASTER_ORIGEM 668401).
+//
+// O período filtra pela DATA DO LANÇAMENTO (RB.DATA_HORA), igual ao resto desta tela:
+// é o que a pessoa fez naquele período. A data do recebimento informada costuma ser
+// anterior (ela lança hoje um recebimento de agosto), e aparece na coluna própria.
 const TAB_RECEBIMENTO_BANCOS = 668401;
 const TAB_NOTA_FISCAL = 753289; // TAB_MASTER_ORIGEM da NF_FATURAMENTO (mesmo valor usado no financeiro)
 
@@ -150,6 +154,7 @@ async function recebimentos(filtros) {
   const { recordset } = await criarRequest(pool, filtros).query(`
     SELECT TOP 20000
       CONVERT(varchar(10), COALESCE(RB.DATA_RECEBIMENTO, RB.MOVIMENTO, TX.DATA), 23) AS dia,
+      CONVERT(varchar(16), RB.DATA_HORA, 120)                           AS lancado_em,
       CONVERT(varchar(5), RB.DATA_HORA, 108)                            AS hora_lancamento,
       RB.RECEBIMENTO_BANCO                                              AS lote,
       RB.USUARIO_LOGADO                                                 AS usuario,
@@ -179,10 +184,10 @@ async function recebimentos(filtros) {
     LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = RB.USUARIO_LOGADO
     WHERE TX.TRANSACAO_FINANCEIRA = 12
       AND ISNULL(TX.DEBITO, 0) > 0
-      AND COALESCE(RB.DATA_RECEBIMENTO, RB.MOVIMENTO, TX.DATA) >= CAST(@inicio AS date)
-      AND COALESCE(RB.DATA_RECEBIMENTO, RB.MOVIMENTO, TX.DATA) <  DATEADD(day, 1, CAST(@fim AS date))
+      AND RB.DATA_HORA >= CAST(@inicio AS date)
+      AND RB.DATA_HORA <  DATEADD(day, 1, CAST(@fim AS date))
       ${filtros.usuario != null ? 'AND RB.USUARIO_LOGADO = @usuario' : ''}
-    ORDER BY COALESCE(RB.DATA_RECEBIMENTO, RB.MOVIMENTO, TX.DATA) DESC, RB.RECEBIMENTO_BANCO DESC, T.TITULO;
+    ORDER BY RB.DATA_HORA DESC, RB.RECEBIMENTO_BANCO DESC, T.TITULO;
   `);
   return recordset;
 }

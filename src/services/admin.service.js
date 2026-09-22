@@ -37,8 +37,8 @@ const recebimentos = (query) => repo.recebimentos(montarFiltros(query));
 
 // Colunas da planilha de recebimentos (uma linha por título baixado)
 const COLUNAS_RECEBIMENTOS = [
+  { titulo: 'Lançado em', chave: 'lancado_em', largura: 17 },
   { titulo: 'Dia do recebimento', chave: 'dia', tipo: 'data', largura: 13 },
-  { titulo: 'Lançado às', chave: 'hora_lancamento', largura: 9 },
   { titulo: 'Quem lançou', chave: 'usuario_nome', largura: 28 },
   { titulo: 'Lote', chave: 'lote', tipo: 'codigo', largura: 9 },
   { titulo: 'Título', chave: 'titulo', largura: 16 },

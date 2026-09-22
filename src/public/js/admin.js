@@ -266,8 +266,10 @@ async function abrirUsuario(u) {
       partes.push(tituloReceb);
       const explica = document.createElement('p');
       explica.className = 'bloco__descricao';
-      explica.textContent = `${plural(recebimentos.length, 'título recebido', 'títulos recebidos')} · `
-        + `${dinheiro(total)} no período. Cada linha é um título baixado por esta pessoa.`;
+      const lotes = new Set(recebimentos.map((r) => r.lote)).size;
+      explica.textContent = `${plural(recebimentos.length, 'título baixado', 'títulos baixados')} em `
+        + `${plural(lotes, 'lançamento', 'lançamentos')} · ${dinheiro(total)}. O período é pela data do `
+        + 'lançamento; a data do recebimento informada aparece na coluna "Recebimento".';
       partes.push(explica);
 
       const acoes = document.createElement('p');
@@ -282,8 +284,8 @@ async function abrirUsuario(u) {
       const tabela = document.createElement('table');
       tabela.className = 'tabela tabela--itens';
       const cab = document.createElement('tr');
-      for (const [titulo, esquerda] of [['Dia', true], ['Título', true], ['Nota', true], ['Pedido', true],
-        ['Cliente', true], ['Vencimento', true], ['Forma', true], ['Valor do título'], ['Recebido']]) {
+      for (const [titulo, esquerda] of [['Lançado em', true], ['Recebimento', true], ['Título', true], ['Nota', true],
+        ['Pedido', true], ['Cliente', true], ['Vencimento', true], ['Forma', true], ['Valor do título'], ['Recebido']]) {
         const th = document.createElement('th');
         th.scope = 'col';
         th.textContent = titulo;
@@ -295,8 +297,10 @@ async function abrirUsuario(u) {
       const MAXIMO = 300;
       for (const r of recebimentos.slice(0, MAXIMO)) {
         const tr = document.createElement('tr');
+        const parcial = Number(r.recebido) + 0.009 < Number(r.valor_titulo);
         tr.append(
-          comAuxiliar(dataBR(r.dia), `lote ${r.lote}`, 'esquerda sem-quebra'),
+          comAuxiliar(dataHoraBR(r.lancado_em), `lote ${r.lote}`, 'esquerda sem-quebra'),
+          td(dataBR(r.dia), 'esquerda sem-quebra'),
           td(r.titulo ?? '—', 'esquerda sem-quebra'),
           td(r.nota ? `NF ${r.nota}` : '—', 'esquerda'),
           td(r.pedido ?? '—', 'esquerda'),
@@ -304,7 +308,7 @@ async function abrirUsuario(u) {
           td(dataBR(r.vencimento), 'esquerda sem-quebra'),
           td(r.forma ?? '—', 'esquerda'),
           td(dinheiro(r.valor_titulo)),
-          td(dinheiro(r.recebido)),
+          comAuxiliar(dinheiro(r.recebido), parcial ? 'pagamento parcial' : null, null, 'qtd negativo'),
         );
         corpo.append(tr);
       }
@@ -312,7 +316,7 @@ async function abrirUsuario(u) {
       const rotulo = td(recebimentos.length > MAXIMO
         ? `Total (${plural(recebimentos.length, 'título', 'títulos')}; mostrando os ${MAXIMO} mais recentes)`
         : `Total (${plural(recebimentos.length, 'título', 'títulos')})`, 'esquerda');
-      rotulo.colSpan = 8;
+      rotulo.colSpan = 9;
       rodape.append(rotulo, td(dinheiro(total)));
       tabela.createTFoot().append(rodape);
       partes.push(tabela);
