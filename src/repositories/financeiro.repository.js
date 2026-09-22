@@ -267,7 +267,9 @@ function ordenacao(filtros) {
   const coluna = ORDENACAO[filtros.ordem];
   if (!coluna) return 'vencimento, nota, titulo';
   const direcao = filtros.direcao === 'desc' ? 'DESC' : 'ASC';
-  return `${coluna} ${direcao}, vencimento, nota, titulo`;
+  // Desempate sem repetir a coluna escolhida (o SQL Server recusa coluna repetida no ORDER BY)
+  const desempate = ['vencimento', 'nota', 'titulo'].filter((c) => c !== coluna);
+  return [`${coluna} ${direcao}`, ...desempate].join(', ');
 }
 
 // Lista dos títulos, com paginação e pesquisa

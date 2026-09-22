@@ -186,7 +186,7 @@ async function painel(filtros) {
       valor, pago, descontos, retencoes, juros_multa, pendente, ultimo_pagamento, situacao
     FROM TITULOS
     WHERE ${FILTRO_BASE} AND ${situacao}
-    ORDER BY ${coluna} ${direcao}, vencimento_data, titulo;
+    ORDER BY ${[`${coluna} ${direcao}`, ...['vencimento_data', 'titulo'].filter((c) => c !== coluna)].join(', ')};
 
     ${SALDOS}
     -- 5) Saúde das baixas: por mês de vencimento (últimos 6 meses até o mês atual),
