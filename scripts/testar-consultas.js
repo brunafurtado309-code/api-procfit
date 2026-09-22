@@ -7,6 +7,7 @@ const financeiro = require('../src/repositories/financeiro.repository');
 const pagar = require('../src/repositories/pagar.repository');
 const despachos = require('../src/repositories/despachos.repository');
 const admin = require('../src/repositories/admin.repository');
+const servicoFinanceiro = require('../src/services/financeiro.service');
 
 const testes = [
   ['Contas a pagar (tela)', () => pagar.painel({ situacao: 'aberto' })],
@@ -23,6 +24,13 @@ const testes = [
   ['Contas a receber: títulos por título', () => financeiro.titulos({ ordem: 'titulo', limite: 5, pagina: 1 })],
   ['Clientes e crédito', () => financeiro.analiseClientes({})],
   ['Contas a receber: baixas por mês', () => financeiro.baixasPorMes({})],
+  ['Excel dos recebimentos (gera a planilha de verdade)', async () => {
+    const fim = new Date().toISOString().slice(0, 10);
+    const inicio = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+    const { workbook, nomeArquivo } = await servicoFinanceiro.exportarRecebimentos({ inicio, fim });
+    const buffer = await workbook.xlsx.writeBuffer();
+    console.log(`       ${nomeArquivo} · ${Math.round(buffer.length / 1024)} KB`);
+  }],
   ['Contas a receber: recebimentos (30 dias, todas as origens)', async () => {
     const fim = new Date().toISOString().slice(0, 10);
     const inicio = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);

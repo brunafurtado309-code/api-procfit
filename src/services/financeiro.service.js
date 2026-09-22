@@ -2,6 +2,7 @@
 
 const AppError = require('../utils/AppError');
 const repo = require('../repositories/financeiro.repository');
+const excel = require('../utils/excel');
 
 const FORMATO_DATA = /^\d{4}-\d{2}-\d{2}$/;
 const SITUACOES = ['aberto', 'parcial', 'quitado', 'todos'];

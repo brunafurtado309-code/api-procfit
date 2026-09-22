@@ -459,7 +459,9 @@ async function baixarExcel() {
     link.remove();
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   } catch (erro) {
-    mostrarStatus(erro.message, true);
+    // A mensagem fica no topo: leva a tela até ela para ninguém achar que o botão não fez nada
+    mostrarStatus(`Excel: ${erro.message}`, true);
+    el('status').scrollIntoView({ behavior: 'smooth', block: 'center' });
   } finally {
     botao.disabled = false;
   }
