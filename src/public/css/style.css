@@ -638,6 +638,9 @@ a.aba, span.aba { display: inline-block; text-decoration: none; }
   padding: 0.4rem 0;
 }
 .mais-detalhes > summary:hover { color: var(--verde-escuro); }
+/* Bloco inteiro que abre e fecha (ex.: lista de títulos do contas a pagar) */
+.mais-detalhes--bloco { margin-top: 0; }
+.mais-detalhes--bloco > summary { font-family: var(--fonte-titulo); font-size: var(--texto-titulo); }
 
 /* No máximo 4 por linha, para o valor nunca apertar */
 .cartoes {

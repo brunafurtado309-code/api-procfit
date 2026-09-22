@@ -38,6 +38,7 @@ const SITUACAO = {
 
 // ===== Estado =====
 let cartaoAtual = 'aberto';
+let abrirLista = false; // abre a lista de títulos depois de clicar num cartão ou fornecedor
 let pagamentosLista = [];
 let pessoasCaixa = []; // todas as pessoas que cuidam de caixa (cartão sempre visível)
 let pessoaAtual = null; // código do usuário, ou 'sem' para não identificado
@@ -133,6 +134,11 @@ async function carregar() {
     mostrarFornecedores(dados.fornecedores);
     mostrarMarcadores();
     mostrarLista(dados.limite);
+    if (abrirLista) {
+      abrirLista = false;
+      el('lista-titulos').open = true;
+      el('lista-titulos').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
     carregarPagamentos();
     el('painel').hidden = false;
     const cartao = CARTOES.find((c) => c.id === cartaoAtual);
@@ -171,6 +177,7 @@ function mostrarCartoes(r) {
     botao.append(titulo, valor, nota);
     botao.addEventListener('click', () => {
       cartaoAtual = c.id;
+      abrirLista = true; // quem clica num cartão quer ver os títulos
       carregar();
     });
     return botao;
@@ -351,6 +358,7 @@ function mostrarFornecedores(lista) {
     aoClicar: () => {
       el('pesquisa-termo').value = String(f.cod_fornecedor);
       el('limpar-pesquisa').hidden = false;
+      abrirLista = true;
       carregar();
     },
   })));
@@ -439,7 +447,8 @@ function prazo(t) {
 function mostrarLista(limite) {
   const tabela = el('tabela-pagar');
   tabela.tHead.replaceChildren(cabecalho());
-  el('titulo-lista').textContent = `Títulos · ${CARTOES.find((c) => c.id === cartaoAtual).titulo}`;
+  el('titulo-lista').textContent =
+    `Ver a lista de títulos · ${CARTOES.find((c) => c.id === cartaoAtual).titulo} (${inteiro(titulos.length)})`;
 
   const corpo = tabela.tBodies[0];
   if (titulos.length === 0) {
