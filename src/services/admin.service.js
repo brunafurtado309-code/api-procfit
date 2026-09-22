@@ -33,6 +33,25 @@ function montarFiltros(query) {
 }
 
 const usuarios = (query) => repo.usuarios(montarFiltros(query));
+const recebimentos = (query) => repo.recebimentos(montarFiltros(query));
+
+// Colunas da planilha de recebimentos (uma linha por título baixado)
+const COLUNAS_RECEBIMENTOS = [
+  { titulo: 'Dia do recebimento', chave: 'dia', tipo: 'data', largura: 13 },
+  { titulo: 'Lançado às', chave: 'hora_lancamento', largura: 9 },
+  { titulo: 'Quem lançou', chave: 'usuario_nome', largura: 28 },
+  { titulo: 'Lote', chave: 'lote', tipo: 'codigo', largura: 9 },
+  { titulo: 'Título', chave: 'titulo', largura: 16 },
+  { titulo: 'Nota fiscal', chave: 'nota', tipo: 'codigo', largura: 11 },
+  { titulo: 'Pedido', chave: 'pedido', tipo: 'codigo', largura: 10 },
+  { titulo: 'Cód. cliente', chave: 'cod_cliente', tipo: 'codigo', largura: 11 },
+  { titulo: 'Cliente', chave: 'cliente', largura: 40 },
+  { titulo: 'Vencimento', chave: 'vencimento', tipo: 'data', largura: 12 },
+  { titulo: 'Forma', chave: 'forma', largura: 14 },
+  { titulo: 'Conta bancária', chave: 'conta_bancaria', tipo: 'codigo', largura: 11 },
+  { titulo: 'Valor do título', chave: 'valor_titulo', tipo: 'moeda', largura: 14, somar: true },
+  { titulo: 'Recebido', chave: 'recebido', tipo: 'moeda', largura: 14, somar: true },
+];
 
 async function atividade(query) {
   const filtros = montarFiltros(query);
@@ -45,6 +64,24 @@ async function exportar(query) {
   const dataBR = (d) => d.split('-').reverse().join('/');
   const periodo = `de ${dataBR(filtros.inicio)} até ${dataBR(filtros.fim)}`;
   const workbook = excel.novaPlanilha();
+
+  if (query.tipo === 'recebimentos') {
+    const lista = await repo.recebimentos(filtros);
+    excel.adicionarTabela(workbook, 'Recebimentos', {
+      titulo: 'Recebimentos lançados no PROCFIT | Belo Norte',
+      subtitulo: `${lista.length} títulos recebidos · ${periodo}`
+        + `${filtros.usuario != null ? ` · usuário ${filtros.usuario}` : ''}`
+        + ` · gerado em ${new Date().toLocaleString('pt-BR')}`,
+      colunas: COLUNAS_RECEBIMENTOS,
+      linhas: lista,
+      totais: true,
+    });
+    return {
+      workbook,
+      nomeArquivo: `recebimentos${filtros.usuario != null ? `-usuario-${filtros.usuario}` : ''}`
+        + `_${filtros.inicio}_a_${filtros.fim}.xlsx`,
+    };
+  }
 
   if (filtros.usuario != null) {
     const { lancamentos } = await repo.atividade(filtros);
@@ -61,6 +98,17 @@ async function exportar(query) {
       ],
       linhas: lancamentos,
     });
+    // Segunda aba: os recebimentos dessa pessoa, título a título
+    const recebidos = await repo.recebimentos(filtros);
+    if (recebidos.length) {
+      excel.adicionarTabela(workbook, 'Recebimentos', {
+        titulo: 'Recebimentos lançados por esta pessoa | Belo Norte',
+        subtitulo: `${recebidos.length} títulos recebidos · ${periodo}`,
+        colunas: COLUNAS_RECEBIMENTOS,
+        linhas: recebidos,
+        totais: true,
+      });
+    }
     return { workbook, nomeArquivo: `atividade-usuario-${filtros.usuario}_${filtros.inicio}_a_${filtros.fim}.xlsx` };
   }
 
@@ -85,4 +133,4 @@ async function exportar(query) {
   return { workbook, nomeArquivo: `usuarios-procfit_${filtros.inicio}_a_${filtros.fim}.xlsx` };
 }
 
-module.exports = { usuarios, atividade, exportar };
+module.exports = { usuarios, atividade, recebimentos, exportar };

@@ -2,6 +2,8 @@
 // Chave própria (setor "admin"): quem tem a chave de vendas ou financeiro não entra aqui.
 
 const el = (id) => document.getElementById(id);
+const moeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const dinheiro = (valor) => moeda.format(Number(valor) || 0);
 const inteiro = (valor) => (Number(valor) || 0).toLocaleString('pt-BR');
 const plural = (n, um, varios) => `${inteiro(n)} ${Number(n) === 1 ? um : varios}`;
 const dataBR = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '—');
@@ -226,7 +228,10 @@ async function abrirUsuario(u) {
   if (!janela.open) janela.showModal();
 
   try {
-    const { lancamentos, porAcao } = await buscar('atividade', { ...filtrosAtuais(), usuario: u.usuario });
+    const [{ lancamentos, porAcao }, recebimentos] = await Promise.all([
+      buscar('atividade', { ...filtrosAtuais(), usuario: u.usuario }),
+      buscar('recebimentos', { ...filtrosAtuais(), usuario: u.usuario }),
+    ]);
     el('usuario-resumo').textContent = `${u.login ?? ''} · código ${u.usuario} · `
       + `${plural(lancamentos.length, 'ação', 'ações')} de ${dataBR(el('inicio').value)} a ${dataBR(el('fim').value)}`;
 
@@ -252,6 +257,66 @@ async function abrirUsuario(u) {
       return linha;
     }) : [span('Nenhuma ação no período.', 'explica')]));
     partes.push(barras);
+
+    // Recebimentos título a título (cliente, nota, pedido, valor)
+    if (recebimentos.length) {
+      const total = recebimentos.reduce((t, r) => t + (Number(r.recebido) || 0), 0);
+      const tituloReceb = document.createElement('h3');
+      tituloReceb.textContent = 'Recebimentos lançados';
+      partes.push(tituloReceb);
+      const explica = document.createElement('p');
+      explica.className = 'bloco__descricao';
+      explica.textContent = `${plural(recebimentos.length, 'título recebido', 'títulos recebidos')} · `
+        + `${dinheiro(total)} no período. Cada linha é um título baixado por esta pessoa.`;
+      partes.push(explica);
+
+      const acoes = document.createElement('p');
+      const botaoExcel = document.createElement('button');
+      botaoExcel.type = 'button';
+      botaoExcel.className = 'botao-secundario';
+      botaoExcel.textContent = 'Baixar Excel dos recebimentos';
+      botaoExcel.addEventListener('click', () => baixarExcel(u.usuario, 'recebimentos'));
+      acoes.append(botaoExcel);
+      partes.push(acoes);
+
+      const tabela = document.createElement('table');
+      tabela.className = 'tabela tabela--itens';
+      const cab = document.createElement('tr');
+      for (const [titulo, esquerda] of [['Dia', true], ['Título', true], ['Nota', true], ['Pedido', true],
+        ['Cliente', true], ['Vencimento', true], ['Forma', true], ['Valor do título'], ['Recebido']]) {
+        const th = document.createElement('th');
+        th.scope = 'col';
+        th.textContent = titulo;
+        if (esquerda) th.className = 'esquerda';
+        cab.append(th);
+      }
+      tabela.createTHead().append(cab);
+      const corpo = tabela.createTBody();
+      const MAXIMO = 300;
+      for (const r of recebimentos.slice(0, MAXIMO)) {
+        const tr = document.createElement('tr');
+        tr.append(
+          comAuxiliar(dataBR(r.dia), `lote ${r.lote}`, 'esquerda sem-quebra'),
+          td(r.titulo ?? '—', 'esquerda sem-quebra'),
+          td(r.nota ? `NF ${r.nota}` : '—', 'esquerda'),
+          td(r.pedido ?? '—', 'esquerda'),
+          comAuxiliar(r.cliente ?? `Cliente ${r.cod_cliente}`, `código ${r.cod_cliente}`, 'esquerda'),
+          td(dataBR(r.vencimento), 'esquerda sem-quebra'),
+          td(r.forma ?? '—', 'esquerda'),
+          td(dinheiro(r.valor_titulo)),
+          td(dinheiro(r.recebido)),
+        );
+        corpo.append(tr);
+      }
+      const rodape = document.createElement('tr');
+      const rotulo = td(recebimentos.length > MAXIMO
+        ? `Total (${plural(recebimentos.length, 'título', 'títulos')}; mostrando os ${MAXIMO} mais recentes)`
+        : `Total (${plural(recebimentos.length, 'título', 'títulos')})`, 'esquerda');
+      rotulo.colSpan = 8;
+      rodape.append(rotulo, td(dinheiro(total)));
+      tabela.createTFoot().append(rodape);
+      partes.push(tabela);
+    }
 
     // Linha do tempo, dia a dia
     const tituloLinha = document.createElement('h3');
@@ -303,12 +368,12 @@ async function abrirUsuario(u) {
 }
 
 // ===== Excel =====
-async function baixarExcel(usuario = null) {
+async function baixarExcel(usuario = null, tipo = null) {
   const botao = usuario ? el('usuario-excel') : el('baixar-excel');
   botao.disabled = true;
   try {
     const url = new URL('/admin/usuarios/excel', window.location.origin);
-    for (const [nome, valor] of Object.entries({ ...filtrosAtuais(), usuario })) {
+    for (const [nome, valor] of Object.entries({ ...filtrosAtuais(), usuario, tipo })) {
       if (valor) url.searchParams.set(nome, valor);
     }
     const resposta = await fetch(url, { headers: { 'x-api-key': chave.ler() ?? '' } });

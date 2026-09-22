@@ -139,4 +139,52 @@ async function atividade(filtros) {
   return { lancamentos: recordsets[0], porAcao: recordsets[1] };
 }
 
-module.exports = { usuarios, atividade, AREAS, ACOES, MAPA };
+// Detalhe dos RECEBIMENTOS lançados na tela "Bancos por títulos" (RECEBIMENTOS_BANCOS):
+// uma linha por título baixado, com cliente, nota fiscal, pedido, valor e forma.
+// A transação de recebimento (12) aponta para o lote (TAB_MASTER_ORIGEM 668401).
+const TAB_RECEBIMENTO_BANCOS = 668401;
+const TAB_NOTA_FISCAL = 753289; // TAB_MASTER_ORIGEM da NF_FATURAMENTO (mesmo valor usado no financeiro)
+
+async function recebimentos(filtros) {
+  const pool = await getPool();
+  const { recordset } = await criarRequest(pool, filtros).query(`
+    SELECT TOP 20000
+      CONVERT(varchar(10), COALESCE(RB.DATA_RECEBIMENTO, RB.MOVIMENTO, TX.DATA), 23) AS dia,
+      CONVERT(varchar(5), RB.DATA_HORA, 108)                            AS hora_lancamento,
+      RB.RECEBIMENTO_BANCO                                              AS lote,
+      RB.USUARIO_LOGADO                                                 AS usuario,
+      COALESCE(NULLIF(LTRIM(RTRIM(U.NOME)), ''), LTRIM(RTRIM(U.LOGIN))) AS usuario_nome,
+      LTRIM(RTRIM(T.TITULO))                                            AS titulo,
+      T.ENTIDADE                                                        AS cod_cliente,
+      LTRIM(RTRIM(E.NOME))                                              AS cliente,
+      NF.NF_NUMERO                                                      AS nota,
+      COALESCE(NULLIF(T.PEDIDO_PREVENDA, 0), NULLIF(NF.PEDIDO_CLIENTE, 0)) AS pedido,
+      CONVERT(varchar(10), T.VENCIMENTO, 23)                            AS vencimento,
+      T.VALOR                                                           AS valor_titulo,
+      TX.DEBITO                                                         AS recebido,
+      RB.CONTA_BANCARIA                                                 AS conta_bancaria,
+      CASE COALESCE(RB.MODALIDADE, T.MODALIDADE)
+        WHEN 0 THEN 'Carteira'  WHEN 1 THEN 'Boleto'   WHEN 2 THEN 'Depósito'
+        WHEN 3 THEN 'Cheque'    WHEN 4 THEN 'Dinheiro' WHEN 5 THEN 'Débito em conta'
+        WHEN 6 THEN 'Cartão crédito' WHEN 7 THEN 'Promissória' WHEN 8 THEN 'Vale'
+        WHEN 9 THEN 'Devolução' WHEN 11 THEN 'PIX'     WHEN 12 THEN 'Cartão débito'
+        WHEN 13 THEN 'Convênio' ELSE 'Outra' END                        AS forma
+    FROM TITULOS_RECEBER_TRANSACOES TX WITH (NOLOCK)
+    JOIN RECEBIMENTOS_BANCOS RB WITH (NOLOCK)
+      ON TX.TAB_MASTER_ORIGEM = ${TAB_RECEBIMENTO_BANCOS} AND RB.RECEBIMENTO_BANCO = TX.REG_MASTER_ORIGEM
+    JOIN TITULOS_RECEBER T WITH (NOLOCK) ON T.TITULO_RECEBER = TX.TITULO_RECEBER
+    LEFT JOIN NF_FATURAMENTO NF WITH (NOLOCK)
+      ON T.TAB_MASTER_ORIGEM = ${TAB_NOTA_FISCAL} AND NF.NF_FATURAMENTO = T.REG_MASTER_ORIGEM
+    LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = T.ENTIDADE
+    LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = RB.USUARIO_LOGADO
+    WHERE TX.TRANSACAO_FINANCEIRA = 12
+      AND ISNULL(TX.DEBITO, 0) > 0
+      AND COALESCE(RB.DATA_RECEBIMENTO, RB.MOVIMENTO, TX.DATA) >= CAST(@inicio AS date)
+      AND COALESCE(RB.DATA_RECEBIMENTO, RB.MOVIMENTO, TX.DATA) <  DATEADD(day, 1, CAST(@fim AS date))
+      ${filtros.usuario != null ? 'AND RB.USUARIO_LOGADO = @usuario' : ''}
+    ORDER BY COALESCE(RB.DATA_RECEBIMENTO, RB.MOVIMENTO, TX.DATA) DESC, RB.RECEBIMENTO_BANCO DESC, T.TITULO;
+  `);
+  return recordset;
+}
+
+module.exports = { usuarios, atividade, recebimentos, AREAS, ACOES, MAPA };

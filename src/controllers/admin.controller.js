@@ -15,6 +15,7 @@ const acao = (fn) => async (req, res, next) => {
 module.exports = {
   usuarios: acao(service.usuarios),
   atividade: acao(service.atividade),
+  recebimentos: acao(service.recebimentos),
   excel: async (req, res, next) => {
     try {
       const { workbook, nomeArquivo } = await service.exportar(req.query);

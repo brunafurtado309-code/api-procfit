@@ -24,6 +24,13 @@ const testes = [
   ['Clientes e crédito', () => financeiro.analiseClientes({})],
   ['Contas a receber: baixas por mês', () => financeiro.baixasPorMes({})],
   ['Despachos (lista)', () => despachos.lista({})],
+  ['Administrativo: recebimentos detalhados (30 dias)', async () => {
+    const fim = new Date().toISOString().slice(0, 10);
+    const inicio = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
+    const lista = await admin.recebimentos({ inicio, fim });
+    const comNota = lista.filter((r) => r.nota != null).length;
+    console.log(`       ${lista.length} títulos recebidos, ${comNota} com nota fiscal ligada`);
+  }],
   ['Administrativo: usuários e atividade (30 dias)', async () => {
     const fim = new Date().toISOString().slice(0, 10);
     const inicio = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
