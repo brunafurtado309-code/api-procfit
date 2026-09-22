@@ -15,6 +15,8 @@
 
 const { sql, getPool } = require('../config/db');
 
+// Atenção: no SQL Server, um WITH (CTE) vale só para o comando logo depois dele.
+// Por isso cada consulta do painel abaixo repete ${SALDOS} antes do seu SELECT.
 const SALDOS = `
   WITH SALDOS AS (
     SELECT
@@ -146,6 +148,7 @@ async function painel(filtros) {
     FROM TITULOS
     WHERE ${FILTRO_BASE};
 
+    ${SALDOS}
     -- 2) Previsão por semana (em aberto): vencidos numa linha só, depois as próximas 12 semanas.
     --    Semana = segunda-feira (01/01/1900 foi segunda: não depende da configuração do servidor)
     SELECT semana, COUNT(*) AS titulos, SUM(pendente) AS pendente
@@ -163,6 +166,7 @@ async function painel(filtros) {
     GROUP BY semana
     ORDER BY CASE WHEN semana = 'VENCIDO' THEN 0 ELSE 1 END, semana;
 
+    ${SALDOS}
     -- 3) Maiores fornecedores em aberto
     SELECT TOP 10
       cod_fornecedor,
@@ -175,6 +179,7 @@ async function painel(filtros) {
     GROUP BY cod_fornecedor
     ORDER BY SUM(pendente) DESC;
 
+    ${SALDOS}
     -- 4) Lista de títulos do cartão escolhido
     SELECT TOP (${LIMITE_LISTA})
       id, empresa, titulo, cod_fornecedor, fornecedor, forma, emissao, vencimento, dias_atraso,
@@ -183,6 +188,7 @@ async function painel(filtros) {
     WHERE ${FILTRO_BASE} AND ${situacao}
     ORDER BY ${coluna} ${direcao}, vencimento_data, titulo;
 
+    ${SALDOS}
     -- 5) Saúde das baixas: por mês de vencimento (últimos 6 meses até o mês atual),
     --    quanto JÁ venceu e quanto disso continua sem baixa. Mês com pouca baixa
     --    = pagamento feito no banco e ainda não lançado no PROCFIT.
@@ -199,6 +205,7 @@ async function painel(filtros) {
     GROUP BY CONVERT(varchar(7), vencimento_data, 120)
     ORDER BY 1;
 
+    ${SALDOS}
     -- 6) Onde o dinheiro vai: grupo (formato DRE) e categoria, pelo rateio de cada título.
     --    Em aberto = parte do pendente proporcional ao valor da categoria no título.
     SELECT
@@ -216,6 +223,7 @@ async function painel(filtros) {
     GROUP BY G.DESCRICAO, CF.CLASSIF_FINANCEIRA, CF.DESCRICAO, C.CLASSIF_FINANCEIRA
     ORDER BY SUM(C.VALOR) DESC;
 
+    ${SALDOS}
     -- 7) Compromissos de longo prazo: o que vence daqui a mais de 12 meses, por ano
     SELECT YEAR(vencimento_data) AS ano, COUNT(*) AS titulos, SUM(pendente) AS pendente
     FROM TITULOS
@@ -224,6 +232,7 @@ async function painel(filtros) {
     GROUP BY YEAR(vencimento_data)
     ORDER BY 1;
 
+    ${SALDOS}
     -- 8) ...e de quem são esses compromissos (até quando vão)
     SELECT TOP 5
       cod_fornecedor, MAX(fornecedor) AS fornecedor, COUNT(*) AS titulos, SUM(pendente) AS pendente,
