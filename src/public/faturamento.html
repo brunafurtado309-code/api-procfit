@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Faturamento | Painel | Belo Norte</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/modulos.js" defer></script>
+  <script src="js/estado.js" defer></script>
+  <script src="js/pedido.js" defer></script>
+  <script src="js/graficos.js" defer></script>
+  <script src="js/faturamento.js" defer></script>
+</head>
+<body>
+  <header class="topo">
+    <div>
+      <p class="marca">Belo Norte</p>
+      <h1>Painel de faturamento</h1>
+    </div>
+    <div class="topo-acoes">
+      <nav id="modulos" class="modulos" aria-label="Módulos do painel" hidden></nav>
+      <button id="trocar-chave" class="botao-texto" type="button">Trocar chave</button>
+    </div>
+  </header>
+
+  <main class="conteudo conteudo--largo">
+    <section class="barra-filtros" aria-label="Filtros">
+      <div class="barra-filtros__linha">
+        <form id="form-pesquisa" class="pesquisa" role="search">
+          <label class="campo campo--busca">
+            <span class="sr-only">Encontrar pedido</span>
+            <input id="pesquisa-termo" type="search" maxlength="60" autocomplete="off"
+                   placeholder="Encontrar por pedido, nota, cupom, código ou nome do cliente">
+          </label>
+          <button type="submit">Pesquisar</button>
+          <button id="limpar-pesquisa" type="button" class="botao-secundario" hidden>Limpar</button>
+        </form>
+        <div class="barra-filtros__acoes">
+          <button id="baixar-excel" type="button" class="botao-secundario">Baixar Excel</button>
+        </div>
+      </div>
+
+      <form id="filtros" class="filtros">
+        <label>De <input type="date" id="inicio"></label>
+        <label>até <input type="date" id="fim"></label>
+        <div class="atalhos" id="atalhos" aria-label="Períodos prontos">
+          <button type="button" class="botao-secundario" data-dias="0">Hoje</button>
+          <button type="button" class="botao-secundario" data-dias="7">Últimos 7 dias</button>
+          <button type="button" class="botao-secundario atalho--ativo" data-dias="30">Últimos 30 dias</button>
+          <button type="button" class="botao-secundario" data-dias="mes">Este mês</button>
+        </div>
+        <label class="campo">
+          <span>Vendedor</span>
+          <select id="filtro-vendedor"><option value="">Todos</option></select>
+        </label>
+        <button type="submit" class="filtros__aplicar">Atualizar</button>
+      </form>
+
+      <div id="marcadores" class="marcadores" hidden></div>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <div id="painel" hidden>
+      <section class="destaque">
+        <div class="painel-topo">
+          <div>
+            <h2>Pedidos no período</h2>
+            <p id="total-pedidos" class="valor-grande">—</p>
+            <p id="total-explica" class="explica"></p>
+          </div>
+          <dl class="indicadores">
+            <dt>Pagos</dt>
+            <dd id="ind-pagos">—</dd>
+            <dt>Faturados (sem pagamento)</dt>
+            <dd id="ind-faturados">—</dd>
+            <dt>Parados antes da nota</dt>
+            <dd id="ind-parados">—</dd>
+            <dt>Cancelados</dt>
+            <dd id="ind-cancelados">—</dd>
+          </dl>
+        </div>
+      </section>
+
+      <!-- Funil: clicar filtra a lista -->
+      <section class="bloco">
+        <h2>Do orçamento ao pagamento</h2>
+        <p class="bloco__descricao">Onde cada pedido do período parou. Clique numa etapa para ver os pedidos dela.</p>
+        <div class="barras" id="funil"></div>
+      </section>
+
+      <!-- Divergências entre telas -->
+      <section class="bloco">
+        <h2>Divergências entre telas</h2>
+        <p class="bloco__descricao">Casos em que uma tela do PROCFIT diz uma coisa e a outra diz outra.
+          Clique para ver os pedidos.</p>
+        <div class="cartoes cartoes--cinco" id="divergencias"></div>
+      </section>
+
+      <section class="bloco">
+        <h2>Pedidos por dia</h2>
+        <p class="bloco__descricao">Valor dos pedidos de cada dia e quanto já está pago.</p>
+        <div id="grafico-dias"></div>
+      </section>
+
+      <section class="bloco">
+        <div class="bloco-topo">
+          <h2 id="titulo-lista">Pedidos</h2>
+          <button id="baixar-excel-lista" type="button" class="botao-secundario">Baixar Excel desta lista</button>
+        </div>
+        <p class="bloco__descricao">Clique no pedido para ver a linha do tempo completa: checkout, nota, cupom,
+          títulos e recebimentos.</p>
+        <div class="tabela-rolagem">
+          <table class="tabela" id="tabela-pedidos">
+            <thead></thead>
+            <tbody></tbody>
+            <tfoot></tfoot>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

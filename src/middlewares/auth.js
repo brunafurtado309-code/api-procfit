@@ -5,13 +5,14 @@
 //   API_KEY_VENDAS=...           abre só /vendas
 //   API_KEY_FINANCEIRO=...       abre só /financeiro
 //   API_KEY_ADMIN=...            abre só /admin (usuários e rastreio de uso)
+//   API_KEY_FATURAMENTO=...      abre só /faturamento (análise de pedidos)
 //
 // Assim dá para entregar a chave do financeiro ao setor financeiro sem que ele
 // enxergue vendas, e trocar a chave de um setor sem mexer nos outros.
 
 const crypto = require('crypto');
 
-const SETORES = ['vendas', 'financeiro', 'admin'];
+const SETORES = ['vendas', 'financeiro', 'admin', 'faturamento'];
 
 // Monta a lista de chaves a cada requisição (o .env pode mudar sem reiniciar tudo).
 // Formato: [{ chave, setores: ['vendas'], nome: 'API_KEY_VENDAS' }]

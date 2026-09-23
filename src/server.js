@@ -12,6 +12,7 @@ const errorHandler = require('./middlewares/errorHandler');
 const vendasRoutes = require('./routes/vendas.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
 const adminRoutes = require('./routes/admin.routes');
+const faturamentoRoutes = require('./routes/faturamento.routes');
 
 const app = express();
 
@@ -60,6 +61,7 @@ app.get('/acessos', exigirChave(), (req, res) => res.json({ setores: req.setores
 app.use('/vendas', exigirChave('vendas'), vendasRoutes);
 app.use('/financeiro', exigirChave('financeiro'), financeiroRoutes);
 app.use('/admin', exigirChave('admin'), adminRoutes);
+app.use('/faturamento', exigirChave('faturamento'), faturamentoRoutes);
 
 // Painel visual (arquivos da pasta src/public)
 app.use('/painel', express.static(path.join(__dirname, 'public')));

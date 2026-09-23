@@ -7,6 +7,7 @@ const financeiro = require('../src/repositories/financeiro.repository');
 const pagar = require('../src/repositories/pagar.repository');
 const despachos = require('../src/repositories/despachos.repository');
 const admin = require('../src/repositories/admin.repository');
+const faturamento = require('../src/repositories/faturamento.repository');
 const servicoFinanceiro = require('../src/services/financeiro.service');
 
 const testes = [
@@ -61,6 +62,16 @@ const testes = [
     const lista = await admin.recebimentos({ inicio, fim });
     const comNota = lista.filter((r) => r.nota != null).length;
     console.log(`       ${lista.length} títulos recebidos, ${comNota} com nota fiscal ligada`);
+  }],
+  ['Faturamento: análise de pedidos (30 dias)', async () => {
+    const fim = new Date().toISOString().slice(0, 10);
+    const inicio = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
+    const { resumo } = await faturamento.analise({ inicio, fim });
+    console.log(`       ${resumo.pedidos ?? 0} pedidos · ${resumo.pagos ?? 0} pagos · ${resumo.faturados ?? 0} faturados`
+      + ` · ${resumo.cancelados ?? 0} cancelados`);
+    console.log(`       divergências: ${resumo.div_pago_titulo ?? 0} pago com título aberto · `
+      + `${resumo.div_nota_sem_cobranca ?? 0} nota sem cobrança · `
+      + `${resumo.div_cancelado_com_nota ?? 0} cancelado com nota · ${resumo.div_parado ?? 0} parados`);
   }],
   ['Administrativo: usuários e atividade (30 dias)', async () => {
     const fim = new Date().toISOString().slice(0, 10);
