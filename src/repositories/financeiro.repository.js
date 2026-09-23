@@ -450,8 +450,16 @@ async function fichaCliente(entidade, { meses = 12 } = {}) {
       TOT.PRECO_TOTAL                                   AS valor,
       TOT.DESCONTO_TOTAL                                AS desconto,
       NF.NF_NUMERO                                      AS nota,
+      CUPOM.ECF_CUPOM                                   AS cupom,
+      CUPOM.CAIXA                                       AS caixa,
+      CONVERT(varchar(10), CUPOM.MOVIMENTO, 23)         AS dia_cupom,
+      ISNULL(TIT.titulos, 0)                            AS titulos,
+      ISNULL(TIT.pendente, 0)                           AS pendente,
+      -- Onde a venda parou: cupom no caixa, nota fiscal (com ou sem título), em aberto ou cancelada
       CASE
         WHEN P.CANCELADA = 'S'                THEN 'Cancelado'
+        WHEN CUPOM.ECF_CUPOM IS NOT NULL      THEN 'Pago no caixa'
+        WHEN NF.NF_NUMERO IS NOT NULL AND ISNULL(TIT.titulos, 0) = 0 THEN 'Faturado sem título'
         WHEN NF.NF_NUMERO IS NOT NULL         THEN 'Faturado'
         WHEN P.PROCESSAR = 'S'                THEN 'Processado'
         ELSE                                       'Em aberto'
@@ -465,6 +473,20 @@ async function fichaCliente(entidade, { meses = 12 } = {}) {
       WHERE TRY_CAST(LTRIM(RTRIM(N.PEDIDO_CLIENTE)) AS numeric(18, 0)) = P.PEDIDO_PREVENDA
       ORDER BY N.NF_FATURAMENTO DESC
     ) NF
+    -- Pago na hora no caixa: o pedido virou cupom no PDV
+    OUTER APPLY (
+      SELECT TOP 1 PV.ECF_CUPOM, PV.CAIXA, PV.MOVIMENTO
+      FROM PDV_VENDAS PV WITH (NOLOCK)
+      WHERE PV.PREVENDA = P.PEDIDO_PREVENDA
+      ORDER BY PV.MOVIMENTO DESC
+    ) CUPOM
+    -- Títulos gerados por este pedido (se não houver nenhum e a nota existir, é venda sem cobrança)
+    OUTER APPLY (
+      SELECT COUNT(*) AS titulos,
+             SUM(CASE WHEN TR.VALOR > 0 THEN TR.VALOR ELSE 0 END) AS pendente
+      FROM TITULOS_RECEBER TR WITH (NOLOCK)
+      WHERE TR.PEDIDO_PREVENDA = P.PEDIDO_PREVENDA
+    ) TIT
     WHERE P.CLIENTE = @entidade
       AND P.DATA_HORA >= DATEADD(month, -@desde, CAST(GETDATE() AS date))
     ORDER BY P.DATA_HORA DESC;

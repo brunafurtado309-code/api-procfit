@@ -826,7 +826,21 @@ function desenharListasDaFicha() {
         celula(dataBR(p.dia)),
         celulaPedido(p.pedido),
         celula(p.vendedor ?? '—', 'esquerda'),
-        celula(p.situacao, 'esquerda'),
+        // Situação com o rastro: cupom do caixa, títulos gerados ou o alerta de venda sem cobrança
+        (() => {
+          const situacao = celula(p.situacao, 'esquerda');
+          const detalhe = p.cupom
+            ? `cupom ${p.cupom}${p.caixa ? ` · caixa ${p.caixa}` : ''}${p.dia_cupom ? ` · ${dataBR(p.dia_cupom)}` : ''}`
+            : (Number(p.titulos) ? `${numero(p.titulos)} título(s) gerado(s)` : null);
+          if (detalhe) {
+            const nota = document.createElement('span');
+            nota.className = 'qtd';
+            nota.textContent = detalhe;
+            situacao.append(nota);
+          }
+          if (p.situacao === 'Faturado sem título') situacao.classList.add('negativo');
+          return situacao;
+        })(),
         celula(p.nota ? `NF ${p.nota}` : '—'),
         celula(Number(p.desconto) > 0.009 ? dinheiro(p.desconto) : '—'),
         celula(dinheiro(p.valor)),
