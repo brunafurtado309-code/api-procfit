@@ -779,6 +779,30 @@ async function abrirFicha(codigo, nome) {
       }),
     );
 
+    // Pedidos do cliente, inclusive os que ainda não viraram nota
+    const pedidos = ficha.pedidos ?? [];
+    el('ficha-pedidos').querySelector('tbody').replaceChildren(
+      ...(pedidos.length ? pedidos.map((p) => {
+        const linha = document.createElement('tr');
+        linha.append(
+          celula(dataBR(p.dia)),
+          celulaPedido(p.pedido),
+          celula(p.vendedor ?? '—', 'esquerda'),
+          celula(p.situacao, 'esquerda'),
+          celula(p.nota ? `NF ${p.nota}` : '—'),
+          celula(Number(p.desconto) > 0.009 ? dinheiro(p.desconto) : '—'),
+          celula(dinheiro(p.valor)),
+        );
+        return linha;
+      }) : [(() => {
+        const linha = document.createElement('tr');
+        const vazio = celula('Nenhum pedido nos últimos 12 meses.', 'vazio');
+        vazio.colSpan = 7;
+        linha.append(vazio);
+        return linha;
+      })()]),
+    );
+
     // Recebimentos do cliente: a auditoria de tudo o que ele já pagou e por qual caminho
     const recebimentos = ficha.recebimentos ?? [];
     el('ficha-recebimentos').querySelector('tbody').replaceChildren(

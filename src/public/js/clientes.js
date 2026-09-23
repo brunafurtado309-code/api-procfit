@@ -229,6 +229,22 @@ function cabecalho() {
   return linha;
 }
 
+// Nome do cliente clicável: abre a ficha dele (títulos, pedidos e recebimentos)
+function celulaCliente(c) {
+  const botao = document.createElement('button');
+  botao.type = 'button';
+  botao.className = 'link-pedido';
+  botao.textContent = c.cliente ?? `Cliente ${c.cod_cliente}`;
+  botao.title = 'Ver a ficha do cliente: títulos, pedidos e recebimentos';
+  botao.addEventListener('click', () => {
+    window.location.href = `financeiro.html#cliente-${c.cod_cliente}`;
+  });
+  const celula = td(botao, 'esquerda');
+  celula.append(span(`código ${c.cod_cliente}${c.atrasado_comprando ? ' · em atraso e comprando' : ''}`,
+    c.atrasado_comprando ? 'qtd negativo' : 'qtd'));
+  return celula;
+}
+
 function mostrarLista() {
   mostrarMarcadores();
   const lista = ordenados(visiveis());
@@ -251,9 +267,7 @@ function mostrarLista() {
       const etiqueta = span(info.curto, `situacao ${info.classe}`);
       const atrasoMedio = c.atraso_medio_pagamento === null ? null : Math.round(Number(c.atraso_medio_pagamento));
       linha.append(
-        comAuxiliar(c.cliente ?? `Cliente ${c.cod_cliente}`,
-          `código ${c.cod_cliente}${c.atrasado_comprando ? ' · em atraso e comprando' : ''}`, 'esquerda',
-          c.atrasado_comprando ? 'qtd negativo' : 'qtd'),
+        celulaCliente(c),
         td(etiqueta, 'esquerda'),
         comAuxiliar(dinheiro(c.aberto), Number(c.titulos_abertos) ? plural(c.titulos_abertos, 'título', 'títulos') : null),
         Number(c.vencido) > 0.009

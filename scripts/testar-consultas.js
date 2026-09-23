@@ -24,6 +24,14 @@ const testes = [
   ['Contas a receber: títulos por título', () => financeiro.titulos({ ordem: 'titulo', limite: 5, pagina: 1 })],
   ['Clientes e crédito', () => financeiro.analiseClientes({})],
   ['Contas a receber: baixas por mês', () => financeiro.baixasPorMes({})],
+  ['Ficha do cliente (com pedidos e recebimentos)', async () => {
+    const lista = await financeiro.porCliente({ limite: 1, pagina: 1 });
+    const cliente = (lista.clientes ?? lista)[0];
+    const codigo = cliente?.cod_cliente ?? cliente?.cliente ?? 1;
+    const ficha = await financeiro.fichaCliente(Number(codigo));
+    console.log(`       cliente ${codigo}: ${ficha.titulos.length} títulos, `
+      + `${(ficha.pedidos ?? []).length} pedidos, ${(ficha.recebimentos ?? []).length} recebimentos`);
+  }],
   ['Excel dos recebimentos (gera a planilha de verdade)', async () => {
     const fim = new Date().toISOString().slice(0, 10);
     const inicio = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);

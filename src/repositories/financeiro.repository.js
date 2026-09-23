@@ -441,7 +441,35 @@ async function fichaCliente(entidade, { meses = 12 } = {}) {
     WHERE cod_cliente = @entidade
     ORDER BY CASE WHEN situacao = 'QUITADO' THEN 1 ELSE 0 END, vencimento DESC;
 
-    -- 6. Recebimentos do cliente (todas as origens), para a auditoria
+    -- 6. Pedidos do cliente (inclusive os que ainda não viraram título)
+    SELECT TOP 100
+      P.PEDIDO_PREVENDA                                 AS pedido,
+      CONVERT(varchar(10), P.DATA_HORA, 23)             AS dia,
+      P.EMPRESA                                         AS empresa,
+      LTRIM(RTRIM(V.NOME))                              AS vendedor,
+      TOT.PRECO_TOTAL                                   AS valor,
+      TOT.DESCONTO_TOTAL                                AS desconto,
+      NF.NF_NUMERO                                      AS nota,
+      CASE
+        WHEN P.CANCELADA = 'S'                THEN 'Cancelado'
+        WHEN NF.NF_NUMERO IS NOT NULL         THEN 'Faturado'
+        WHEN P.PROCESSAR = 'S'                THEN 'Processado'
+        ELSE                                       'Em aberto'
+      END                                               AS situacao
+    FROM PEDIDOS_PREVENDAS P WITH (NOLOCK)
+    LEFT JOIN PEDIDOS_PREVENDAS_TOTAIS TOT WITH (NOLOCK) ON TOT.PEDIDO_PREVENDA = P.PEDIDO_PREVENDA
+    LEFT JOIN VENDEDORES V WITH (NOLOCK) ON V.VENDEDOR = P.VENDEDOR
+    OUTER APPLY (
+      SELECT TOP 1 N.NF_NUMERO
+      FROM NF_FATURAMENTO N WITH (NOLOCK)
+      WHERE TRY_CAST(LTRIM(RTRIM(N.PEDIDO_CLIENTE)) AS numeric(18, 0)) = P.PEDIDO_PREVENDA
+      ORDER BY N.NF_FATURAMENTO DESC
+    ) NF
+    WHERE P.CLIENTE = @entidade
+      AND P.DATA_HORA >= DATEADD(month, -@desde, CAST(GETDATE() AS date))
+    ORDER BY P.DATA_HORA DESC;
+
+    -- 7. Recebimentos do cliente (todas as origens), para a auditoria
     ${SELECT_RECEBIMENTOS}
     WHERE TX.TRANSACAO_FINANCEIRA = 12
       AND ISNULL(TX.DEBITO, 0) > 0
@@ -456,7 +484,8 @@ async function fichaCliente(entidade, { meses = 12 } = {}) {
     compras: recordsets[2][0],
     produtos: recordsets[3],
     titulos: recordsets[4],
-    recebimentos: recordsets[5],
+    pedidos: recordsets[5],
+    recebimentos: recordsets[6],
   };
 }
 
