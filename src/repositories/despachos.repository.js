@@ -208,6 +208,8 @@ async function detalhe(acerto) {
 // O retorno (acerto) aponta para a carga em RECEBIMENTOS_FATURAMENTO_DESPACHO.FATURAMENTO_DESPACHO_FILTRO.
 // Situação da carga: sem acerto = em rota; com acerto e todas as notas acertadas = acertada;
 // com acerto e notas faltando = acertada em parte.
+// Atenção: no SQL Server o WITH vale só para o comando logo depois dele.
+// Por isso cada SELECT abaixo repete ${CARGAS} antes de usar essa base.
 const CARGAS = `
   WITH NOTAS AS (
     SELECT FATURAMENTO_DESPACHO, COUNT(*) AS notas, SUM(ISNULL(NF_TOTAL, 0)) AS valor,
@@ -297,6 +299,7 @@ async function cargas(filtros) {
           OR conferente LIKE '%' + @busca + '%'
           OR responsavel LIKE '%' + @busca + '%');
 
+      ${CARGAS}
       SELECT TOP 2000 *
       FROM CARGAS
       WHERE (@inicio IS NULL OR saida >= @inicio)
