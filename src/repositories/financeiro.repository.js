@@ -13,8 +13,9 @@
 // - A ligação com a NOTA FISCAL só vale quando TAB_MASTER_ORIGEM = 753289
 //   (tabela NF_FATURAMENTO). Outras origens usam o mesmo REG_MASTER_ORIGEM para
 //   apontar para OUTRAS tabelas: sem esse filtro, a consulta mostra nota trocada.
-//   Origens encontradas: 753289 nota fiscal (83% do valor), 757539 "N.IDENT.",
-//   455510, 999999 (importação), 750078, entre outras menores.
+//   Origens da carteira (medido em set/2026, por valor): 753289 nota fiscal (88,6%),
+//   455510 acerto de despacho (6,3%), 999999 carga inicial do sistema antigo (4,0%),
+//   757539 recebível de cartão, gerado na conciliação (3,9%, todos da REDECARD).
 // - MODALIDADE identifica a forma: 1 = boleto, 6 = cartão crédito, 12 = cartão débito,
 //   11 = PIX, 4 = dinheiro, 0 = carteira (cadastro em MODALIDADES_TITULOS).
 
@@ -22,9 +23,7 @@ const { sql, getPool } = require('../config/db');
 
 const TAB_NOTA_FISCAL = 753289; // TAB_MASTER_ORIGEM da NF_FATURAMENTO
 
-// Origens encontradas nos títulos em aberto (set/2026), por valor:
-//   753289 nota fiscal (83%)   757539 identificação manual ("N.IDENT.")
-//   455510 / 750078 / 999999 / outras: importação e lançamentos avulsos
+// Separa os títulos que nasceram de nota fiscal dos demais (ver a lista de origens acima)
 const ORIGENS = {
   nota: `T.TAB_MASTER_ORIGEM = ${TAB_NOTA_FISCAL}`,
   sem_nota: `(T.TAB_MASTER_ORIGEM <> ${TAB_NOTA_FISCAL} OR T.TAB_MASTER_ORIGEM IS NULL)`,
@@ -79,7 +78,8 @@ const TITULOS = `
       CASE
         WHEN T.TAB_MASTER_ORIGEM = ${TAB_NOTA_FISCAL} THEN 'Nota fiscal'
         WHEN ADQ.ADQUIRENTE_ID IS NOT NULL            THEN 'Recebível de cartão'
-        WHEN T.TAB_MASTER_ORIGEM = 757539             THEN 'Lançado à mão (N.IDENT.)'
+        -- 757539: geração dos recebíveis de cartão (validado set/2026: todos da REDECARD)
+        WHEN T.TAB_MASTER_ORIGEM = 757539             THEN 'Recebível de cartão (conciliação)'
         -- 455510: o acerto do despacho gera os títulos das notas entregues
         WHEN T.TAB_MASTER_ORIGEM = 455510             THEN 'Gerado no acerto de despacho'
         WHEN T.TAB_MASTER_ORIGEM = 750078             THEN 'Importado do sistema antigo'
