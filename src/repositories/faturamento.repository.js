@@ -44,11 +44,11 @@ const PEDIDOS = `
       ISNULL(TIT.valor_titulos, 0)                       AS valor_titulos,
       ISNULL(TIT.recebido, 0)                            AS recebido,
       ISNULL(TIT.pendente, 0)                            AS pendente,
-      CAN.CANCELAMENTO_PEDIDO_PREVENDA                   AS cancelamento,
+      CAN.CANCELAMENTO_PEDIDOS_PREVENDA                  AS cancelamento,
       CONVERT(varchar(10), CAN.DATA_HORA, 23)            AS cancelado_em,
       -- Em que etapa a venda está hoje
       CASE
-        WHEN CAN.CANCELAMENTO_PEDIDO_PREVENDA IS NOT NULL OR TOT.STATUS = 'Cancelado' THEN 'CANCELADO'
+        WHEN CAN.CANCELAMENTO_PEDIDOS_PREVENDA IS NOT NULL OR TOT.STATUS = 'Cancelado' THEN 'CANCELADO'
         WHEN TOT.STATUS = 'Orçamento'                                                 THEN 'ORCAMENTO'
         WHEN TOT.STATUS = 'Pendente Aprovação'                                        THEN 'APROVACAO'
         WHEN ISNULL(TIT.recebido, 0) > 0.009 AND ISNULL(TIT.pendente, 0) <= 0.009     THEN 'PAGO'
@@ -62,10 +62,10 @@ const PEDIDOS = `
                                                          AS pago_com_titulo_aberto,
       CASE WHEN NF.NF_NUMERO IS NOT NULL AND CUP.ECF_CUPOM IS NULL AND ISNULL(TIT.titulos, 0) = 0
            THEN 1 ELSE 0 END                             AS nota_sem_cobranca,
-      CASE WHEN (CAN.CANCELAMENTO_PEDIDO_PREVENDA IS NOT NULL OR TOT.STATUS = 'Cancelado')
+      CASE WHEN (CAN.CANCELAMENTO_PEDIDOS_PREVENDA IS NOT NULL OR TOT.STATUS = 'Cancelado')
             AND (NF.NF_NUMERO IS NOT NULL OR ISNULL(TIT.titulos, 0) > 0)
            THEN 1 ELSE 0 END                             AS cancelado_com_nota,
-      CASE WHEN CAN.CANCELAMENTO_PEDIDO_PREVENDA IS NULL AND ISNULL(TOT.STATUS, '') = 'Pedido Processado'
+      CASE WHEN CAN.CANCELAMENTO_PEDIDOS_PREVENDA IS NULL AND ISNULL(TOT.STATUS, '') = 'Pedido Processado'
             AND NF.NF_NUMERO IS NULL AND CUP.ECF_CUPOM IS NULL
             AND P.DATA_HORA < DATEADD(day, -7, GETDATE())
            THEN 1 ELSE 0 END                             AS parado_sem_faturar
@@ -85,7 +85,8 @@ const PEDIDOS = `
     OUTER APPLY (
       SELECT TOP 1 N.NF_NUMERO, N.NF_FATURAMENTO, N.MOVIMENTO
       FROM NF_FATURAMENTO N WITH (NOLOCK)
-      WHERE TRY_CAST(LTRIM(RTRIM(N.PEDIDO_CLIENTE)) AS numeric(18, 0)) = P.PEDIDO_PREVENDA
+      WHERE N.PEDIDO_VENDA = P.PEDIDO_PREVENDA
+         OR TRY_CAST(LTRIM(RTRIM(N.PEDIDO_CLIENTE)) AS numeric(18, 0)) = P.PEDIDO_PREVENDA
       ORDER BY N.NF_FATURAMENTO DESC
     ) NF
     OUTER APPLY (
@@ -107,10 +108,10 @@ const PEDIDOS = `
       WHERE TR.PEDIDO_PREVENDA = P.PEDIDO_PREVENDA
     ) TIT
     OUTER APPLY (
-      SELECT TOP 1 X.CANCELAMENTO_PEDIDO_PREVENDA, X.DATA_HORA
+      SELECT TOP 1 X.CANCELAMENTO_PEDIDOS_PREVENDA, X.DATA_HORA
       FROM CANCELAMENTOS_PEDIDOS_PREVENDAS X WITH (NOLOCK)
       WHERE X.PEDIDO_PREVENDA = P.PEDIDO_PREVENDA
-      ORDER BY X.CANCELAMENTO_PEDIDO_PREVENDA DESC
+      ORDER BY X.CANCELAMENTO_PEDIDOS_PREVENDA DESC
     ) CAN
   )`;
 
