@@ -203,4 +203,148 @@ async function detalhe(acerto) {
   return { acerto: cabecalho, notas: recordsets[1], parcelas: recordsets[2], cartoes: recordsets[3] };
 }
 
-module.exports = { lista, detalhe };
+// ===== Saída: as CARGAS que deixaram a empresa (FATURAMENTO_DESPACHO) =====
+// FATURAMENTO_DESPACHO_NOTAS traz as notas que foram no caminhão (nota, cliente, pedido, valor, volume).
+// O retorno (acerto) aponta para a carga em RECEBIMENTOS_FATURAMENTO_DESPACHO.FATURAMENTO_DESPACHO_FILTRO.
+// Situação da carga: sem acerto = em rota; com acerto e todas as notas acertadas = acertada;
+// com acerto e notas faltando = acertada em parte.
+const CARGAS = `
+  WITH NOTAS AS (
+    SELECT FATURAMENTO_DESPACHO, COUNT(*) AS notas, SUM(ISNULL(NF_TOTAL, 0)) AS valor,
+           SUM(ISNULL(VOLUME, 0)) AS volumes
+    FROM FATURAMENTO_DESPACHO_NOTAS WITH (NOLOCK)
+    GROUP BY FATURAMENTO_DESPACHO
+  ),
+  ACERTOS AS (
+    SELECT R.FATURAMENTO_DESPACHO_FILTRO AS carga,
+           COUNT(DISTINCT R.RECEBIMENTO_FATURAMENTO_DESPACHO) AS acertos,
+           MIN(R.RECEBIMENTO_FATURAMENTO_DESPACHO)            AS primeiro_acerto,
+           MAX(R.DATA_RECEBIMENTO)                            AS ultimo_recebimento,
+           COUNT(DISTINCT DT.NF_NUMERO)                       AS notas_acertadas,
+           SUM(ISNULL(DT.VALOR_PAGAMENTO, 0))                 AS informado
+    FROM RECEBIMENTOS_FATURAMENTO_DESPACHO R WITH (NOLOCK)
+    LEFT JOIN RECEBIMENTOS_FATURAMENTO_DESPACHO_DETALHES DT WITH (NOLOCK)
+      ON DT.RECEBIMENTO_FATURAMENTO_DESPACHO = R.RECEBIMENTO_FATURAMENTO_DESPACHO
+    GROUP BY R.FATURAMENTO_DESPACHO_FILTRO
+  ),
+  CARGAS AS (
+    SELECT
+      FD.FATURAMENTO_DESPACHO                          AS carga,
+      FD.EMPRESA                                       AS empresa,
+      CONVERT(varchar(10), FD.DATA_HORA, 23)           AS saida,
+      FD.DATA_HORA                                     AS saida_data,
+      LTRIM(RTRIM(FD.ROTA))                            AS rota,
+      FD.VEICULO                                       AS veiculo,
+      FD.CONFERENTE                                    AS cod_conferente,
+      LTRIM(RTRIM(VC.NOME))                            AS conferente,
+      FD.RESPONSAVEL                                   AS cod_responsavel,
+      LTRIM(RTRIM(ER.NOME))                            AS responsavel,
+      FD.USUARIO_LOGADO                                AS usuario,
+      COALESCE(NULLIF(LTRIM(RTRIM(U.NOME)), ''), LTRIM(RTRIM(U.LOGIN))) AS usuario_nome,
+      ISNULL(N.notas, 0)                               AS notas,
+      ISNULL(N.valor, 0)                               AS valor,
+      ISNULL(N.volumes, 0)                             AS volumes,
+      ISNULL(A.acertos, 0)                             AS acertos,
+      A.primeiro_acerto                                AS acerto,
+      CONVERT(varchar(10), A.ultimo_recebimento, 23)   AS recebimento,
+      ISNULL(A.notas_acertadas, 0)                     AS notas_acertadas,
+      ISNULL(A.informado, 0)                           AS informado,
+      CASE
+        WHEN ISNULL(A.acertos, 0) = 0                         THEN 'EM_ROTA'
+        WHEN ISNULL(A.notas_acertadas, 0) < ISNULL(N.notas, 0) THEN 'PARCIAL'
+        ELSE                                                        'ACERTADA'
+      END                                              AS situacao
+    FROM FATURAMENTO_DESPACHO FD WITH (NOLOCK)
+    LEFT JOIN NOTAS N ON N.FATURAMENTO_DESPACHO = FD.FATURAMENTO_DESPACHO
+    LEFT JOIN ACERTOS A ON A.carga = FD.FATURAMENTO_DESPACHO
+    LEFT JOIN VENDEDORES VC WITH (NOLOCK) ON VC.VENDEDOR = FD.CONFERENTE
+    LEFT JOIN ENTIDADES ER WITH (NOLOCK) ON ER.ENTIDADE = FD.RESPONSAVEL
+    LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = FD.USUARIO_LOGADO
+  )`;
+
+const SITUACOES_CARGA = {
+  EM_ROTA: 'situacao = \'EM_ROTA\'',
+  PARCIAL: 'situacao = \'PARCIAL\'',
+  ACERTADA: 'situacao = \'ACERTADA\'',
+};
+
+async function cargas(filtros) {
+  const pool = await getPool();
+  const situacao = SITUACOES_CARGA[filtros.situacao] ?? '1 = 1';
+  const { recordsets } = await pool
+    .request()
+    .input('inicio', sql.VarChar(10), filtros.inicio ?? null)
+    .input('fim', sql.VarChar(10), filtros.fim ?? null)
+    .input('busca', sql.VarChar(60), filtros.busca ?? null)
+    .query(`
+      ${CARGAS}
+      SELECT
+        COUNT(*)                                                          AS cargas,
+        SUM(notas)                                                        AS notas,
+        SUM(valor)                                                        AS valor,
+        SUM(CASE WHEN situacao = 'EM_ROTA'  THEN 1 ELSE 0 END)             AS em_rota,
+        SUM(CASE WHEN situacao = 'EM_ROTA'  THEN valor ELSE 0 END)         AS valor_em_rota,
+        SUM(CASE WHEN situacao = 'PARCIAL'  THEN 1 ELSE 0 END)             AS parciais,
+        SUM(CASE WHEN situacao = 'PARCIAL'  THEN valor - informado ELSE 0 END) AS valor_parcial,
+        SUM(CASE WHEN situacao = 'ACERTADA' THEN 1 ELSE 0 END)             AS acertadas,
+        SUM(informado)                                                    AS informado
+      FROM CARGAS
+      WHERE (@inicio IS NULL OR saida >= @inicio)
+        AND (@fim IS NULL OR saida <= @fim)
+        AND (@busca IS NULL
+          OR CAST(carga AS varchar(20)) = @busca
+          OR rota LIKE '%' + @busca + '%'
+          OR conferente LIKE '%' + @busca + '%'
+          OR responsavel LIKE '%' + @busca + '%');
+
+      SELECT TOP 2000 *
+      FROM CARGAS
+      WHERE (@inicio IS NULL OR saida >= @inicio)
+        AND (@fim IS NULL OR saida <= @fim)
+        AND (@busca IS NULL
+          OR CAST(carga AS varchar(20)) = @busca
+          OR rota LIKE '%' + @busca + '%'
+          OR conferente LIKE '%' + @busca + '%'
+          OR responsavel LIKE '%' + @busca + '%')
+        AND ${situacao}
+      ORDER BY saida_data DESC, carga DESC;
+    `);
+  return { resumo: recordsets[0][0] ?? {}, lista: recordsets[1] };
+}
+
+// As notas que saíram numa carga, marcando as que já voltaram acertadas
+async function notasDaCarga(carga) {
+  const pool = await getPool();
+  const { recordsets } = await pool
+    .request()
+    .input('carga', sql.Int, carga)
+    .query(`
+      ${CARGAS}
+      SELECT * FROM CARGAS WHERE carga = @carga;
+
+      SELECT
+        FDN.NF_NUMERO                          AS nota,
+        FDN.ENTIDADE                           AS cod_cliente,
+        LTRIM(RTRIM(E.NOME))                   AS cliente,
+        FDN.PEDIDO_PREVENDA                    AS pedido,
+        FDN.NF_TOTAL                           AS valor,
+        FDN.VOLUME                             AS volume,
+        AC.informado                           AS informado,
+        AC.acerto                              AS acerto
+      FROM FATURAMENTO_DESPACHO_NOTAS FDN WITH (NOLOCK)
+      LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = FDN.ENTIDADE
+      OUTER APPLY (
+        SELECT SUM(ISNULL(DT.VALOR_PAGAMENTO, 0)) AS informado,
+               MAX(DT.RECEBIMENTO_FATURAMENTO_DESPACHO) AS acerto
+        FROM RECEBIMENTOS_FATURAMENTO_DESPACHO_DETALHES DT WITH (NOLOCK)
+        JOIN RECEBIMENTOS_FATURAMENTO_DESPACHO R WITH (NOLOCK)
+          ON R.RECEBIMENTO_FATURAMENTO_DESPACHO = DT.RECEBIMENTO_FATURAMENTO_DESPACHO
+        WHERE R.FATURAMENTO_DESPACHO_FILTRO = @carga AND DT.NF_NUMERO = FDN.NF_NUMERO
+      ) AC
+      WHERE FDN.FATURAMENTO_DESPACHO = @carga
+      ORDER BY FDN.NF_NUMERO;
+    `);
+  return { carga: recordsets[0][0] ?? null, notas: recordsets[1] };
+}
+
+module.exports = { lista, detalhe, cargas, notasDaCarga, SITUACOES_CARGA };

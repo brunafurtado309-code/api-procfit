@@ -107,4 +107,59 @@ async function exportar(query) {
   return { workbook, nomeArquivo: `despachos_${hoje}.xlsx` };
 }
 
-module.exports = { lista, detalhe, exportar };
+// ===== Saída: as cargas que deixaram a empresa =====
+const SITUACAO_CARGA_TEXTO = {
+  EM_ROTA: 'Em rota (sem acerto)', PARCIAL: 'Acertada em parte', ACERTADA: 'Acertada',
+};
+
+function filtrosCarga(query) {
+  const filtros = montarFiltros({ ...query, situacao: undefined });
+  if (query.situacao) {
+    if (!repo.SITUACOES_CARGA[query.situacao]) {
+      throw new AppError(`"situacao" deve ser: ${Object.keys(repo.SITUACOES_CARGA).join(', ')}`);
+    }
+    filtros.situacao = query.situacao;
+  }
+  return filtros;
+}
+
+const cargas = (query) => repo.cargas(filtrosCarga(query));
+
+async function notasDaCarga(query, params) {
+  const carga = Number(params.carga);
+  if (!Number.isInteger(carga) || carga <= 0) throw new AppError('Número da carga inválido');
+  const dados = await repo.notasDaCarga(carga);
+  if (!dados.carga) throw new AppError(`Carga ${carga} não encontrada`, 404);
+  return dados;
+}
+
+async function exportarCargas(query) {
+  const filtros = filtrosCarga(query);
+  const { lista } = await repo.cargas(filtros);
+  const workbook = excel.novaPlanilha();
+  excel.adicionarTabela(workbook, 'Cargas', {
+    titulo: 'Despachos: cargas que saíram | Belo Norte',
+    subtitulo: `${lista.length} cargas${filtros.situacao ? ` · ${SITUACAO_CARGA_TEXTO[filtros.situacao]}` : ''}`
+      + ` · gerado em ${new Date().toLocaleString('pt-BR')}`,
+    colunas: [
+      { titulo: 'Carga', chave: 'carga', tipo: 'codigo', largura: 9 },
+      { titulo: 'Saída', chave: 'saida', tipo: 'data', largura: 12 },
+      { titulo: 'Rota', chave: 'rota', largura: 12 },
+      { titulo: 'Conferente', chave: 'conferente', largura: 26 },
+      { titulo: 'Responsável', chave: 'responsavel', largura: 26 },
+      { titulo: 'Notas', chave: 'notas', tipo: 'inteiro', largura: 8, somar: true },
+      { titulo: 'Valor que saiu', chave: 'valor', tipo: 'moeda', largura: 15, somar: true },
+      { titulo: 'Notas acertadas', chave: 'notas_acertadas', tipo: 'inteiro', largura: 10, somar: true },
+      { titulo: 'Informado no acerto', chave: 'informado', tipo: 'moeda', largura: 15, somar: true },
+      { titulo: 'Acerto', chave: 'acerto', tipo: 'codigo', largura: 9 },
+      { titulo: 'Recebimento', chave: 'recebimento', tipo: 'data', largura: 12 },
+      { titulo: 'Situação', valor: (c) => SITUACAO_CARGA_TEXTO[c.situacao] ?? c.situacao, largura: 20 },
+    ],
+    linhas: lista,
+    totais: true,
+  });
+  return { workbook, nomeArquivo: `cargas-despacho_${new Date().toISOString().slice(0, 10)}.xlsx` };
+}
+
+module.exports = {
+  cargas, notasDaCarga, exportarCargas, lista, detalhe, exportar };

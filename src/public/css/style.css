@@ -413,6 +413,16 @@ select:focus { border-color: var(--verde); }
 a.divisao__item:hover { color: var(--verde); background: var(--verde-suave); }
 .divisao__item--ativa,
 a.divisao__item--ativa:hover { background: var(--verde); color: #fff; }
+/* A divisão também funciona com botões (ex.: saída × retorno nos despachos) */
+button.divisao__item {
+  background: none;
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+button.divisao__item:hover { color: var(--verde); background: var(--verde-suave); }
+button.divisao__item--ativa,
+button.divisao__item--ativa:hover { background: var(--verde); color: #fff; }
 a.aba, span.aba { display: inline-block; text-decoration: none; }
 .aba--ativa { color: var(--verde); border-bottom-color: var(--verde); }
 

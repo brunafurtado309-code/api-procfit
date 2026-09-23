@@ -144,9 +144,10 @@ function mostrarResumo(r) {
   el('ind-diferenca').classList.toggle('negativo', r.com_diferenca > 0);
 }
 
-function span(texto) {
+function span(texto, classe) {
   const s = document.createElement('span');
   s.textContent = texto;
+  if (classe) s.className = classe;
   return s;
 }
 
@@ -587,6 +588,272 @@ async function baixarExcel() {
   }
 }
 
+// ===== Saída: as cargas que deixaram a empresa =====
+const SITUACOES_CARGA = {
+  EM_ROTA: { texto: 'Em rota', classe: 'situacao--sem' },
+  PARCIAL: { texto: 'Acertada em parte', classe: 'situacao--devolucao' },
+  ACERTADA: { texto: 'Acertada', classe: 'situacao--faturada' },
+};
+let cargas = [];
+let cargaSituacao = null;
+let cargaAberta = null;
+let ordemCargas = { coluna: 'saida', direcao: 'desc' };
+
+async function carregarCargas() {
+  mostrarStatus('Carregando as cargas…');
+  try {
+    const dados = await buscar('despachos/cargas', { ...filtrosAtuais(), situacao: cargaSituacao });
+    cargas = dados.lista;
+    mostrarResumoCargas(dados.resumo);
+    mostrarCartoesCargas(dados.resumo);
+    mostrarCargas();
+    el('painel').hidden = false;
+    mostrarStatus(`atualizado às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`);
+  } catch (erro) {
+    mostrarStatus(erro.message, true);
+  }
+}
+
+function mostrarResumoCargas(r) {
+  el('carga-total').textContent = dinheiro(r.valor);
+  el('carga-explica').textContent = `${plural(r.cargas, 'carga', 'cargas')} · ${plural(r.notas, 'nota', 'notas')}`;
+  el('carga-ind-rota').replaceChildren(inteiro(r.em_rota), span(`${dinheiro(r.valor_em_rota)} sem acerto`));
+  el('carga-ind-parcial').replaceChildren(inteiro(r.parciais), span(`${dinheiro(r.valor_parcial)} faltando`));
+  el('carga-ind-acertada').replaceChildren(inteiro(r.acertadas), span('cargas fechadas'));
+  el('carga-ind-informado').replaceChildren(dinheiro(r.informado), span('recebido dos motoristas'));
+  el('carga-ind-rota').classList.toggle('negativo', Number(r.em_rota) > 0);
+  el('carga-ind-parcial').classList.toggle('negativo', Number(r.parciais) > 0);
+}
+
+function mostrarCartoesCargas(r) {
+  const itens = [
+    { id: null, titulo: 'Todas', valor: inteiro(r.cargas), nota: `${dinheiro(r.valor)} em notas` },
+    { id: 'EM_ROTA', titulo: 'Em rota', valor: inteiro(r.em_rota), nota: `${dinheiro(r.valor_em_rota)} sem acerto`, alerta: true },
+    { id: 'PARCIAL', titulo: 'Acertadas em parte', valor: inteiro(r.parciais), nota: `${dinheiro(r.valor_parcial)} faltando`, alerta: true },
+    { id: 'ACERTADA', titulo: 'Acertadas', valor: inteiro(r.acertadas), nota: 'nada pendente' },
+  ];
+  el('carga-cartoes').replaceChildren(...itens.map((c) => {
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    const ativo = cargaSituacao === c.id;
+    botao.className = `cartao${ativo ? ' cartao--ativo' : ''}`;
+    botao.setAttribute('aria-pressed', String(ativo));
+    const titulo = document.createElement('h3');
+    titulo.textContent = c.titulo;
+    const valor = document.createElement('p');
+    valor.className = `cartao-valor${c.alerta && Number(c.valor.replace(/\D/g, '')) > 0 ? ' negativo' : ''}`;
+    valor.textContent = c.valor;
+    const nota = document.createElement('p');
+    nota.className = 'cartao-nota';
+    nota.textContent = c.nota;
+    botao.append(titulo, valor, nota);
+    botao.addEventListener('click', () => {
+      cargaSituacao = ativo ? null : c.id;
+      cargaAberta = null;
+      carregarCargas();
+    });
+    return botao;
+  }));
+}
+
+function mostrarCargas() {
+  const fator = ordemCargas.direcao === 'asc' ? 1 : -1;
+  const lista = [...cargas].sort((a, b) => {
+    const x = a[ordemCargas.coluna];
+    const y = b[ordemCargas.coluna];
+    if (typeof x === 'number' || typeof y === 'number') return ((Number(x) || 0) - (Number(y) || 0)) * fator;
+    return String(x ?? '').localeCompare(String(y ?? ''), 'pt-BR', { sensitivity: 'base' }) * fator;
+  });
+  el('carga-titulo-lista').textContent = `Cargas (${inteiro(lista.length)})`;
+
+  const tabela = el('tabela-cargas');
+  const cab = document.createElement('tr');
+  for (const [texto, campo, esquerda] of [['Carga', 'carga', true], ['Saída', 'saida', true], ['Rota', 'rota', true],
+    ['Conferente', 'conferente', true], ['Notas', 'notas'], ['Valor que saiu', 'valor'],
+    ['Acertado', 'informado'], ['Situação', 'situacao', true], ['', null, true]]) {
+    const th = document.createElement('th');
+    th.scope = 'col';
+    if (esquerda) th.className = 'esquerda';
+    if (!campo) {
+      th.textContent = texto;
+    } else {
+      const ativa = ordemCargas.coluna === campo;
+      const crescente = ordemCargas.direcao === 'asc';
+      if (ativa) th.setAttribute('aria-sort', crescente ? 'ascending' : 'descending');
+      const botao = document.createElement('button');
+      botao.type = 'button';
+      botao.className = ativa ? 'ordenar ordenar--ativo' : 'ordenar';
+      const seta = span(ativa ? (crescente ? '▲' : '▼') : '↕', 'ordenar__seta');
+      seta.setAttribute('aria-hidden', 'true');
+      botao.append(texto, seta);
+      botao.addEventListener('click', (evento) => {
+        evento.stopPropagation();
+        ordemCargas = { coluna: campo, direcao: ativa && crescente ? 'desc' : 'asc' };
+        mostrarCargas();
+      });
+      th.append(botao);
+    }
+    cab.append(th);
+  }
+  tabela.tHead.replaceChildren(cab);
+
+  const linhas = [];
+  if (!lista.length) {
+    const linha = document.createElement('tr');
+    const vazio = td('Nenhuma carga com esses filtros.', 'vazio');
+    vazio.colSpan = 9;
+    linha.append(vazio);
+    linhas.push(linha);
+  }
+  for (const c of lista) {
+    const aberta = cargaAberta === c.carga;
+    const linha = document.createElement('tr');
+    linha.className = `linha-dia${aberta ? ' linha-dia--aberta' : ''}`;
+    const info = SITUACOES_CARGA[c.situacao] ?? { texto: c.situacao, classe: '' };
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    botao.className = 'botao-expandir';
+    botao.setAttribute('aria-expanded', String(aberta));
+    botao.setAttribute('aria-label', aberta ? 'Fechar a carga' : 'Ver as notas da carga');
+    botao.textContent = aberta ? '▾' : '▸';
+    linha.append(
+      comAuxiliar(`Carga ${c.carga}`, c.acerto ? `acerto ${c.acerto}` : 'sem acerto', 'esquerda sem-quebra'),
+      comAuxiliar(dataBR(c.saida), c.recebimento ? `voltou ${dataBR(c.recebimento)}` : null, 'esquerda sem-quebra'),
+      td(c.rota || '—', 'esquerda'),
+      comAuxiliar(c.conferente ?? (c.cod_conferente ? `conferente ${c.cod_conferente}` : '—'),
+        c.responsavel ?? null, 'esquerda'),
+      comAuxiliar(inteiro(c.notas), Number(c.notas_acertadas) ? `${inteiro(c.notas_acertadas)} acertadas` : null),
+      td(dinheiro(c.valor), 'coluna-final'),
+      td(Number(c.informado) > 0.009 ? dinheiro(c.informado) : '—'),
+      td(span(info.texto, `situacao ${info.classe}`), 'esquerda'),
+      td(botao, 'esquerda'),
+    );
+    const alternar = async () => {
+      cargaAberta = aberta ? null : c.carga;
+      mostrarCargas();
+      if (!aberta) await abrirNotasDaCarga(c.carga);
+    };
+    botao.addEventListener('click', (evento) => { evento.stopPropagation(); alternar(); });
+    linha.addEventListener('click', alternar);
+    linhas.push(linha);
+    if (aberta) {
+      const detalhe = document.createElement('tr');
+      detalhe.className = 'linha-itens';
+      detalhe.id = `carga-notas-${c.carga}`;
+      const celula = document.createElement('td');
+      celula.colSpan = 9;
+      celula.append(span('Carregando as notas da carga…', 'explica'));
+      detalhe.append(celula);
+      linhas.push(detalhe);
+    }
+  }
+  tabela.tBodies[0].replaceChildren(...linhas);
+
+  const soma = (campo) => lista.reduce((t, c) => t + (Number(c[campo]) || 0), 0);
+  const rodape = document.createElement('tr');
+  const rotulo = td(`Total (${plural(lista.length, 'carga', 'cargas')})`, 'esquerda');
+  rotulo.colSpan = 4;
+  rodape.append(rotulo, td(inteiro(soma('notas'))), td(dinheiro(soma('valor'))), td(dinheiro(soma('informado'))),
+    td(''), td(''));
+  tabela.tFoot.replaceChildren(rodape);
+}
+
+// Notas que foram na carga, marcando as que voltaram acertadas
+async function abrirNotasDaCarga(carga) {
+  const linha = el(`carga-notas-${carga}`);
+  if (!linha) return;
+  try {
+    const { notas } = await buscar(`despachos/cargas/${carga}`);
+    const tabela = document.createElement('table');
+    tabela.className = 'tabela tabela--itens';
+    const cab = document.createElement('tr');
+    for (const [texto, esquerda] of [['Nota', true], ['Cliente', true], ['Pedido', true], ['Volume'],
+      ['Valor da nota'], ['Informado no acerto'], ['Situação', true]]) {
+      const th = document.createElement('th');
+      th.scope = 'col';
+      th.textContent = texto;
+      if (esquerda) th.className = 'esquerda';
+      cab.append(th);
+    }
+    tabela.createTHead().append(cab);
+    const corpo = tabela.createTBody();
+    let somaValor = 0;
+    let somaInformado = 0;
+    for (const n of notas) {
+      const informado = Number(n.informado) || 0;
+      const valor = Number(n.valor) || 0;
+      somaValor += valor;
+      somaInformado += informado;
+      const acertada = informado > 0.009;
+      const completa = acertada && informado + 0.009 >= valor;
+      const etiqueta = span(
+        acertada ? (completa ? 'Acertada' : 'Acertada em parte') : 'Não voltou no acerto',
+        `situacao ${acertada ? (completa ? 'situacao--faturada' : 'situacao--devolucao') : 'situacao--sem'}`,
+      );
+      const tr = document.createElement('tr');
+      tr.append(
+        comAuxiliar(`NF ${n.nota}`, n.acerto ? `acerto ${n.acerto}` : null, 'esquerda sem-quebra'),
+        comAuxiliar(n.cliente ?? `Cliente ${n.cod_cliente}`, `código ${n.cod_cliente}`, 'esquerda'),
+        td(pedidoJanela.link(n.pedido), 'esquerda'),
+        td(inteiro(n.volume)),
+        td(dinheiro(valor)),
+        td(acertada ? dinheiro(informado) : '—', acertada ? null : 'negativo'),
+        td(etiqueta, 'esquerda'),
+      );
+      corpo.append(tr);
+    }
+    const rodape = document.createElement('tr');
+    const rotulo = td(`Total da carga (${plural(notas.length, 'nota', 'notas')})`, 'esquerda');
+    rotulo.colSpan = 4;
+    rodape.append(rotulo, td(dinheiro(somaValor)), td(dinheiro(somaInformado)), td(''));
+    tabela.createTFoot().append(rodape);
+    linha.firstChild.replaceChildren(tabela);
+  } catch (erro) {
+    linha.firstChild.replaceChildren(span(erro.message, 'status--erro'));
+  }
+}
+
+// Excel das cargas (respeita o período, a pesquisa e o cartão escolhido)
+async function baixarExcelCargas() {
+  const botao = el('carga-excel');
+  botao.disabled = true;
+  try {
+    const url = new URL('/financeiro/despachos/cargas/excel', window.location.origin);
+    for (const [nome, valor] of Object.entries({ ...filtrosAtuais(), situacao: cargaSituacao })) {
+      if (valor) url.searchParams.set(nome, valor);
+    }
+    const resposta = await fetch(url, { headers: { 'x-api-key': chave.ler() ?? '' } });
+    if (!resposta.ok) {
+      const corpo = await resposta.json().catch(() => ({}));
+      throw new Error(corpo.erro || 'Não foi possível gerar a planilha.');
+    }
+    const nome = ((resposta.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/) || [])[1]
+      || 'cargas-despacho.xlsx';
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(await resposta.blob());
+    link.download = nome;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  } catch (erro) {
+    mostrarStatus(erro.message, true);
+  } finally {
+    botao.disabled = false;
+  }
+}
+
+// Alterna entre as duas partes da tela
+function mostrarVisao(qual) {
+  const saida = qual === 'saida';
+  el('visao-saida').hidden = !saida;
+  el('visao-retorno').hidden = saida;
+  el('ver-saida').classList.toggle('divisao__item--ativa', saida);
+  el('ver-retorno').classList.toggle('divisao__item--ativa', !saida);
+  if (saida) carregarCargas();
+  else carregar();
+}
+
 // ===== Início =====
 document.addEventListener('DOMContentLoaded', async () => {
   if (!chave.ler()) {
@@ -645,5 +912,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   el('baixar-excel').addEventListener('click', baixarExcel);
 
-  carregar();
+  // Cargas: alternar entre as duas partes e baixar o Excel das cargas
+  el('ver-saida').addEventListener('click', () => mostrarVisao('saida'));
+  el('ver-retorno').addEventListener('click', () => mostrarVisao('retorno'));
+  el('carga-excel').addEventListener('click', () => baixarExcelCargas());
+
+  mostrarVisao('saida');
 });

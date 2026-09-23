@@ -27,6 +27,9 @@ router.get('/pedidos/:pedido', pedidos.detalhe);
 // Aba Despachos: acertos de carga (a rota do Excel vem antes da rota com :acerto)
 router.get('/despachos', despachos.lista);
 router.get('/despachos/excel', despachos.excel);
+router.get('/despachos/cargas', despachos.cargas);
+router.get('/despachos/cargas/excel', despachos.cargasExcel);
+router.get('/despachos/cargas/:carga', despachos.notasDaCarga);
 router.get('/despachos/:acerto', despachos.detalhe);
 
 // Contas a pagar (mesma chave do financeiro)

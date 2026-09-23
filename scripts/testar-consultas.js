@@ -50,6 +50,11 @@ const testes = [
       + `${semPessoa ? ` · ${semPessoa} sem pessoa identificada` : ''}`);
   }],
   ['Despachos (lista)', () => despachos.lista({})],
+  ['Despachos: cargas que saíram', async () => {
+    const { resumo } = await despachos.cargas({});
+    console.log(`       ${resumo.cargas ?? 0} cargas · ${resumo.em_rota ?? 0} em rota`
+      + ` · ${resumo.parciais ?? 0} acertadas em parte · ${resumo.acertadas ?? 0} acertadas`);
+  }],
   ['Administrativo: recebimentos detalhados (30 dias)', async () => {
     const fim = new Date().toISOString().slice(0, 10);
     const inicio = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);

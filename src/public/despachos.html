@@ -76,6 +76,55 @@
     </section>
 
     <div id="painel" hidden>
+      <!-- Duas pontas do despacho: o que saiu (faturamento) e o que voltou (acerto) -->
+      <nav class="divisao" aria-label="Parte do despacho">
+        <button type="button" id="ver-saida" class="divisao__item divisao__item--ativa">Saída (cargas)</button>
+        <button type="button" id="ver-retorno" class="divisao__item">Retorno (acertos)</button>
+      </nav>
+
+      <!-- ===== Saída: as cargas que deixaram a empresa ===== -->
+      <div id="visao-saida">
+        <section class="destaque">
+          <div class="painel-topo">
+            <div>
+              <h2>Valor que saiu nas cargas</h2>
+              <p id="carga-total" class="valor-grande">—</p>
+              <p id="carga-explica" class="explica"></p>
+            </div>
+            <dl class="indicadores">
+              <dt>Em rota</dt>
+              <dd id="carga-ind-rota">—</dd>
+              <dt>Acertadas em parte</dt>
+              <dd id="carga-ind-parcial">—</dd>
+              <dt>Acertadas</dt>
+              <dd id="carga-ind-acertada">—</dd>
+              <dt>Informado nos acertos</dt>
+              <dd id="carga-ind-informado">—</dd>
+            </dl>
+          </div>
+        </section>
+
+        <section class="cartoes" id="carga-cartoes" aria-label="Situação das cargas"></section>
+
+        <section class="bloco">
+          <div class="bloco-topo">
+            <h2 id="carga-titulo-lista">Cargas</h2>
+            <button id="carga-excel" type="button" class="botao-secundario">Baixar Excel</button>
+          </div>
+          <p class="bloco__descricao">Cada linha é uma carga que saiu. Clique na carga para ver as notas que foram nela
+            e quais já voltaram acertadas.</p>
+          <div class="tabela-rolagem">
+            <table class="tabela" id="tabela-cargas">
+              <thead></thead>
+              <tbody></tbody>
+              <tfoot></tfoot>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <!-- ===== Retorno: os acertos (como já era) ===== -->
+      <div id="visao-retorno" hidden>
       <!-- Número principal + indicadores -->
       <section class="destaque">
         <div class="painel-topo">
@@ -117,6 +166,7 @@
           </table>
         </div>
       </section>
+      </div>
     </div>
   </main>
 </body>
