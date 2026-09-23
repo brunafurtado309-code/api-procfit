@@ -55,7 +55,7 @@
       </div>
 
       <form id="filtros" class="filtros">
-        <label>Recebimento de <input type="date" id="inicio"></label>
+        <label>Período de <input type="date" id="inicio"></label>
         <label>até <input type="date" id="fim"></label>
         <div class="atalhos" id="atalhos" aria-label="Períodos prontos">
           <button type="button" class="botao-secundario" data-dias="0">Hoje</button>
@@ -78,6 +78,13 @@
         <label class="campo">
           <span>Forma</span>
           <select id="filtro-forma"><option value="">Todas</option></select>
+        </label>
+        <label class="campo">
+          <span>Contar o período pela data</span>
+          <select id="filtro-base">
+            <option value="recebimento">do recebimento</option>
+            <option value="lancamento">do lançamento no PROCFIT</option>
+          </select>
         </label>
       </div>
 

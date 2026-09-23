@@ -767,7 +767,8 @@ async function abrirFicha(codigo, nome) {
         linha.append(
           celula(dataBR(t.vencimento)),
           celula(SITUACAO_TEXTO[t.situacao] ?? t.situacao),
-          celula(t.nota ?? '—'),
+          // Sem nota: mostra de onde o título veio (lançado à mão, importado, cartão...)
+          t.nota ? celula(t.nota) : celula(t.origem ?? 'sem nota', 'esquerda'),
           celulaPedido(t.pedido),
           celula(t.titulo ?? '—'),
           celula(dinheiro(t.valor)),

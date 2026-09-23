@@ -75,10 +75,14 @@ const TITULOS = `
       CASE WHEN ADQ.ADQUIRENTE_ID IS NOT NULL THEN 'ADQUIRENTE' ELSE 'CLIENTE' END AS tipo_devedor,
       ADQ.DESCRICAO                           AS adquirente,
       T.TAB_MASTER_ORIGEM                     AS origem_id,
+      -- De onde o título veio (só o de nota fiscal tem nota e pedido)
       CASE
         WHEN T.TAB_MASTER_ORIGEM = ${TAB_NOTA_FISCAL} THEN 'Nota fiscal'
-        WHEN ADQ.ADQUIRENTE_ID IS NOT NULL           THEN 'Recebível de cartão'
-        ELSE 'Sem nota'
+        WHEN ADQ.ADQUIRENTE_ID IS NOT NULL            THEN 'Recebível de cartão'
+        WHEN T.TAB_MASTER_ORIGEM = 757539             THEN 'Lançado à mão (N.IDENT.)'
+        WHEN T.TAB_MASTER_ORIGEM = 750078             THEN 'Importado do sistema antigo'
+        WHEN T.TAB_MASTER_ORIGEM IS NULL              THEN 'Sem origem registrada'
+        ELSE CONCAT('Lançado sem nota (tela ', T.TAB_MASTER_ORIGEM, ')')
       END                                     AS origem,
       CONVERT(varchar(10), T.EMISSAO, 23)     AS emissao,
       CONVERT(varchar(10), T.VENCIMENTO, 23)  AS vencimento,
@@ -643,13 +647,17 @@ async function recebimentos(filtros) {
     .input('origem', sql.Int, filtros.origem ?? null)
     .input('usuario', sql.Int, filtros.usuario ?? null)
     .input('forma', sql.Int, filtros.forma ?? null);
+  // A data que manda no período: a do recebimento informado ou a do lançamento no PROCFIT
+  const dataDoPeriodo = filtros.base === 'lancamento'
+    ? 'COALESCE(RB.DATA_HORA, RC.DATA_HORA, CF.DATA_HORA, RD.DATA_HORA, TX.DATA)'
+    : 'TX.DATA';
 
   const { recordset } = await request.query(`
     ${SELECT_RECEBIMENTOS}
     WHERE TX.TRANSACAO_FINANCEIRA = 12
       AND ISNULL(TX.DEBITO, 0) > 0
-      AND TX.DATA >= CAST(@inicio AS date)
-      AND TX.DATA <  DATEADD(day, 1, CAST(@fim AS date))
+      AND ${dataDoPeriodo} >= CAST(@inicio AS date)
+      AND ${dataDoPeriodo} <  DATEADD(day, 1, CAST(@fim AS date))
       AND (@origem IS NULL OR TX.TAB_MASTER_ORIGEM = @origem)
       AND (@usuario IS NULL
         OR COALESCE(RB.USUARIO_LOGADO, RC.USUARIO_LOGADO, CF.USUARIO_LOGADO, RD.USUARIO_LOGADO) = @usuario)

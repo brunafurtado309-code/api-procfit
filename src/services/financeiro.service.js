@@ -176,6 +176,12 @@ function filtrosRecebimentos(query) {
     filtros.forma = codigo;
     filtros.formaNome = query.forma;
   }
+  if (query.base) {
+    if (!['recebimento', 'lancamento'].includes(query.base)) {
+      throw new AppError('"base" deve ser recebimento ou lancamento');
+    }
+    filtros.base = query.base;
+  }
   filtros.direcao = query.direcao === 'asc' ? 'asc' : 'desc';
   return filtros;
 }
@@ -207,9 +213,11 @@ async function exportarRecebimentos(query) {
   const workbook = excel.novaPlanilha();
   excel.adicionarTabela(workbook, 'Recebimentos', {
     titulo: 'Recebimentos | Belo Norte',
-    subtitulo: `${lista.length} baixas de título · recebimento de ${dataBR(filtros.inicio)} até ${dataBR(filtros.fim)}`
+    subtitulo: `${lista.length} baixas de título · ${filtros.base === 'lancamento' ? 'lançamento' : 'recebimento'}`
+      + ` de ${dataBR(filtros.inicio)} até ${dataBR(filtros.fim)}`
       + `${filtros.origem ? ` · ${ORIGENS_TEXTO[String(filtros.origem)]}` : ''}`
       + `${filtros.formaNome ? ` · ${filtros.formaNome}` : ''}`
+      + `${filtros.base === 'lancamento' ? ' (período pela data do lançamento)' : ''}`
       + `${filtros.busca ? ` · pesquisa "${filtros.busca}"` : ''} · gerado em ${new Date().toLocaleString('pt-BR')}`,
     colunas: COLUNAS_RECEBIMENTOS,
     linhas: lista,

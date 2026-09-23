@@ -51,6 +51,7 @@ const filtrosAtuais = () => ({
   inicio: el('inicio').value || null,
   fim: el('fim').value || null,
   busca: el('pesquisa-termo').value.trim() || null,
+  base: el('filtro-base').value,
 });
 
 function mostrarStatus(texto, erro = false) {
@@ -104,7 +105,14 @@ async function carregar() {
     mostrarPessoas();
     mostrarLista();
     el('painel').hidden = false;
-    mostrarStatus(`atualizado às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`);
+    const termo = el('pesquisa-termo').value.trim();
+    if (!lista.length && termo) {
+      // Caso comum: o recebimento existe, mas fora do período (lançado hoje, recebido meses atrás)
+      mostrarStatus(`Nada encontrado para "${termo}" neste período. Tente ampliar as datas ou contar o período `
+        + 'pela data do lançamento.', true);
+    } else {
+      mostrarStatus(`atualizado às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`);
+    }
   } catch (erro) {
     mostrarStatus(erro.message, true);
   }
@@ -547,6 +555,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     mostrarPessoas();
     mostrarLista();
   });
+  el('filtro-base').addEventListener('change', () => carregar());
   el('filtro-forma').addEventListener('change', (evento) => {
     formaAtual = evento.target.value || null;
     loteAberto = null;
