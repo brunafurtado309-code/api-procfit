@@ -811,7 +811,24 @@ function desenharListasDaFicha() {
         celulaPedido(t.pedido),
         celula(t.titulo ?? '—'),
         celula(dinheiro(t.valor)),
-        celula(dinheiro(t.recebido)),
+        // Recebido com o rastro da baixa: quando, por onde e quem lançou.
+        // Quitado sem baixa = veio quitado da importação, não foi pago aqui.
+        (() => {
+          const recebido = celula(dinheiro(t.recebido));
+          const nota = document.createElement('span');
+          if (t.baixa_dia) {
+            nota.className = 'qtd';
+            nota.textContent = `baixado ${dataBR(t.baixa_dia)}`
+              + `${t.baixa_origem ? ` · ${t.baixa_origem}` : ''}`
+              + `${t.baixa_usuario ? ` · ${t.baixa_usuario}` : ''}`;
+            recebido.append(nota);
+          } else if (t.situacao === 'QUITADO') {
+            nota.className = 'qtd negativo';
+            nota.textContent = 'sem baixa registrada no PROCFIT';
+            recebido.append(nota);
+          }
+          return recebido;
+        })(),
         celula(dinheiro(t.pendente)),
       );
       return linha;

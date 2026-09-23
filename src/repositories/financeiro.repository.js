@@ -433,13 +433,36 @@ async function fichaCliente(entidade, { meses = 12 } = {}) {
     HAVING SUM(VA.QUANTIDADE) > 0
     ORDER BY valor DESC;
 
-    -- 5. Títulos do cliente (abertos primeiro)
+    -- 5. Títulos do cliente (abertos primeiro), com a baixa mais recente de cada um:
+    --    quando foi, por qual tela e quem lançou. Título quitado SEM baixa registrada
+    --    veio quitado da carga inicial (não foi pago aqui dentro).
     ${SALDOS},
     ${TITULOS}
-    SELECT TOP 100 *
-    FROM TITULOS
-    WHERE cod_cliente = @entidade
-    ORDER BY CASE WHEN situacao = 'QUITADO' THEN 1 ELSE 0 END, vencimento DESC;
+    SELECT TOP 100 T.*,
+      CONVERT(varchar(10), B.DATA, 23)                                  AS baixa_dia,
+      COALESCE(NULLIF(LTRIM(RTRIM(U.NOME)), ''), LTRIM(RTRIM(U.LOGIN)))  AS baixa_usuario,
+      CASE B.TAB_MASTER_ORIGEM
+        WHEN ${ORIGENS_RECEBIMENTO.bancos.id}   THEN '${ORIGENS_RECEBIMENTO.bancos.nome}'
+        WHEN ${ORIGENS_RECEBIMENTO.caixa.id}    THEN '${ORIGENS_RECEBIMENTO.caixa.nome}'
+        WHEN ${ORIGENS_RECEBIMENTO.cofre.id}    THEN '${ORIGENS_RECEBIMENTO.cofre.nome}'
+        WHEN ${ORIGENS_RECEBIMENTO.despacho.id} THEN '${ORIGENS_RECEBIMENTO.despacho.nome}'
+        WHEN NULL THEN NULL
+        ELSE CONCAT('Outra tela (', B.TAB_MASTER_ORIGEM, ')')
+      END                                                               AS baixa_origem
+    FROM TITULOS T
+    OUTER APPLY (
+      SELECT TOP 1 TX.DATA, TX.TAB_MASTER_ORIGEM, TX.REG_MASTER_ORIGEM
+      FROM TITULOS_RECEBER_TRANSACOES TX WITH (NOLOCK)
+      WHERE TX.TITULO_RECEBER = T.id AND TX.TRANSACAO_FINANCEIRA = 12 AND ISNULL(TX.DEBITO, 0) > 0
+      ORDER BY TX.DATA DESC
+    ) B
+    LEFT JOIN RECEBIMENTOS_BANCOS RB WITH (NOLOCK)
+      ON B.TAB_MASTER_ORIGEM = ${ORIGENS_RECEBIMENTO.bancos.id} AND RB.RECEBIMENTO_BANCO = B.REG_MASTER_ORIGEM
+    LEFT JOIN RECEBIMENTOS_CAIXA RC WITH (NOLOCK)
+      ON B.TAB_MASTER_ORIGEM = ${ORIGENS_RECEBIMENTO.caixa.id} AND RC.RECEBIMENTO_CAIXA = B.REG_MASTER_ORIGEM
+    LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = COALESCE(RB.USUARIO_LOGADO, RC.USUARIO_LOGADO)
+    WHERE T.cod_cliente = @entidade
+    ORDER BY CASE WHEN T.situacao = 'QUITADO' THEN 1 ELSE 0 END, T.vencimento DESC;
 
     -- 6. Pedidos do cliente (inclusive os que ainda não viraram título)
     SELECT TOP 100
