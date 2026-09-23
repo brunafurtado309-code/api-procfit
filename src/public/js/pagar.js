@@ -121,6 +121,9 @@ function marcarAtalho(ativo) {
 
 // ===== Carregar =====
 async function carregar() {
+  estado.salvar('pagar', {
+    ...filtrosAtuais(), pessoa: pessoaAtual, pagInicio: el('pag-inicio').value, pagFim: el('pag-fim').value,
+  }); // filtrosAtuais já inclui a situação do cartão
   mostrarStatus('Carregando o contas a pagar…');
   try {
     const dados = await buscar('pagar', filtrosAtuais());
@@ -738,6 +741,9 @@ function comparar(a, b, { coluna, direcao }) {
 }
 
 function mostrarPagamentos() {
+  estado.salvar('pagar', {
+    ...filtrosAtuais(), pessoa: pessoaAtual, pagInicio: el('pag-inicio').value, pagFim: el('pag-fim').value,
+  });
   const daPessoa = (item) => (pessoaAtual ? chavePessoa(item) === pessoaAtual : true);
   const entradas = entradasLista.filter(daPessoa).filter(daForma);
   const saidas = pagamentosLista.filter(daPessoa).filter(daForma);
@@ -1038,6 +1044,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     el('limpar-pesquisa').hidden = true;
     carregar();
   });
+  // Volta como estava antes de sair da tela
+  const guardado = estado.aplicarCampos('pagar', {
+    inicio: 'inicio', fim: 'fim', busca: 'pesquisa-termo', pagInicio: 'pag-inicio', pagFim: 'pag-fim',
+  });
+  if (guardado.situacao && CARTOES.some((c) => c.id === guardado.situacao)) cartaoAtual = guardado.situacao;
+  if (guardado.pessoa) pessoaAtual = String(guardado.pessoa);
+  el('limpar-pesquisa').hidden = !el('pesquisa-termo').value.trim();
+
   el('baixar-excel').addEventListener('click', baixarExcel);
   // Indicador "Fornecedores": abre a lista completa (clique ou Enter)
   el('ind-fornecedores').addEventListener('click', abrirFornecedores);

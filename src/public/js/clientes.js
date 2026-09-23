@@ -79,6 +79,7 @@ function comAuxiliar(texto, auxiliar, classe, classeAuxiliar = 'qtd') {
 
 // ===== Carregar =====
 async function carregar() {
+  estado.salvar('clientes', { busca: el('pesquisa-termo').value.trim(), classe: filtroClasse, risco: soRisco });
   mostrarStatus('Carregando os clientes…');
   try {
     const dados = await buscar('clientes-credito', { busca: el('pesquisa-termo').value.trim() || null });
@@ -246,6 +247,7 @@ function celulaCliente(c) {
 }
 
 function mostrarLista() {
+  estado.salvar('clientes', { busca: el('pesquisa-termo').value.trim(), classe: filtroClasse, risco: soRisco });
   mostrarMarcadores();
   const lista = ordenados(visiveis());
   const tabela = el('tabela-clientes-credito');
@@ -352,6 +354,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     el('limpar-pesquisa').hidden = true;
     carregar();
   });
+  // Volta como estava (pesquisa e classe escolhida)
+  const guardado = estado.aplicarCampos('clientes', { busca: 'pesquisa-termo' });
+  if (guardado.classe) filtroClasse = guardado.classe;
+  if (guardado.risco) soRisco = true;
+  el('limpar-pesquisa').hidden = !el('pesquisa-termo').value.trim();
+
   el('baixar-excel').addEventListener('click', baixarExcel);
   carregar();
 });

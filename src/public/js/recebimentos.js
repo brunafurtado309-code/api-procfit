@@ -95,6 +95,9 @@ function periodoPronto(nome) {
 
 // ===== Carregar =====
 async function carregar() {
+  estado.salvar('recebimentos', {
+    ...filtrosAtuais(), origem: origemAtual, usuario: pessoaAtual, forma: formaAtual,
+  });
   mostrarStatus('Carregando os recebimentos…');
   try {
     lista = await buscar('recebimentos', filtrosAtuais());
@@ -322,6 +325,10 @@ function mostrarMarcadores() {
 }
 
 function mostrarLista() {
+  // Guarda os filtros escolhidos na tela (origem, pessoa, forma) para quando você voltar
+  estado.salvar('recebimentos', {
+    ...filtrosAtuais(), origem: origemAtual, usuario: pessoaAtual, forma: formaAtual,
+  });
   mostrarMarcadores();
   const itens = visiveis();
 
@@ -507,9 +514,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  // Volta como estava (período, pesquisa e filtros) ou abre nos últimos 30 dias
   const periodo = periodoPronto('30');
   el('inicio').value = periodo.inicio;
   el('fim').value = periodo.fim;
+  const guardado = estado.aplicarCampos('recebimentos', {
+    inicio: 'inicio', fim: 'fim', busca: 'pesquisa-termo', base: 'filtro-base',
+  });
+  if (guardado.origem) origemAtual = Number(guardado.origem);
+  if (guardado.usuario) pessoaAtual = Number(guardado.usuario);
+  if (guardado.forma) formaAtual = guardado.forma;
+  el('limpar-pesquisa').hidden = !el('pesquisa-termo').value.trim();
 
   el('trocar-chave').addEventListener('click', () => {
     chave.apagar();

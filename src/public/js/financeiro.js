@@ -624,7 +624,23 @@ function mostrarMarcadores() {
 // ===== Carregamento =====
 let carregando = false;
 
+// Guarda os filtros desta tela para quando você voltar de um cliente ou pedido
+function guardarEstado() {
+  estado.salvar('financeiro', {
+    aba: abaAtual,
+    cartao: cartaoAtual,
+    inicio: valorCampo('inicio'),
+    fim: valorCampo('fim'),
+    busca: valorCampo('busca') ?? el('busca')?.value,
+    modalidade: valorCampo('modalidade'),
+    origem: valorCampo('origem'),
+    devedor: valorCampo('devedor'),
+    pagina,
+  });
+}
+
 async function carregar() {
+  guardarEstado();
   if (carregando) return;
   carregando = true;
   mostrarStatus('Carregando…');
@@ -989,6 +1005,19 @@ document.addEventListener('DOMContentLoaded', () => {
   if (clienteNoEndereco) {
     setTimeout(() => abrirFicha(Number(clienteNoEndereco[1])), 300);
   }
+  // Volta a tela como estava antes de você entrar num cliente ou pedido
+  const guardado = estado.aplicarCampos('financeiro', {
+    inicio: 'inicio', fim: 'fim', busca: 'busca', modalidade: 'modalidade', origem: 'origem', devedor: 'devedor',
+  });
+  if (ABAS[guardado.aba]) {
+    abaAtual = guardado.aba;
+    for (const aba of el('abas').querySelectorAll('.aba[data-aba]')) {
+      aba.classList.toggle('aba--ativa', aba.dataset.aba === abaAtual);
+    }
+    el('modalidade').disabled = ABAS[abaAtual].modalidade !== null;
+  }
+  if (guardado.cartao) cartaoAtual = guardado.cartao;
+
   const abaInicial = window.location.hash.slice(1);
   if (ABAS[abaInicial]) {
     abaAtual = abaInicial;
@@ -1149,7 +1178,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  el('ficha-fechar').addEventListener('click', () => el('ficha').close());
+  // Fechar a ficha: se você veio de outra tela (Recebimentos, Clientes), volta para ela
+  const fecharFicha = () => {
+    const veioDeFora = window.location.hash.startsWith('#cliente-');
+    el('ficha').close();
+    if (veioDeFora && window.history.length > 1) window.history.back();
+  };
+  el('ficha-fechar').addEventListener('click', fecharFicha);
+  el('ficha').addEventListener('cancel', (evento) => {
+    // Esc também volta para a tela anterior
+    if (window.location.hash.startsWith('#cliente-') && window.history.length > 1) {
+      evento.preventDefault();
+      fecharFicha();
+    }
+  });
 
   el('anterior').addEventListener('click', () => {
     if (pagina <= 1) return;

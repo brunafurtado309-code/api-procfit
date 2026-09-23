@@ -108,6 +108,7 @@ function periodoPronto(nome) {
 
 // ===== Carregar =====
 async function carregar() {
+  estado.salvar('admin', { ...filtrosAtuais(), busca: el('pesquisa-termo').value.trim() });
   mostrarStatus('Carregando a atividade dos usuários…');
   try {
     const dados = await buscar('usuarios', filtrosAtuais());
@@ -427,6 +428,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const periodo = periodoPronto('30');
   el('inicio').value = periodo.inicio;
   el('fim').value = periodo.fim;
+  // Volta como estava (período e pesquisa)
+  estado.aplicarCampos('admin', { inicio: 'inicio', fim: 'fim', busca: 'pesquisa-termo' });
+  el('limpar-pesquisa').hidden = !el('pesquisa-termo').value.trim();
 
   el('trocar-chave').addEventListener('click', () => {
     chave.apagar();

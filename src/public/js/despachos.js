@@ -114,6 +114,7 @@ function marcarAtalho(ativo) {
 
 // ===== Carregar =====
 async function carregar() {
+  estado.salvar('despachos', { ...filtrosAtuais(), situacao: situacaoAtual, visao: 'retorno' });
   mostrarStatus('Carregando os acertos…');
   try {
     const { resumo, lista } = await buscar('despachos', filtrosAtuais());
@@ -600,6 +601,7 @@ let cargaAberta = null;
 let ordemCargas = { coluna: 'saida', direcao: 'desc' };
 
 async function carregarCargas() {
+  estado.salvar('despachos', { ...filtrosAtuais(), situacaoCarga: cargaSituacao, visao: 'saida' });
   mostrarStatus('Carregando as cargas…');
   try {
     const dados = await buscar('despachos/cargas', { ...filtrosAtuais(), situacao: cargaSituacao });
@@ -657,6 +659,7 @@ function mostrarCartoesCargas(r) {
 }
 
 function mostrarCargas() {
+  estado.salvar('despachos', { ...filtrosAtuais(), situacaoCarga: cargaSituacao, visao: 'saida' });
   const fator = ordemCargas.direcao === 'asc' ? 1 : -1;
   const lista = [...cargas].sort((a, b) => {
     const x = a[ordemCargas.coluna];
@@ -921,5 +924,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   el('ver-retorno').addEventListener('click', () => mostrarVisao('retorno'));
   el('carga-excel').addEventListener('click', () => baixarExcelCargas());
 
-  mostrarVisao('saida');
+  // Volta como estava: mesma parte da tela (saída ou retorno) e mesmos filtros
+  const guardado = estado.aplicarCampos('despachos', { inicio: 'inicio', fim: 'fim', busca: 'pesquisa-termo' });
+  if (guardado.situacao) situacaoAtual = guardado.situacao;
+  if (guardado.situacaoCarga) cargaSituacao = guardado.situacaoCarga;
+  el('limpar-pesquisa').hidden = !el('pesquisa-termo').value.trim();
+
+  mostrarVisao(guardado.visao === 'retorno' ? 'retorno' : 'saida');
 });
