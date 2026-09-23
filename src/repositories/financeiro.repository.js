@@ -432,6 +432,14 @@ async function fichaCliente(entidade, { meses = 12 } = {}) {
     FROM TITULOS
     WHERE cod_cliente = @entidade
     ORDER BY CASE WHEN situacao = 'QUITADO' THEN 1 ELSE 0 END, vencimento DESC;
+
+    -- 6. Recebimentos do cliente (todas as origens), para a auditoria
+    ${SELECT_RECEBIMENTOS}
+    WHERE TX.TRANSACAO_FINANCEIRA = 12
+      AND ISNULL(TX.DEBITO, 0) > 0
+      AND T.ENTIDADE = @entidade
+      AND TX.DATA >= DATEADD(month, -@desde, CAST(GETDATE() AS date))
+    ORDER BY TX.DATA DESC;
   `);
 
   return {
@@ -440,6 +448,7 @@ async function fichaCliente(entidade, { meses = 12 } = {}) {
     compras: recordsets[2][0],
     produtos: recordsets[3],
     titulos: recordsets[4],
+    recebimentos: recordsets[5],
   };
 }
 
@@ -574,20 +583,8 @@ const ORDENACAO_RECEBIMENTOS = {
   vencimento: 'T.VENCIMENTO',
 };
 
-async function recebimentos(filtros) {
-  const pool = await getPool();
-  const coluna = ORDENACAO_RECEBIMENTOS[filtros.ordem] ?? 'TX.DATA';
-  const direcao = filtros.direcao === 'asc' ? 'ASC' : 'DESC';
-  const request = pool
-    .request()
-    .input('inicio', sql.VarChar(10), filtros.inicio)
-    .input('fim', sql.VarChar(10), filtros.fim)
-    .input('busca', sql.VarChar(60), filtros.busca ?? null)
-    .input('origem', sql.Int, filtros.origem ?? null)
-    .input('usuario', sql.Int, filtros.usuario ?? null)
-    .input('forma', sql.Int, filtros.forma ?? null);
-
-  const { recordset } = await request.query(`
+// O SELECT dos recebimentos é usado na aba Recebimentos e na ficha do cliente
+const SELECT_RECEBIMENTOS = `
     SELECT TOP 20000
       CONVERT(varchar(10), TX.DATA, 23)                                  AS dia,
       CONVERT(varchar(16), COALESCE(RB.DATA_HORA, RC.DATA_HORA, CF.DATA_HORA, RD.DATA_HORA), 120) AS lancado_em,
@@ -632,7 +629,23 @@ async function recebimentos(filtros) {
     LEFT JOIN RECEBIMENTOS_FATURAMENTO_DESPACHO RD WITH (NOLOCK)
       ON RD.RECEBIMENTO_FATURAMENTO_DESPACHO = DT.RECEBIMENTO_FATURAMENTO_DESPACHO
     LEFT JOIN USUARIOS U WITH (NOLOCK)
-      ON U.USUARIO = COALESCE(RB.USUARIO_LOGADO, RC.USUARIO_LOGADO, CF.USUARIO_LOGADO, RD.USUARIO_LOGADO)
+      ON U.USUARIO = COALESCE(RB.USUARIO_LOGADO, RC.USUARIO_LOGADO, CF.USUARIO_LOGADO, RD.USUARIO_LOGADO)`;
+
+async function recebimentos(filtros) {
+  const pool = await getPool();
+  const coluna = ORDENACAO_RECEBIMENTOS[filtros.ordem] ?? 'TX.DATA';
+  const direcao = filtros.direcao === 'asc' ? 'ASC' : 'DESC';
+  const request = pool
+    .request()
+    .input('inicio', sql.VarChar(10), filtros.inicio)
+    .input('fim', sql.VarChar(10), filtros.fim)
+    .input('busca', sql.VarChar(60), filtros.busca ?? null)
+    .input('origem', sql.Int, filtros.origem ?? null)
+    .input('usuario', sql.Int, filtros.usuario ?? null)
+    .input('forma', sql.Int, filtros.forma ?? null);
+
+  const { recordset } = await request.query(`
+    ${SELECT_RECEBIMENTOS}
     WHERE TX.TRANSACAO_FINANCEIRA = 12
       AND ISNULL(TX.DEBITO, 0) > 0
       AND TX.DATA >= CAST(@inicio AS date)

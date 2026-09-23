@@ -389,6 +389,22 @@ function mostrarLista() {
   tabela.tFoot.replaceChildren(rodape);
 }
 
+// Nome do cliente clicável: abre a ficha dele no contas a receber (auditoria completa)
+function celulaCliente(r) {
+  const botao = document.createElement('button');
+  botao.type = 'button';
+  botao.className = 'link-pedido';
+  botao.textContent = r.cliente ?? `Cliente ${r.cod_cliente}`;
+  botao.title = 'Ver a ficha do cliente: títulos, compras e recebimentos';
+  botao.addEventListener('click', (evento) => {
+    evento.stopPropagation();
+    window.location.href = `financeiro.html#cliente-${r.cod_cliente}`;
+  });
+  const celula = td(botao, 'esquerda');
+  celula.append(span(`código ${r.cod_cliente}`, 'qtd'));
+  return celula;
+}
+
 // Títulos de um lançamento: cliente, nota, pedido, forma e valor
 function detalheDoLote(g) {
   const linha = document.createElement('tr');
@@ -413,7 +429,7 @@ function detalheDoLote(g) {
     const notaPedido = td(r.nota ? `NF ${r.nota}` : 'sem nota', 'esquerda');
     if (r.pedido) notaPedido.append(' · ', pedidoJanela.link(r.pedido));
     tr.append(
-      comAuxiliar(r.cliente ?? `Cliente ${r.cod_cliente}`, `código ${r.cod_cliente}`, 'esquerda'),
+      celulaCliente(r),
       td(r.titulo ?? '—', 'esquerda sem-quebra'),
       notaPedido,
       td(dataBR(r.vencimento), 'esquerda sem-quebra'),

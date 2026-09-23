@@ -690,6 +690,31 @@ async function carregar() {
 // ===== Ficha do cliente =====
 const SITUACAO_TEXTO = { ABERTO: 'Em aberto', PARCIAL: 'Baixa parcial', QUITADO: 'Quitado' };
 
+// Baixa um arquivo da API (a chave vai no cabeçalho, por isso não dá para usar link comum)
+async function baixarArquivo(url, nomePadrao, botao) {
+  if (botao) botao.disabled = true;
+  try {
+    const resposta = await fetch(url, { headers: { 'x-api-key': chave.ler() ?? '' } });
+    if (!resposta.ok) {
+      const corpo = await resposta.json().catch(() => ({}));
+      throw new Error(corpo.erro || 'Não foi possível gerar a planilha.');
+    }
+    const cabecalho = resposta.headers.get('Content-Disposition') || '';
+    const nomeArquivo = (cabecalho.match(/filename="([^"]+)"/) || [])[1] || nomePadrao;
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(await resposta.blob());
+    link.download = nomeArquivo;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  } catch (erro) {
+    el('ficha-status').textContent = erro.message;
+  } finally {
+    if (botao) botao.disabled = false;
+  }
+}
+
 async function abrirFicha(codigo, nome) {
   el('ficha-nome').textContent = nome ?? `Cliente ${codigo}`;
   el('ficha-sub').textContent = `Código ${codigo}`;
@@ -753,6 +778,50 @@ async function abrirFicha(codigo, nome) {
       }),
     );
 
+    // Recebimentos do cliente: a auditoria de tudo o que ele já pagou e por qual caminho
+    const recebimentos = ficha.recebimentos ?? [];
+    el('ficha-recebimentos').querySelector('tbody').replaceChildren(
+      ...(recebimentos.length ? recebimentos.map((r) => {
+        const linha = document.createElement('tr');
+        const parcial = Number(r.recebido) + 0.009 < Number(r.valor_titulo);
+        const notaPedido = celula(r.nota ? `NF ${r.nota}` : 'sem nota', 'esquerda');
+        if (r.pedido) notaPedido.append(' · ', pedidoJanela.link(r.pedido));
+        const recebido = celula(dinheiro(r.recebido));
+        if (parcial) {
+          const nota = document.createElement('span');
+          nota.className = 'qtd negativo';
+          nota.textContent = `parcial de ${dinheiro(r.valor_titulo)}`;
+          recebido.append(nota);
+        }
+        linha.append(
+          celula(dataBR(r.dia)),
+          celula(r.origem ?? '—', 'esquerda'),
+          celula(r.usuario_nome ?? 'Não identificado', 'esquerda'),
+          celula(r.titulo ?? '—'),
+          notaPedido,
+          celula(r.forma ?? '—', 'esquerda'),
+          recebido,
+        );
+        return linha;
+      }) : [(() => {
+        const linha = document.createElement('tr');
+        const vazio = celula('Nenhum recebimento nos últimos 12 meses.', 'vazio');
+        vazio.colSpan = 7;
+        linha.append(vazio);
+        return linha;
+      })()]),
+    );
+    // Excel só deste cliente (usa a pesquisa por código na aba Recebimentos)
+    el('ficha-excel-recebimentos').onclick = () => {
+      const hoje = new Date();
+      const inicio = new Date(hoje.getFullYear() - 1, hoje.getMonth(), hoje.getDate());
+      const url = new URL('/financeiro/recebimentos/excel', window.location.origin);
+      url.searchParams.set('busca', String(codigo));
+      url.searchParams.set('inicio', `${inicio.getFullYear()}-${String(inicio.getMonth() + 1).padStart(2, '0')}-${String(inicio.getDate()).padStart(2, '0')}`);
+      url.searchParams.set('fim', `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`);
+      baixarArquivo(url, `recebimentos-cliente-${codigo}.xlsx`, el('ficha-excel-recebimentos'));
+    };
+
     el('ficha-status').textContent = '';
     el('ficha-corpo').hidden = false;
   } catch (erro) {
@@ -803,6 +872,11 @@ document.addEventListener('DOMContentLoaded', () => {
   pedidoJanela.configurar({ setor: 'financeiro' });
 
   // Aba pedida no endereço (ex.: financeiro.html#boletos, vindo da página de Despachos)
+  // Endereço com #cliente-123 (vindo da aba Recebimentos): abre a ficha desse cliente
+  const clienteNoEndereco = window.location.hash.match(/^#cliente-(\d+)$/);
+  if (clienteNoEndereco) {
+    setTimeout(() => abrirFicha(Number(clienteNoEndereco[1])), 300);
+  }
   const abaInicial = window.location.hash.slice(1);
   if (ABAS[abaInicial]) {
     abaAtual = abaInicial;
