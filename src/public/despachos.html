@@ -78,7 +78,7 @@
     <div id="painel" hidden>
       <!-- Duas pontas do despacho: o que saiu (faturamento) e o que voltou (acerto) -->
       <nav class="divisao" aria-label="Parte do despacho">
-        <button type="button" id="ver-saida" class="divisao__item divisao__item--ativa">Saída (cargas)</button>
+        <button type="button" id="ver-saida" class="divisao__item divisao__item--ativa">Saída (despachos)</button>
         <button type="button" id="ver-retorno" class="divisao__item">Retorno (acertos)</button>
       </nav>
 
@@ -108,10 +108,10 @@
 
         <section class="bloco">
           <div class="bloco-topo">
-            <h2 id="carga-titulo-lista">Cargas</h2>
+            <h2 id="carga-titulo-lista">Despachos</h2>
             <button id="carga-excel" type="button" class="botao-secundario">Baixar Excel</button>
           </div>
-          <p class="bloco__descricao">Cada linha é uma carga que saiu. Clique na carga para ver as notas que foram nela
+          <p class="bloco__descricao">Cada linha é um despacho que saiu. Clique no despacho para ver as notas que foram nele
             e quais já voltaram acertadas.</p>
           <div class="tabela-rolagem">
             <table class="tabela" id="tabela-cargas">

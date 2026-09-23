@@ -664,11 +664,11 @@ function mostrarCargas() {
     if (typeof x === 'number' || typeof y === 'number') return ((Number(x) || 0) - (Number(y) || 0)) * fator;
     return String(x ?? '').localeCompare(String(y ?? ''), 'pt-BR', { sensitivity: 'base' }) * fator;
   });
-  el('carga-titulo-lista').textContent = `Cargas (${inteiro(lista.length)})`;
+  el('carga-titulo-lista').textContent = `Despachos (${inteiro(lista.length)})`;
 
   const tabela = el('tabela-cargas');
   const cab = document.createElement('tr');
-  for (const [texto, campo, esquerda] of [['Carga', 'carga', true], ['Saída', 'saida', true], ['Rota', 'rota', true],
+  for (const [texto, campo, esquerda] of [['Despacho', 'carga', true], ['Saída', 'saida', true], ['Rota', 'rota', true],
     ['Conferente', 'conferente', true], ['Notas', 'notas'], ['Valor que saiu', 'valor'],
     ['Acertado', 'informado'], ['Situação', 'situacao', true], ['', null, true]]) {
     const th = document.createElement('th');
@@ -700,7 +700,7 @@ function mostrarCargas() {
   const linhas = [];
   if (!lista.length) {
     const linha = document.createElement('tr');
-    const vazio = td('Nenhuma carga com esses filtros.', 'vazio');
+    const vazio = td('Nenhum despacho com esses filtros.', 'vazio');
     vazio.colSpan = 9;
     linha.append(vazio);
     linhas.push(linha);
@@ -717,7 +717,11 @@ function mostrarCargas() {
     botao.setAttribute('aria-label', aberta ? 'Fechar a carga' : 'Ver as notas da carga');
     botao.textContent = aberta ? '▾' : '▸';
     linha.append(
-      comAuxiliar(`Carga ${c.carga}`, c.acerto ? `acerto ${c.acerto}` : 'sem acerto', 'esquerda sem-quebra'),
+      // Número do despacho (é o que o conferente usa), com o acerto e o conferente embaixo
+      comAuxiliar(`Despacho ${c.carga}`,
+        [c.acerto ? `acerto ${c.acerto}` : 'sem acerto',
+          c.cod_conferente ? `conferente ${c.cod_conferente}` : null].filter(Boolean).join(' · '),
+        'esquerda sem-quebra'),
       comAuxiliar(dataBR(c.saida), c.recebimento ? `voltou ${dataBR(c.recebimento)}` : null, 'esquerda sem-quebra'),
       td(c.rota || '—', 'esquerda'),
       comAuxiliar(c.conferente ?? (c.cod_conferente ? `conferente ${c.cod_conferente}` : '—'),
@@ -751,7 +755,7 @@ function mostrarCargas() {
 
   const soma = (campo) => lista.reduce((t, c) => t + (Number(c[campo]) || 0), 0);
   const rodape = document.createElement('tr');
-  const rotulo = td(`Total (${plural(lista.length, 'carga', 'cargas')})`, 'esquerda');
+  const rotulo = td(`Total (${plural(lista.length, 'despacho', 'despachos')})`, 'esquerda');
   rotulo.colSpan = 4;
   rodape.append(rotulo, td(inteiro(soma('notas'))), td(dinheiro(soma('valor'))), td(dinheiro(soma('informado'))),
     td(''), td(''));
