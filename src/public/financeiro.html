@@ -216,6 +216,15 @@
       <div id="ficha-corpo" class="detalhe__corpo ficha-corpo" hidden>
         <section class="cartoes" id="ficha-cartoes"></section>
 
+        <!-- Filtros da ficha: valem para títulos, pedidos e recebimentos -->
+        <form id="ficha-filtros" class="filtros filtros--bloco">
+          <label>De <input type="date" id="ficha-inicio"></label>
+          <label>até <input type="date" id="ficha-fim"></label>
+          <label>Valor a partir de <input type="number" id="ficha-valor" min="0" step="10" placeholder="0,00"></label>
+          <button type="button" id="ficha-limpar" class="botao-secundario">Limpar filtros</button>
+          <span id="ficha-filtro-aviso" class="explica"></span>
+        </form>
+
         <h3>Produtos que mais compra</h3>
         <div class="tabela-rolagem">
           <table class="tabela tabela--detalhe" id="ficha-produtos">
@@ -228,8 +237,10 @@
         <div class="tabela-rolagem">
           <table class="tabela tabela--detalhe" id="ficha-titulos">
             <thead>
-              <tr><th>Vencimento</th><th>Situação</th><th>Nota</th><th>Pedido</th>
-                  <th>Título</th><th>Valor</th><th>Recebido</th><th>Pendente</th></tr>
+              <tr><th data-ordem="vencimento">Vencimento</th><th data-ordem="situacao">Situação</th>
+                  <th data-ordem="nota">Nota</th><th data-ordem="pedido">Pedido</th>
+                  <th data-ordem="titulo">Título</th><th data-ordem="valor">Valor</th>
+                  <th data-ordem="recebido">Recebido</th><th data-ordem="pendente">Pendente</th></tr>
             </thead>
             <tbody></tbody>
           </table>
@@ -240,8 +251,10 @@
         <div class="tabela-rolagem">
           <table class="tabela tabela--detalhe" id="ficha-pedidos">
             <thead>
-              <tr><th>Data</th><th>Pedido</th><th>Vendedor</th><th>Situação</th>
-                  <th>Nota</th><th>Desconto</th><th>Valor</th></tr>
+              <tr><th data-ordem="dia">Data</th><th data-ordem="pedido">Pedido</th>
+                  <th data-ordem="vendedor">Vendedor</th><th data-ordem="situacao">Situação</th>
+                  <th data-ordem="nota">Nota</th><th data-ordem="desconto">Desconto</th>
+                  <th data-ordem="valor">Valor</th></tr>
             </thead>
             <tbody></tbody>
           </table>
@@ -255,8 +268,10 @@
         <div class="tabela-rolagem">
           <table class="tabela tabela--detalhe" id="ficha-recebimentos">
             <thead>
-              <tr><th>Recebimento</th><th>Origem</th><th>Quem lançou</th><th>Título</th>
-                  <th>Nota / pedido</th><th>Forma</th><th>Recebido</th></tr>
+              <tr><th data-ordem="dia">Recebimento</th><th data-ordem="origem">Origem</th>
+                  <th data-ordem="usuario_nome">Quem lançou</th><th data-ordem="titulo">Título</th>
+                  <th data-ordem="nota">Nota / pedido</th><th data-ordem="forma">Forma</th>
+                  <th data-ordem="recebido">Recebido</th></tr>
             </thead>
             <tbody></tbody>
           </table>

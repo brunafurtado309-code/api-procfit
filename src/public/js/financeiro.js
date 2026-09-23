@@ -690,6 +690,175 @@ async function carregar() {
 // ===== Ficha do cliente =====
 const SITUACAO_TEXTO = { ABERTO: 'Em aberto', PARCIAL: 'Baixa parcial', QUITADO: 'Quitado' };
 
+// ===== Ficha do cliente: filtros e ordenação das três listas =====
+let fichaAtual = null;
+const ordemFicha = {
+  titulos: { coluna: 'vencimento', direcao: 'desc' },
+  pedidos: { coluna: 'dia', direcao: 'desc' },
+  recebimentos: { coluna: 'dia', direcao: 'desc' },
+};
+// Data e valor que cada lista usa nos filtros
+const DATA_DA_LISTA = { titulos: 'vencimento', pedidos: 'dia', recebimentos: 'dia' };
+const VALOR_DA_LISTA = { titulos: 'valor', pedidos: 'valor', recebimentos: 'recebido' };
+
+const filtrosDaFicha = () => ({
+  inicio: el('ficha-inicio').value || null,
+  fim: el('ficha-fim').value || null,
+  valor: el('ficha-valor').value ? Number(el('ficha-valor').value) : null,
+});
+
+function aplicarFiltrosDaFicha(lista, tipo) {
+  const { inicio, fim, valor } = filtrosDaFicha();
+  return lista
+    .filter((item) => {
+      const data = String(item[DATA_DA_LISTA[tipo]] ?? '').slice(0, 10);
+      if (inicio && data && data < inicio) return false;
+      if (fim && data && data > fim) return false;
+      if (valor != null && (Number(item[VALOR_DA_LISTA[tipo]]) || 0) < valor) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const { coluna, direcao } = ordemFicha[tipo];
+      const fator = direcao === 'asc' ? 1 : -1;
+      const x = a[coluna];
+      const y = b[coluna];
+      if (typeof x === 'number' || typeof y === 'number') return ((Number(x) || 0) - (Number(y) || 0)) * fator;
+      return String(x ?? '').localeCompare(String(y ?? ''), 'pt-BR', { sensitivity: 'base' }) * fator;
+    });
+}
+
+// Seta na coluna ativa e clique para ordenar
+function prepararCabecalho(idTabela, tipo) {
+  for (const th of el(idTabela).querySelectorAll('thead th[data-ordem]')) {
+    const chaveColuna = th.dataset.ordem;
+    const ativa = ordemFicha[tipo].coluna === chaveColuna;
+    const crescente = ordemFicha[tipo].direcao === 'asc';
+    th.setAttribute('aria-sort', ativa ? (crescente ? 'ascending' : 'descending') : 'none');
+    if (!th.dataset.ligado) {
+      th.dataset.ligado = '1';
+      th.dataset.texto = th.textContent;
+      th.style.cursor = 'pointer';
+      th.addEventListener('click', () => {
+        const eraAtiva = ordemFicha[tipo].coluna === chaveColuna;
+        ordemFicha[tipo] = {
+          coluna: chaveColuna,
+          direcao: eraAtiva && ordemFicha[tipo].direcao === 'asc' ? 'desc' : (eraAtiva ? 'asc' : 'desc'),
+        };
+        desenharListasDaFicha();
+      });
+    }
+    th.textContent = `${th.dataset.texto}${ativa ? (crescente ? ' ▲' : ' ▼') : ''}`;
+  }
+}
+
+function linhaVaziaFicha(colunas, texto) {
+  const linha = document.createElement('tr');
+  const vazio = celula(texto, 'vazio');
+  vazio.colSpan = colunas;
+  linha.append(vazio);
+  return linha;
+}
+
+function desenharListasDaFicha() {
+  if (!fichaAtual) return;
+  const { codigo, ficha } = fichaAtual;
+  const titulos = aplicarFiltrosDaFicha(ficha.titulos ?? [], 'titulos');
+  const pedidos = aplicarFiltrosDaFicha(ficha.pedidos ?? [], 'pedidos');
+  const recebimentos = aplicarFiltrosDaFicha(ficha.recebimentos ?? [], 'recebimentos');
+
+  const { inicio, fim, valor } = filtrosDaFicha();
+  el('ficha-filtro-aviso').textContent = (inicio || fim || valor != null)
+    ? `${numero(titulos.length)} títulos · ${numero(pedidos.length)} pedidos · `
+      + `${numero(recebimentos.length)} recebimentos com esses filtros`
+    : '';
+
+  prepararCabecalho('ficha-titulos', 'titulos');
+  prepararCabecalho('ficha-pedidos', 'pedidos');
+  prepararCabecalho('ficha-recebimentos', 'recebimentos');
+
+  // Títulos do cliente
+  el('ficha-titulos').querySelector('tbody').replaceChildren(
+    ...(titulos.length ? titulos.map((t) => {
+      const linha = document.createElement('tr');
+      // Sem nota: a origem do título aparece embaixo da situação (lançado, importado, cartão...)
+      const situacao = celula(SITUACAO_TEXTO[t.situacao] ?? t.situacao);
+      if (!t.nota && t.origem) {
+        const origem = document.createElement('span');
+        origem.className = 'qtd';
+        origem.textContent = t.origem;
+        situacao.append(origem);
+      }
+      linha.append(
+        celula(dataBR(t.vencimento)),
+        situacao,
+        celula(t.nota ?? '—'),
+        celulaPedido(t.pedido),
+        celula(t.titulo ?? '—'),
+        celula(dinheiro(t.valor)),
+        celula(dinheiro(t.recebido)),
+        celula(dinheiro(t.pendente)),
+      );
+      return linha;
+    }) : [linhaVaziaFicha(8, 'Nenhum título com esses filtros.')]),
+  );
+
+  // Pedidos do cliente, inclusive os que ainda não viraram nota
+  el('ficha-pedidos').querySelector('tbody').replaceChildren(
+    ...(pedidos.length ? pedidos.map((p) => {
+      const linha = document.createElement('tr');
+      linha.append(
+        celula(dataBR(p.dia)),
+        celulaPedido(p.pedido),
+        celula(p.vendedor ?? '—', 'esquerda'),
+        celula(p.situacao, 'esquerda'),
+        celula(p.nota ? `NF ${p.nota}` : '—'),
+        celula(Number(p.desconto) > 0.009 ? dinheiro(p.desconto) : '—'),
+        celula(dinheiro(p.valor)),
+      );
+      return linha;
+    }) : [linhaVaziaFicha(7, 'Nenhum pedido com esses filtros.')]),
+  );
+
+  // Recebimentos do cliente: tudo o que ele pagou e por qual caminho
+  el('ficha-recebimentos').querySelector('tbody').replaceChildren(
+    ...(recebimentos.length ? recebimentos.map((r) => {
+      const linha = document.createElement('tr');
+      const parcial = Number(r.recebido) + 0.009 < Number(r.valor_titulo);
+      const notaPedido = celula(r.nota ? `NF ${r.nota}` : 'sem nota', 'esquerda');
+      if (r.pedido) notaPedido.append(' · ', pedidoJanela.link(r.pedido));
+      const recebido = celula(dinheiro(r.recebido));
+      if (parcial) {
+        const nota = document.createElement('span');
+        nota.className = 'qtd negativo';
+        nota.textContent = `parcial de ${dinheiro(r.valor_titulo)}`;
+        recebido.append(nota);
+      }
+      linha.append(
+        celula(dataBR(r.dia)),
+        celula(r.origem ?? '—', 'esquerda'),
+        celula(r.usuario_nome ?? 'Não identificado', 'esquerda'),
+        celula(r.titulo ?? '—'),
+        notaPedido,
+        celula(r.forma ?? '—', 'esquerda'),
+        recebido,
+      );
+      return linha;
+    }) : [linhaVaziaFicha(7, 'Nenhum recebimento com esses filtros.')]),
+  );
+
+  // Excel dos recebimentos deste cliente, respeitando o período da ficha
+  el('ficha-excel-recebimentos').onclick = () => {
+    const hoje = new Date();
+    const umAnoAtras = new Date(hoje.getFullYear() - 1, hoje.getMonth(), hoje.getDate());
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const url = new URL('/financeiro/recebimentos/excel', window.location.origin);
+    url.searchParams.set('busca', String(codigo));
+    url.searchParams.set('inicio', inicio ?? iso(umAnoAtras));
+    url.searchParams.set('fim', fim ?? iso(hoje));
+    baixarArquivo(url, `recebimentos-cliente-${codigo}.xlsx`, el('ficha-excel-recebimentos'));
+  };
+}
+
 // Baixa um arquivo da API (a chave vai no cabeçalho, por isso não dá para usar link comum)
 async function baixarArquivo(url, nomePadrao, botao) {
   if (botao) botao.disabled = true;
@@ -761,91 +930,9 @@ async function abrirFicha(codigo, nome) {
       }),
     );
 
-    el('ficha-titulos').querySelector('tbody').replaceChildren(
-      ...ficha.titulos.map((t) => {
-        const linha = document.createElement('tr');
-        linha.append(
-          celula(dataBR(t.vencimento)),
-          celula(SITUACAO_TEXTO[t.situacao] ?? t.situacao),
-          // Sem nota: mostra de onde o título veio (lançado à mão, importado, cartão...)
-          t.nota ? celula(t.nota) : celula(t.origem ?? 'sem nota', 'esquerda'),
-          celulaPedido(t.pedido),
-          celula(t.titulo ?? '—'),
-          celula(dinheiro(t.valor)),
-          celula(dinheiro(t.recebido)),
-          celula(dinheiro(t.pendente)),
-        );
-        return linha;
-      }),
-    );
-
-    // Pedidos do cliente, inclusive os que ainda não viraram nota
-    const pedidos = ficha.pedidos ?? [];
-    el('ficha-pedidos').querySelector('tbody').replaceChildren(
-      ...(pedidos.length ? pedidos.map((p) => {
-        const linha = document.createElement('tr');
-        linha.append(
-          celula(dataBR(p.dia)),
-          celulaPedido(p.pedido),
-          celula(p.vendedor ?? '—', 'esquerda'),
-          celula(p.situacao, 'esquerda'),
-          celula(p.nota ? `NF ${p.nota}` : '—'),
-          celula(Number(p.desconto) > 0.009 ? dinheiro(p.desconto) : '—'),
-          celula(dinheiro(p.valor)),
-        );
-        return linha;
-      }) : [(() => {
-        const linha = document.createElement('tr');
-        const vazio = celula('Nenhum pedido nos últimos 12 meses.', 'vazio');
-        vazio.colSpan = 7;
-        linha.append(vazio);
-        return linha;
-      })()]),
-    );
-
-    // Recebimentos do cliente: a auditoria de tudo o que ele já pagou e por qual caminho
-    const recebimentos = ficha.recebimentos ?? [];
-    el('ficha-recebimentos').querySelector('tbody').replaceChildren(
-      ...(recebimentos.length ? recebimentos.map((r) => {
-        const linha = document.createElement('tr');
-        const parcial = Number(r.recebido) + 0.009 < Number(r.valor_titulo);
-        const notaPedido = celula(r.nota ? `NF ${r.nota}` : 'sem nota', 'esquerda');
-        if (r.pedido) notaPedido.append(' · ', pedidoJanela.link(r.pedido));
-        const recebido = celula(dinheiro(r.recebido));
-        if (parcial) {
-          const nota = document.createElement('span');
-          nota.className = 'qtd negativo';
-          nota.textContent = `parcial de ${dinheiro(r.valor_titulo)}`;
-          recebido.append(nota);
-        }
-        linha.append(
-          celula(dataBR(r.dia)),
-          celula(r.origem ?? '—', 'esquerda'),
-          celula(r.usuario_nome ?? 'Não identificado', 'esquerda'),
-          celula(r.titulo ?? '—'),
-          notaPedido,
-          celula(r.forma ?? '—', 'esquerda'),
-          recebido,
-        );
-        return linha;
-      }) : [(() => {
-        const linha = document.createElement('tr');
-        const vazio = celula('Nenhum recebimento nos últimos 12 meses.', 'vazio');
-        vazio.colSpan = 7;
-        linha.append(vazio);
-        return linha;
-      })()]),
-    );
-    // Excel só deste cliente (usa a pesquisa por código na aba Recebimentos)
-    el('ficha-excel-recebimentos').onclick = () => {
-      const hoje = new Date();
-      const inicio = new Date(hoje.getFullYear() - 1, hoje.getMonth(), hoje.getDate());
-      const url = new URL('/financeiro/recebimentos/excel', window.location.origin);
-      url.searchParams.set('busca', String(codigo));
-      url.searchParams.set('inicio', `${inicio.getFullYear()}-${String(inicio.getMonth() + 1).padStart(2, '0')}-${String(inicio.getDate()).padStart(2, '0')}`);
-      url.searchParams.set('fim', `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`);
-      baixarArquivo(url, `recebimentos-cliente-${codigo}.xlsx`, el('ficha-excel-recebimentos'));
-    };
+    // Guarda os dados e desenha as três listas com os filtros e a ordem escolhidos
+    fichaAtual = { codigo, ficha };
+    desenharListasDaFicha();
 
     el('ficha-status').textContent = '';
     el('ficha-corpo').hidden = false;
@@ -1007,6 +1094,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Botão ao lado do título da lista: faz o mesmo que o "Baixar Excel" do topo
   el('baixar-excel-lista')?.addEventListener('click', () => el('baixar-excel')?.click());
+
+  // Filtros da ficha do cliente (valem para títulos, pedidos e recebimentos)
+  for (const id of ['ficha-inicio', 'ficha-fim', 'ficha-valor']) {
+    el(id)?.addEventListener('change', desenharListasDaFicha);
+  }
+  el('ficha-limpar')?.addEventListener('click', () => {
+    el('ficha-inicio').value = '';
+    el('ficha-fim').value = '';
+    el('ficha-valor').value = '';
+    desenharListasDaFicha();
+  });
 
   el('baixar-excel')?.addEventListener('click', async () => {
     const botao = el('baixar-excel');
