@@ -80,7 +80,11 @@ const TITULOS = `
         WHEN T.TAB_MASTER_ORIGEM = ${TAB_NOTA_FISCAL} THEN 'Nota fiscal'
         WHEN ADQ.ADQUIRENTE_ID IS NOT NULL            THEN 'Recebível de cartão'
         WHEN T.TAB_MASTER_ORIGEM = 757539             THEN 'Lançado à mão (N.IDENT.)'
+        -- 455510: o acerto do despacho gera os títulos das notas entregues
+        WHEN T.TAB_MASTER_ORIGEM = 455510             THEN 'Gerado no acerto de despacho'
         WHEN T.TAB_MASTER_ORIGEM = 750078             THEN 'Importado do sistema antigo'
+        -- 999999: carga inicial da implantação (carnês e títulos antigos, sem nota e sem pedido)
+        WHEN T.TAB_MASTER_ORIGEM = 999999             THEN 'Carga inicial (sistema antigo)'
         WHEN T.TAB_MASTER_ORIGEM IS NULL              THEN 'Sem origem registrada'
         ELSE CONCAT('Lançado sem nota (tela ', T.TAB_MASTER_ORIGEM, ')')
       END                                     AS origem,
