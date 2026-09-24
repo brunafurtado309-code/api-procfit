@@ -6,15 +6,61 @@
 //   CHECKOUT_PREVENDAS.NF_NUMERO quase nunca é preenchido (10 em 13 mil): a nota vem de
 //   NF_FATURAMENTO.PEDIDO_CLIENTE, e é assim que o painel liga pedido e nota.
 //   O cancelamento não fica no pedido (CANCELADA = 'N' em tudo): fica em CANCELAMENTOS_PEDIDOS_PREVENDAS.
+//
+// Desempenho (set/2026): a consulta estourava o limite de 15 s do banco com 30 dias. Motivos:
+//   1. o período era filtrado DEPOIS de montar tudo, sobre a data convertida em texto;
+//   2. a ligação pedido x nota usava "OR TRY_CAST(PEDIDO_CLIENTE)", que lia a tabela de notas
+//      inteira uma vez PARA CADA pedido;
+//   3. a mesma montagem rodava 3 vezes seguidas (resumo, lista e gráfico).
+// Agora a montagem é feita uma vez só, em tabelas temporárias: primeiro os pedidos do período
+// (#P), depois as notas ligadas a eles numa leitura única (#NF), e por fim a linha completa
+// de cada pedido (#BASE). Resumo, lista e gráfico leem de #BASE. O resultado é o mesmo de antes.
 
 const { sql, getPool } = require('../config/db');
 
 const TAB_NOTA_FISCAL = 753289;
 
-// Um pedido com tudo o que aconteceu com ele: totais, checkout, cupom, nota, títulos e cancelamento
-const PEDIDOS = `
-  WITH PEDIDOS AS (
-    SELECT
+// Monta, uma vez só, a linha completa de cada pedido (totais, checkout, cupom, nota, títulos e
+// cancelamento) na tabela temporária #BASE. "ondePedidos" escolhe os pedidos em PEDIDOS_PREVENDAS P.
+// As tabelas temporárias existem só durante esta consulta e somem sozinhas no fim.
+const montarBase = (ondePedidos) => `
+  SET NOCOUNT ON;
+  IF OBJECT_ID('tempdb..#P') IS NOT NULL DROP TABLE #P;
+  IF OBJECT_ID('tempdb..#NF') IS NOT NULL DROP TABLE #NF;
+  IF OBJECT_ID('tempdb..#BASE') IS NOT NULL DROP TABLE #BASE;
+
+  -- 1. Só os pedidos que interessam (período, vendedor ou um pedido específico)
+  SELECT P.PEDIDO_PREVENDA, P.EMPRESA, P.DATA_HORA, P.DATA_HORA_PROCESSAR,
+         P.CLIENTE, P.VENDEDOR, P.USUARIO_LOGADO
+  INTO #P
+  FROM PEDIDOS_PREVENDAS P WITH (NOLOCK)
+  WHERE ${ondePedidos}
+  OPTION (RECOMPILE);
+  CREATE CLUSTERED INDEX IX_P ON #P (PEDIDO_PREVENDA);
+
+  -- 2. As notas desses pedidos, numa leitura só da NF_FATURAMENTO.
+  --    A nota se liga ao pedido por PEDIDO_VENDA ou pelo texto de PEDIDO_CLIENTE (ver acima);
+  --    fica a nota mais recente de cada pedido, como antes.
+  SELECT X.pedido, X.NF_NUMERO, X.NF_FATURAMENTO, X.MOVIMENTO,
+         ROW_NUMBER() OVER (PARTITION BY X.pedido ORDER BY X.NF_FATURAMENTO DESC) AS ordem
+  INTO #NF
+  FROM (
+    SELECT N.PEDIDO_VENDA AS pedido, N.NF_NUMERO, N.NF_FATURAMENTO, N.MOVIMENTO
+    FROM NF_FATURAMENTO N WITH (NOLOCK)
+    JOIN #P PP ON PP.PEDIDO_PREVENDA = N.PEDIDO_VENDA
+    UNION
+    SELECT C.pedido, C.NF_NUMERO, C.NF_FATURAMENTO, C.MOVIMENTO
+    FROM (
+      SELECT TRY_CAST(LTRIM(RTRIM(N.PEDIDO_CLIENTE)) AS numeric(18, 0)) AS pedido,
+             N.NF_NUMERO, N.NF_FATURAMENTO, N.MOVIMENTO
+      FROM NF_FATURAMENTO N WITH (NOLOCK)
+    ) C
+    JOIN #P PP ON PP.PEDIDO_PREVENDA = C.pedido
+  ) X;
+  CREATE CLUSTERED INDEX IX_NF ON #NF (pedido, ordem);
+
+  -- 3. A linha completa de cada pedido
+  SELECT
       P.PEDIDO_PREVENDA                                  AS pedido,
       P.EMPRESA                                          AS empresa,
       CONVERT(varchar(10), P.DATA_HORA, 23)              AS dia,
@@ -69,51 +115,54 @@ const PEDIDOS = `
             AND NF.NF_NUMERO IS NULL AND CUP.ECF_CUPOM IS NULL
             AND P.DATA_HORA < DATEADD(day, -7, GETDATE())
            THEN 1 ELSE 0 END                             AS parado_sem_faturar
-    FROM PEDIDOS_PREVENDAS P WITH (NOLOCK)
-    LEFT JOIN PEDIDOS_PREVENDAS_TOTAIS TOT WITH (NOLOCK) ON TOT.PEDIDO_PREVENDA = P.PEDIDO_PREVENDA
-    LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = P.CLIENTE
-    LEFT JOIN VENDEDORES V WITH (NOLOCK) ON V.VENDEDOR = P.VENDEDOR
-    LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = P.USUARIO_LOGADO
+  INTO #BASE
+  FROM #P P
+  LEFT JOIN PEDIDOS_PREVENDAS_TOTAIS TOT WITH (NOLOCK) ON TOT.PEDIDO_PREVENDA = P.PEDIDO_PREVENDA
+  LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = P.CLIENTE
+  LEFT JOIN VENDEDORES V WITH (NOLOCK) ON V.VENDEDOR = P.VENDEDOR
+  LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = P.USUARIO_LOGADO
+  OUTER APPLY (
+    SELECT TOP 1 C.CHECKOUT_PREVENDA, C.DATA_HORA, C.USUARIO_LOGADO AS usuario_checkout,
+           COALESCE(NULLIF(LTRIM(RTRIM(UC.NOME)), ''), LTRIM(RTRIM(UC.LOGIN))) AS nome_checkout
+    FROM CHECKOUT_PREVENDAS C WITH (NOLOCK)
+    LEFT JOIN USUARIOS UC WITH (NOLOCK) ON UC.USUARIO = C.USUARIO_LOGADO
+    WHERE C.PEDIDO_PREVENDA = P.PEDIDO_PREVENDA
+    ORDER BY C.CHECKOUT_PREVENDA DESC
+  ) CK
+  LEFT JOIN #NF NF ON NF.pedido = P.PEDIDO_PREVENDA AND NF.ordem = 1
+  OUTER APPLY (
+    SELECT TOP 1 PV.ECF_CUPOM, PV.CAIXA, PV.MOVIMENTO
+    FROM PDV_VENDAS PV WITH (NOLOCK)
+    WHERE PV.PREVENDA = P.PEDIDO_PREVENDA
+    ORDER BY PV.MOVIMENTO DESC
+  ) CUP
+  OUTER APPLY (
+    SELECT COUNT(*) AS titulos, SUM(ISNULL(TR.VALOR, 0)) AS valor_titulos,
+           SUM(ISNULL(S.RECEBIDO, 0)) AS recebido, SUM(ISNULL(S.PENDENTE, TR.VALOR)) AS pendente
+    FROM TITULOS_RECEBER TR WITH (NOLOCK)
     OUTER APPLY (
-      SELECT TOP 1 C.CHECKOUT_PREVENDA, C.DATA_HORA, C.USUARIO_LOGADO AS usuario_checkout,
-             COALESCE(NULLIF(LTRIM(RTRIM(UC.NOME)), ''), LTRIM(RTRIM(UC.LOGIN))) AS nome_checkout
-      FROM CHECKOUT_PREVENDAS C WITH (NOLOCK)
-      LEFT JOIN USUARIOS UC WITH (NOLOCK) ON UC.USUARIO = C.USUARIO_LOGADO
-      WHERE C.PEDIDO_PREVENDA = P.PEDIDO_PREVENDA
-      ORDER BY C.CHECKOUT_PREVENDA DESC
-    ) CK
-    OUTER APPLY (
-      SELECT TOP 1 N.NF_NUMERO, N.NF_FATURAMENTO, N.MOVIMENTO
-      FROM NF_FATURAMENTO N WITH (NOLOCK)
-      WHERE N.PEDIDO_VENDA = P.PEDIDO_PREVENDA
-         OR TRY_CAST(LTRIM(RTRIM(N.PEDIDO_CLIENTE)) AS numeric(18, 0)) = P.PEDIDO_PREVENDA
-      ORDER BY N.NF_FATURAMENTO DESC
-    ) NF
-    OUTER APPLY (
-      SELECT TOP 1 PV.ECF_CUPOM, PV.CAIXA, PV.MOVIMENTO
-      FROM PDV_VENDAS PV WITH (NOLOCK)
-      WHERE PV.PREVENDA = P.PEDIDO_PREVENDA
-      ORDER BY PV.MOVIMENTO DESC
-    ) CUP
-    OUTER APPLY (
-      SELECT COUNT(*) AS titulos, SUM(ISNULL(TR.VALOR, 0)) AS valor_titulos,
-             SUM(ISNULL(S.RECEBIDO, 0)) AS recebido, SUM(ISNULL(S.PENDENTE, TR.VALOR)) AS pendente
-      FROM TITULOS_RECEBER TR WITH (NOLOCK)
-      OUTER APPLY (
-        SELECT SUM(ISNULL(TX.CREDITO, 0)) - SUM(ISNULL(TX.DEBITO, 0)) AS PENDENTE,
-               SUM(CASE WHEN TX.TRANSACAO_FINANCEIRA = 12 THEN ISNULL(TX.DEBITO, 0) ELSE 0 END) AS RECEBIDO
-        FROM TITULOS_RECEBER_TRANSACOES TX WITH (NOLOCK)
-        WHERE TX.TITULO_RECEBER = TR.TITULO_RECEBER
-      ) S
-      WHERE TR.PEDIDO_PREVENDA = P.PEDIDO_PREVENDA
-    ) TIT
-    OUTER APPLY (
-      SELECT TOP 1 X.CANCELAMENTO_PEDIDOS_PREVENDA, X.DATA_HORA
-      FROM CANCELAMENTOS_PEDIDOS_PREVENDAS X WITH (NOLOCK)
-      WHERE X.PEDIDO_PREVENDA = P.PEDIDO_PREVENDA
-      ORDER BY X.CANCELAMENTO_PEDIDOS_PREVENDA DESC
-    ) CAN
-  )`;
+      SELECT SUM(ISNULL(TX.CREDITO, 0)) - SUM(ISNULL(TX.DEBITO, 0)) AS PENDENTE,
+             SUM(CASE WHEN TX.TRANSACAO_FINANCEIRA = 12 THEN ISNULL(TX.DEBITO, 0) ELSE 0 END) AS RECEBIDO
+      FROM TITULOS_RECEBER_TRANSACOES TX WITH (NOLOCK)
+      WHERE TX.TITULO_RECEBER = TR.TITULO_RECEBER
+    ) S
+    WHERE TR.PEDIDO_PREVENDA = P.PEDIDO_PREVENDA
+  ) TIT
+  OUTER APPLY (
+    SELECT TOP 1 X.CANCELAMENTO_PEDIDOS_PREVENDA, X.DATA_HORA
+    FROM CANCELAMENTOS_PEDIDOS_PREVENDAS X WITH (NOLOCK)
+    WHERE X.PEDIDO_PREVENDA = P.PEDIDO_PREVENDA
+    ORDER BY X.CANCELAMENTO_PEDIDOS_PREVENDA DESC
+  ) CAN
+;
+`;
+
+// Pedidos do período (e do vendedor, se escolhido). A data é comparada direto na coluna,
+// sem converter para texto, para o banco conseguir usar o índice.
+const PEDIDOS_DO_PERIODO = `
+      (@inicio IS NULL OR P.DATA_HORA >= CAST(@inicio AS date))
+  AND (@fim IS NULL OR P.DATA_HORA < DATEADD(day, 1, CAST(@fim AS date)))
+  AND (@vendedor IS NULL OR P.VENDEDOR = @vendedor)`;
 
 // Filtros da lista: por etapa do funil ou por divergência encontrada
 const FILTROS = {
@@ -153,7 +202,7 @@ async function analise(filtros) {
   const pool = await getPool();
   const filtro = FILTROS[filtros.filtro] ?? '1 = 1';
   const { recordsets } = await criarRequest(pool, filtros).query(`
-    ${PEDIDOS}
+    ${montarBase(PEDIDOS_DO_PERIODO)}
     SELECT
       COUNT(*)                                                                  AS pedidos,
       SUM(valor)                                                                AS valor,
@@ -179,19 +228,17 @@ async function analise(filtros) {
       SUM(CASE WHEN cancelado_com_nota = 1 THEN valor ELSE 0 END)               AS valor_cancelado_com_nota,
       SUM(parado_sem_faturar)                                                   AS div_parado,
       SUM(CASE WHEN parado_sem_faturar = 1 THEN valor ELSE 0 END)               AS valor_parado
-    FROM PEDIDOS
+    FROM #BASE
     ${ONDE};
 
-    ${PEDIDOS}
     SELECT TOP 3000 *
-    FROM PEDIDOS
+    FROM #BASE
     ${ONDE} AND ${filtro}
     ORDER BY dia_hora DESC, pedido DESC;
 
-    ${PEDIDOS}
     SELECT dia, COUNT(*) AS pedidos, SUM(valor) AS valor,
            SUM(CASE WHEN etapa = 'PAGO' THEN valor ELSE 0 END) AS pago
-    FROM PEDIDOS
+    FROM #BASE
     ${ONDE}
     GROUP BY dia
     ORDER BY dia;
@@ -210,8 +257,8 @@ async function detalhe(pedido) {
     .input('busca', sql.VarChar(60), null)
     .input('vendedor', sql.Int, null)
     .query(`
-      ${PEDIDOS}
-      SELECT * FROM PEDIDOS WHERE pedido = @pedido;
+      ${montarBase('P.PEDIDO_PREVENDA = @pedido')}
+      SELECT * FROM #BASE WHERE pedido = @pedido;
 
       -- Títulos gerados pelo pedido, com o que já foi recebido em cada um
       SELECT
@@ -239,11 +286,11 @@ async function detalhe(pedido) {
 async function vendedores(filtros) {
   const pool = await getPool();
   const { recordset } = await criarRequest(pool, filtros).query(`
-    ${PEDIDOS}
+    ${montarBase(PEDIDOS_DO_PERIODO)}
     SELECT cod_vendedor, MAX(vendedor) AS vendedor, COUNT(*) AS pedidos, SUM(valor) AS valor,
            SUM(CASE WHEN etapa = 'PAGO' THEN valor ELSE 0 END) AS pago,
            SUM(CASE WHEN etapa = 'CANCELADO' THEN 1 ELSE 0 END) AS cancelados
-    FROM PEDIDOS
+    FROM #BASE
     ${ONDE}
     GROUP BY cod_vendedor
     ORDER BY valor DESC;
