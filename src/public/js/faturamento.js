@@ -33,6 +33,13 @@ const ETAPAS = {
   CANCELADO: 'Cancelado',
 };
 
+// Devolução: não é etapa (o pedido pago continua "Pago"), é um fato a mais
+const DEVOLUCAO = {
+  TOTAL: 'devolvido (total)',
+  PARCIAL: 'devolução parcial',
+  SEM_VALOR: 'devolução sem valor encontrado',
+};
+
 // ===== Estado =====
 let lista = [];
 let resumo = {};
@@ -177,7 +184,9 @@ async function carregarVendedores() {
 
 function mostrarResumo() {
   el('total-pedidos').textContent = dinheiro(resumo.valor);
-  el('total-explica').textContent = `${plural(resumo.pedidos, 'pedido', 'pedidos')} no período`;
+  const devolvido = Number(resumo.valor_devolvido) || 0;
+  el('total-explica').textContent = `${plural(resumo.pedidos, 'pedido', 'pedidos')} no período`
+    + (devolvido > 0.009 ? ` · ${dinheiro(Number(resumo.valor) - devolvido)} descontando as devoluções` : '');
   el('ind-pagos').replaceChildren(dinheiro(resumo.valor_pagos), span(plural(resumo.pagos, 'pedido', 'pedidos')));
   el('ind-faturados').replaceChildren(dinheiro(resumo.valor_faturados),
     span(`${plural(resumo.faturados, 'pedido', 'pedidos')} com nota e sem pagamento`));
@@ -189,6 +198,18 @@ function mostrarResumo() {
   el('ind-cancelados').replaceChildren(dinheiro(resumo.valor_cancelados),
     span(plural(resumo.cancelados, 'pedido', 'pedidos')));
   el('ind-parados').classList.toggle('negativo', parados > 0);
+  el('ind-devolvidos').replaceChildren(dinheiro(devolvido),
+    span(`${plural(resumo.devolvidos, 'pedido', 'pedidos')}`
+      + `${Number(resumo.devolvidos_total) ? ` · ${inteiro(resumo.devolvidos_total)} devolvido(s) por inteiro` : ''}`));
+  el('ind-devolvidos').classList.toggle('negativo', devolvido > 0.009);
+  el('ind-devolvidos').setAttribute('aria-pressed', String(filtroAtual === 'devolvido'));
+}
+
+// O indicador "Devolvidos" filtra a lista (clicar de novo tira o filtro)
+function alternarDevolvidos() {
+  filtroAtual = filtroAtual === 'devolvido' ? null : 'devolvido';
+  pedidoAberto = null;
+  carregar();
 }
 
 // Funil em barras: cada etapa vira um filtro
@@ -296,6 +317,7 @@ function mostrarMarcadores() {
       checkout: 'Com checkout', faturado: 'Faturados', pago: 'Pagos', cancelado: 'Cancelados',
       pago_com_titulo_aberto: 'Pago no caixa com título aberto', nota_sem_cobranca: 'Nota sem cobrança',
       cancelado_com_nota: 'Cancelado com nota', parado_sem_faturar: 'Parado sem faturar',
+      devolvido: 'Com devolução',
     };
     itens.push({ texto: nomes[filtroAtual] ?? filtroAtual, remover: () => { filtroAtual = null; } });
   }
@@ -381,6 +403,7 @@ function mostrarLista() {
       p.nota_sem_cobranca ? 'nota sem cobrança' : null,
       p.cancelado_com_nota ? 'cancelado com nota' : null,
       p.parado_sem_faturar ? 'parado sem faturar' : null,
+      p.devolucao ? `${DEVOLUCAO[p.devolucao] ?? 'devolução'}${p.devolucao === 'PARCIAL' ? ` ${dinheiro(p.devolvido)}` : ''}` : null,
     ].filter(Boolean);
     const documentos = [
       p.nota ? `NF ${p.nota}` : null,
@@ -441,7 +464,7 @@ async function abrirLinhaDoTempo(numero) {
   const linha = el(`pedido-detalhe-${numero}`);
   if (!linha) return;
   try {
-    const { pedido: p, titulos } = await buscar(`pedidos/${numero}`);
+    const { pedido: p, titulos, devolucoes = [] } = await buscar(`pedidos/${numero}`);
     const partes = [];
 
     const passos = [
@@ -453,6 +476,13 @@ async function abrirLinhaDoTempo(numero) {
       Number(p.titulos) ? { quando: null, o_que: 'Títulos gerados', quem: null, detalhe: `${inteiro(p.titulos)} título(s) · ${dinheiro(p.valor_titulos)}` } : null,
       Number(p.recebido) > 0.009 ? { quando: null, o_que: 'Recebido', quem: null, detalhe: dinheiro(p.recebido) } : null,
       p.cancelado_em ? { quando: p.cancelado_em, o_que: 'Pedido cancelado', quem: null, detalhe: `cancelamento ${p.cancelamento}` } : null,
+      ...devolucoes.map((d) => ({
+        quando: d.dia,
+        o_que: d.tipo === 'caixa' ? 'Devolução no caixa' : 'Devolução por nota',
+        quem: d.usuario_nome,
+        detalhe: `${d.tipo === 'caixa' ? `devolução ${d.documento}` : `NF de devolução ${d.documento ?? '—'}`}`
+          + ` · ${d.valor === null ? 'valor não encontrado' : dinheiro(d.valor)}`,
+      })),
     ].filter(Boolean);
 
     const tabela = document.createElement('table');
@@ -615,6 +645,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   el('filtro-vendedor').addEventListener('change', () => carregar());
   el('baixar-excel').addEventListener('click', baixarExcel);
   el('baixar-excel-lista').addEventListener('click', baixarExcel);
+  el('ind-devolvidos').addEventListener('click', alternarDevolvidos);
+  el('ind-devolvidos').addEventListener('keydown', (evento) => {
+    if (evento.key === 'Enter' || evento.key === ' ') {
+      evento.preventDefault();
+      alternarDevolvidos();
+    }
+  });
 
   carregar();
 });

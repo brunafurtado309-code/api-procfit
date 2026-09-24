@@ -18,6 +18,8 @@ const ETAPA_TEXTO = {
   CANCELADO: 'Cancelado',
 };
 
+const DEVOLUCAO_TEXTO = { TOTAL: 'Total', PARCIAL: 'Parcial', SEM_VALOR: 'Sem valor' };
+
 function data(valor, nome) {
   if (valor === undefined || valor === null || valor === '') return null;
   if (!DATA_ISO.test(valor)) throw new AppError(`"${nome}" deve estar no formato AAAA-MM-DD`);
@@ -94,6 +96,9 @@ async function exportar(query) {
       { titulo: 'Nota sem cobrança', valor: (p) => (p.nota_sem_cobranca ? 'Sim' : ''), largura: 14 },
       { titulo: 'Cancelado com nota', valor: (p) => (p.cancelado_com_nota ? 'Sim' : ''), largura: 14 },
       { titulo: 'Parado sem faturar', valor: (p) => (p.parado_sem_faturar ? 'Sim' : ''), largura: 14 },
+      { titulo: 'Devolução', valor: (p) => DEVOLUCAO_TEXTO[p.devolucao] ?? '', largura: 14 },
+      { titulo: 'Valor devolvido', chave: 'devolvido', tipo: 'moeda', largura: 14, somar: true },
+      { titulo: 'Data da devolução', chave: 'devolucao_dia', tipo: 'data', largura: 13 },
     ],
     linhas: lista,
     totais: true,

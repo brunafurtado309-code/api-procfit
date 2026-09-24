@@ -68,7 +68,7 @@
             <p id="total-pedidos" class="valor-grande">—</p>
             <p id="total-explica" class="explica"></p>
           </div>
-          <dl class="indicadores">
+          <dl class="indicadores indicadores--cinco">
             <dt>Pagos</dt>
             <dd id="ind-pagos">—</dd>
             <dt>Faturados (sem pagamento)</dt>
@@ -77,6 +77,9 @@
             <dd id="ind-parados">—</dd>
             <dt>Cancelados</dt>
             <dd id="ind-cancelados">—</dd>
+            <dt>Devolvidos</dt>
+            <dd id="ind-devolvidos" class="indicador-clicavel" role="button" tabindex="0"
+                title="Ver só os pedidos com devolução">—</dd>
           </dl>
         </div>
       </section>
@@ -108,7 +111,7 @@
           <button id="baixar-excel-lista" type="button" class="botao-secundario">Baixar Excel desta lista</button>
         </div>
         <p class="bloco__descricao">Clique no pedido para ver a linha do tempo completa: checkout, nota, cupom,
-          títulos e recebimentos.</p>
+          títulos, recebimentos e devoluções.</p>
         <div class="tabela-rolagem">
           <table class="tabela" id="tabela-pedidos">
             <thead></thead>

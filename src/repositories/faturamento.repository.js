@@ -15,6 +15,14 @@
 // Agora a montagem é feita uma vez só, em tabelas temporárias: primeiro os pedidos do período
 // (#P), depois as notas ligadas a eles numa leitura única (#NF), e por fim a linha completa
 // de cada pedido (#BASE). Resumo, lista e gráfico leem de #BASE. O resultado é o mesmo de antes.
+//
+// Devoluções (set/2026): a devolução NÃO muda a etapa do pedido (quem foi pago continua "Pago",
+// porque a venda aconteceu). Ela entra como um fato a mais, com o valor devolvido. Mesma regra
+// do painel de Vendas (vendas.repository.js):
+//   - por nota: NF_FATURAMENTO_DEVOLUCOES.NF_FATURAMENTO_ORIGEM aponta a nota original; o valor
+//     vem da VENDAS_ANALITICAS (tipos 12, 13, 16), onde DOCUMENTO_NUMERO é o nº da nota ORIGINAL;
+//   - no caixa: DEV_PRODUTOS.REG_MASTER_ORIGEM_RELACIONADO aponta o cupom (PDV_VENDAS.REG_MASTER_ORIGEM);
+//     o valor vem da VENDAS_ANALITICAS tipo 14, pelo REG_MASTER_ORIGEM (= DEVOLUCAO_PRODUTO).
 
 const { sql, getPool } = require('../config/db');
 
@@ -28,6 +36,9 @@ const montarBase = (ondePedidos) => `
   IF OBJECT_ID('tempdb..#P') IS NOT NULL DROP TABLE #P;
   IF OBJECT_ID('tempdb..#NF') IS NOT NULL DROP TABLE #NF;
   IF OBJECT_ID('tempdb..#BASE') IS NOT NULL DROP TABLE #BASE;
+  IF OBJECT_ID('tempdb..#VADEV') IS NOT NULL DROP TABLE #VADEV;
+  IF OBJECT_ID('tempdb..#DEV') IS NOT NULL DROP TABLE #DEV;
+  IF OBJECT_ID('tempdb..#DEVP') IS NOT NULL DROP TABLE #DEVP;
 
   -- 1. Só os pedidos que interessam (período, vendedor ou um pedido específico)
   SELECT P.PEDIDO_PREVENDA, P.EMPRESA, P.DATA_HORA, P.DATA_HORA_PROCESSAR,
@@ -59,7 +70,65 @@ const montarBase = (ondePedidos) => `
   ) X;
   CREATE CLUSTERED INDEX IX_NF ON #NF (pedido, ordem);
 
-  -- 3. A linha completa de cada pedido
+  -- 3. Devoluções desses pedidos (valor positivo = quanto voltou)
+  --    Primeiro, só as linhas de devolução da VENDAS_ANALITICAS desde o pedido mais antigo:
+  --    uma leitura só, em vez de procurar nota por nota.
+  DECLARE @desde date = (SELECT CAST(MIN(DATA_HORA) AS date) FROM #P);
+  SELECT VA.DOCUMENTO_TIPO, VA.DOCUMENTO_NUMERO, VA.CLIENTE, VA.REG_MASTER_ORIGEM,
+         VA.MOVIMENTO, VA.VENDA_LIQUIDA
+  INTO #VADEV
+  FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
+  WHERE VA.DOCUMENTO_TIPO IN (12, 13, 14, 16)
+    AND VA.MOVIMENTO >= @desde;
+
+  CREATE TABLE #DEV (pedido numeric(18, 0), tipo varchar(10), documento varchar(30),
+                     dia date, valor decimal(18, 2), usuario int);
+
+  -- 3a. Devolução por nota: uma linha por nota original que teve devolução
+  INSERT INTO #DEV (pedido, tipo, documento, dia, valor, usuario)
+  SELECT NF.pedido, 'nota', CAST(DVI.numero AS varchar(30)), CAST(DVI.data_hora AS date),
+         -VAL.valor, DVI.usuario
+  FROM #NF NF
+  JOIN #P PP ON PP.PEDIDO_PREVENDA = NF.pedido
+  CROSS APPLY (
+    SELECT MAX(DV.NF_NUMERO) AS numero, MAX(DV.DATA_HORA) AS data_hora, MAX(DV.USUARIO_LOGADO) AS usuario
+    FROM NF_FATURAMENTO_DEVOLUCOES DV WITH (NOLOCK)
+    WHERE DV.NF_FATURAMENTO_ORIGEM = NF.NF_FATURAMENTO
+    HAVING COUNT(*) > 0
+  ) DVI
+  OUTER APPLY (
+    SELECT SUM(V.VENDA_LIQUIDA) AS valor
+    FROM #VADEV V
+    WHERE V.DOCUMENTO_TIPO IN (12, 13, 16)
+      AND V.DOCUMENTO_NUMERO = NF.NF_NUMERO
+      AND V.CLIENTE = PP.CLIENTE
+  ) VAL;
+
+  -- 3b. Devolução no caixa: uma linha por devolução ligada a um cupom do pedido
+  INSERT INTO #DEV (pedido, tipo, documento, dia, valor, usuario)
+  SELECT D.pedido, 'caixa', CAST(D.DEVOLUCAO_PRODUTO AS varchar(30)), VAL.dia, -VAL.valor, NULL
+  FROM (
+    SELECT DISTINCT PV.PREVENDA AS pedido, DP.DEVOLUCAO_PRODUTO
+    FROM PDV_VENDAS PV WITH (NOLOCK)
+    JOIN #P PP ON PP.PEDIDO_PREVENDA = PV.PREVENDA
+    JOIN DEV_PRODUTOS DP WITH (NOLOCK)
+      ON DP.REG_MASTER_ORIGEM_RELACIONADO = PV.REG_MASTER_ORIGEM
+     AND DP.REG_MASTER_ORIGEM_RELACIONADO > 0
+  ) D
+  OUTER APPLY (
+    SELECT SUM(V.VENDA_LIQUIDA) AS valor, MIN(V.MOVIMENTO) AS dia
+    FROM #VADEV V
+    WHERE V.DOCUMENTO_TIPO = 14 AND V.REG_MASTER_ORIGEM = D.DEVOLUCAO_PRODUTO
+  ) VAL;
+
+  -- 3c. Resumo das devoluções por pedido
+  SELECT pedido, SUM(valor) AS devolvido, COUNT(*) AS devolucoes, MAX(dia) AS dia
+  INTO #DEVP
+  FROM #DEV
+  GROUP BY pedido;
+  CREATE CLUSTERED INDEX IX_DEVP ON #DEVP (pedido);
+
+  -- 4. A linha completa de cada pedido
   SELECT
       P.PEDIDO_PREVENDA                                  AS pedido,
       P.EMPRESA                                          AS empresa,
@@ -114,7 +183,17 @@ const montarBase = (ondePedidos) => `
       CASE WHEN CAN.CANCELAMENTO_PEDIDOS_PREVENDA IS NULL AND ISNULL(TOT.STATUS, '') = 'Pedido Processado'
             AND NF.NF_NUMERO IS NULL AND CUP.ECF_CUPOM IS NULL
             AND P.DATA_HORA < DATEADD(day, -7, GETDATE())
-           THEN 1 ELSE 0 END                             AS parado_sem_faturar
+           THEN 1 ELSE 0 END                             AS parado_sem_faturar,
+      -- Devolução: não muda a etapa, é um fato a mais
+      ISNULL(DEVP.devolvido, 0)                          AS devolvido,
+      ISNULL(DEVP.devolucoes, 0)                         AS devolucoes,
+      CONVERT(varchar(10), DEVP.dia, 23)                 AS devolucao_dia,
+      CASE
+        WHEN DEVP.pedido IS NULL                                            THEN NULL
+        WHEN DEVP.devolvido IS NULL                                         THEN 'SEM_VALOR'
+        WHEN DEVP.devolvido >= ISNULL(TOT.PRECO_TOTAL, 0) - 0.01            THEN 'TOTAL'
+        ELSE                                                                     'PARCIAL'
+      END                                                AS devolucao
   INTO #BASE
   FROM #P P
   LEFT JOIN PEDIDOS_PREVENDAS_TOTAIS TOT WITH (NOLOCK) ON TOT.PEDIDO_PREVENDA = P.PEDIDO_PREVENDA
@@ -154,6 +233,7 @@ const montarBase = (ondePedidos) => `
     WHERE X.PEDIDO_PREVENDA = P.PEDIDO_PREVENDA
     ORDER BY X.CANCELAMENTO_PEDIDOS_PREVENDA DESC
   ) CAN
+  LEFT JOIN #DEVP DEVP ON DEVP.pedido = P.PEDIDO_PREVENDA
 ;
 `;
 
@@ -177,6 +257,7 @@ const FILTROS = {
   nota_sem_cobranca: 'nota_sem_cobranca = 1',
   cancelado_com_nota: 'cancelado_com_nota = 1',
   parado_sem_faturar: 'parado_sem_faturar = 1',
+  devolvido: 'devolucoes > 0',
 };
 
 const ONDE = `
@@ -227,7 +308,10 @@ async function analise(filtros) {
       SUM(cancelado_com_nota)                                                   AS div_cancelado_com_nota,
       SUM(CASE WHEN cancelado_com_nota = 1 THEN valor ELSE 0 END)               AS valor_cancelado_com_nota,
       SUM(parado_sem_faturar)                                                   AS div_parado,
-      SUM(CASE WHEN parado_sem_faturar = 1 THEN valor ELSE 0 END)               AS valor_parado
+      SUM(CASE WHEN parado_sem_faturar = 1 THEN valor ELSE 0 END)               AS valor_parado,
+      SUM(CASE WHEN devolucoes > 0 THEN 1 ELSE 0 END)                           AS devolvidos,
+      SUM(CASE WHEN devolucao = 'TOTAL' THEN 1 ELSE 0 END)                      AS devolvidos_total,
+      SUM(devolvido)                                                            AS valor_devolvido
     FROM #BASE
     ${ONDE};
 
@@ -278,8 +362,15 @@ async function detalhe(pedido) {
       ) S
       WHERE TR.PEDIDO_PREVENDA = @pedido
       ORDER BY TR.VENCIMENTO;
+
+      -- Devoluções do pedido (por nota e no caixa), com quem lançou quando existe
+      SELECT D.tipo, D.documento, CONVERT(varchar(10), D.dia, 23) AS dia, D.valor,
+             COALESCE(NULLIF(LTRIM(RTRIM(U.NOME)), ''), LTRIM(RTRIM(U.LOGIN))) AS usuario_nome
+      FROM #DEV D
+      LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = D.usuario
+      ORDER BY D.dia;
     `);
-  return { pedido: recordsets[0][0] ?? null, titulos: recordsets[1] };
+  return { pedido: recordsets[0][0] ?? null, titulos: recordsets[1], devolucoes: recordsets[2] };
 }
 
 // Vendedores que aparecem no período (para o filtro da tela)
