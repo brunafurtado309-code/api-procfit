@@ -40,12 +40,29 @@ let filtroAtual = null;
 let pedidoAberto = null;
 let ordem = { coluna: 'dia', direcao: 'desc' };
 
+// Quanto tempo esperar a API antes de desistir (em milissegundos)
+const TEMPO_LIMITE_MS = 60000;
+
 async function buscar(rota, parametros = {}) {
   const url = new URL(`/faturamento/${rota}`, window.location.origin);
   for (const [nome, valor] of Object.entries(parametros)) {
     if (valor !== null && valor !== undefined && valor !== '') url.searchParams.set(nome, valor);
   }
-  const resposta = await fetch(url, { headers: { 'x-api-key': chave.ler() ?? '' } });
+  // Tempo limite: se a API não responder, a tela avisa em vez de ficar carregando para sempre
+  const controle = new AbortController();
+  const limite = setTimeout(() => controle.abort(), TEMPO_LIMITE_MS);
+  let resposta;
+  try {
+    resposta = await fetch(url, { headers: { 'x-api-key': chave.ler() ?? '' }, signal: controle.signal });
+  } catch (erro) {
+    if (erro.name === 'AbortError') {
+      throw new Error(`A API não respondeu em ${TEMPO_LIMITE_MS / 1000} segundos (${rota}). `
+        + 'Tente um período menor ou veja o terminal da API.');
+    }
+    throw new Error('Não foi possível falar com a API. Confira se ela está rodando.');
+  } finally {
+    clearTimeout(limite);
+  }
   if (resposta.status === 401) {
     chave.apagar();
     window.location.reload();
@@ -106,6 +123,7 @@ function periodoPronto(nome) {
 async function carregar() {
   estado.salvar('faturamento', { ...filtrosAtuais(), filtro: filtroAtual });
   mostrarStatus('Carregando os pedidos…');
+  const inicioCarga = Date.now();
   try {
     const dados = await buscar('pedidos', { ...filtrosAtuais(), filtro: filtroAtual });
     lista = dados.lista;
@@ -116,7 +134,9 @@ async function carregar() {
     mostrarGrafico(dados.porDia);
     mostrarLista();
     el('painel').hidden = false;
-    mostrarStatus(`atualizado às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`);
+    const segundos = ((Date.now() - inicioCarga) / 1000).toFixed(1).replace('.', ',');
+    mostrarStatus(`atualizado às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+      + ` · carregou em ${segundos} s`);
     carregarVendedores();
   } catch (erro) {
     mostrarStatus(erro.message, true);
