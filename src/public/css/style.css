@@ -330,6 +330,8 @@ select:focus { border-color: var(--verde); }
 }
 .filtros input,
 .filtros select { height: 2.5rem; }
+/* A lista (ex.: vendedor) não estica com o nome mais comprido */
+.filtros select { max-width: 16rem; }
 .filtros__aplicar { height: 2.5rem; }
 
 /* "Mais filtros" aberto */
@@ -1293,7 +1295,7 @@ button.barra:hover { background: var(--verde-suave); color: inherit; }
   .barra-filtros__acoes button { flex: 1; }
   .pesquisa { flex-basis: 100%; }
   .filtros label { flex: 1 1 9rem; }
-  .filtros input, .filtros select { width: 100%; }
+  .filtros input, .filtros select { width: 100%; max-width: none; }
   /* Indicadores um embaixo do outro, separados por linha */
   .numeros { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .numero { padding: 0.75rem 0; border-left: 0; border-top: 1px solid var(--linha); }

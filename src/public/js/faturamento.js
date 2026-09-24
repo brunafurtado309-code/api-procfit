@@ -119,6 +119,21 @@ function periodoPronto(nome) {
   };
 }
 
+// Marca o botão de período que corresponde às datas escolhidas.
+// Se as datas não baterem com nenhum atalho (datas livres ou guardadas de antes), nenhum fica marcado.
+function marcarAtalho() {
+  const inicio = el('inicio').value;
+  const fim = el('fim').value;
+  let marcado = false;
+  for (const botao of el('atalhos').querySelectorAll('[data-dias]')) {
+    const periodo = periodoPronto(botao.dataset.dias);
+    const igual = !marcado && periodo.inicio === inicio && periodo.fim === fim;
+    botao.classList.toggle('atalho--ativo', igual);
+    botao.setAttribute('aria-pressed', String(igual));
+    if (igual) marcado = true;
+  }
+}
+
 // ===== Carregar =====
 async function carregar() {
   estado.salvar('faturamento', { ...filtrosAtuais(), filtro: filtroAtual });
@@ -565,6 +580,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   if (guardado.filtro) filtroAtual = guardado.filtro;
   el('limpar-pesquisa').hidden = !el('pesquisa-termo').value.trim();
+  marcarAtalho();
 
   el('trocar-chave').addEventListener('click', () => {
     chave.apagar();
@@ -580,11 +596,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const novo = periodoPronto(botao.dataset.dias);
     el('inicio').value = novo.inicio;
     el('fim').value = novo.fim;
-    for (const item of el('atalhos').querySelectorAll('[data-dias]')) {
-      item.classList.toggle('atalho--ativo', item === botao);
-    }
+    marcarAtalho();
     carregar();
   });
+  // Mudou a data na mão: o atalho acompanha (desmarca, ou marca o que bater)
+  el('inicio').addEventListener('change', marcarAtalho);
+  el('fim').addEventListener('change', marcarAtalho);
   el('form-pesquisa').addEventListener('submit', (evento) => {
     evento.preventDefault();
     el('limpar-pesquisa').hidden = el('pesquisa-termo').value.trim() === '';
