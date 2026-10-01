@@ -14,6 +14,8 @@ const financeiroRoutes = require('./routes/financeiro.routes');
 const adminRoutes = require('./routes/admin.routes');
 const faturamentoRoutes = require('./routes/faturamento.routes');
 const conciliacaoRoutes = require('./routes/conciliacao.routes'); // NOVO: Conciliação de títulos
+const authRoutes = require('./routes/auth.routes'); // NOVO: cadastro e login
+const usuariosRoutes = require('./routes/usuarios.routes'); // NOVO: liberacao de usuarios
 
 const app = express();
 
@@ -64,6 +66,8 @@ app.use('/financeiro', exigirChave('financeiro'), financeiroRoutes);
 app.use('/admin', exigirChave('admin'), adminRoutes);
 app.use('/faturamento', exigirChave('faturamento'), faturamentoRoutes);
 app.use('/conciliacao', exigirChave('financeiro'), conciliacaoRoutes); // NOVO: usa a chave do financeiro
+app.use('/auth', authRoutes); // NOVO: publico (cadastro, login, sair)
+app.use('/usuarios', exigirChave('admin'), usuariosRoutes); // NOVO: so admin
 
 // NOVO: biblioteca que lê Excel no navegador, servida pela própria API
 // (o helmet bloqueia scripts vindos da internet, então ela precisa sair daqui)

@@ -1,18 +1,11 @@
-// Protege as rotas: cada chave do .env libera um ou mais SETORES.
-//
-// No .env:
-//   API_KEY=...                  chave geral (abre todos os setores) - opcional
-//   API_KEY_VENDAS=...           abre só /vendas
-//   API_KEY_FINANCEIRO=...       abre só /financeiro
-//   API_KEY_ADMIN=...            abre só /admin (usuários e rastreio de uso)
-//   API_KEY_FATURAMENTO=...      abre só /faturamento (análise de pedidos)
-//
-// Assim dá para entregar a chave do financeiro ao setor financeiro sem que ele
-// enxergue vendas, e trocar a chave de um setor sem mexer nos outros.
+// Verificacao de acesso. Aceita dois tipos de credencial no cabecalho x-api-key:
+//  - as chaves do .env (API_KEY abre tudo; API_KEY_VENDAS etc. abrem um setor)
+//  - NOVO: o token de login de um usuario aprovado (comeca com "sess_")
 
 const crypto = require('crypto');
 
 const SETORES = ['vendas', 'financeiro', 'admin', 'faturamento'];
+const PREFIXO_SESSAO = 'sess_';
 
 // Monta a lista de chaves a cada requisição (o .env pode mudar sem reiniciar tudo).
 // Formato: [{ chave, setores: ['vendas'], nome: 'API_KEY_VENDAS' }]
@@ -40,35 +33,53 @@ function iguais(a, b) {
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
 
-// Devolve a configuração da chave recebida, ou null se não for nenhuma
+// Devolve a configuração da chave recebida, ou null se não for nenhuma (só chaves do .env)
 function identificar(req) {
   const recebida = req.get('x-api-key') || '';
   if (!recebida) return null;
   return chavesConfiguradas().find((c) => iguais(recebida, c.chave)) || null;
 }
 
+// NOVO: igual ao identificar, mas também reconhece o login de usuário
+async function identificarComSessao(req) {
+  const recebida = req.get('x-api-key') || '';
+  if (!recebida.startsWith(PREFIXO_SESSAO)) return identificar(req);
+
+  // carregado aqui dentro para evitar dependência circular com o service
+  const { sessaoPorToken } = require('../services/usuarios.service');
+  const sessao = await sessaoPorToken(recebida);
+  return sessao ? { setores: sessao.setores, nome: sessao.nome } : null;
+}
+
 // exigirChave('financeiro') protege uma rota de setor.
 // exigirChave() aceita qualquer chave válida (usado por /acessos).
 function exigirChave(setor = null) {
-  return function (req, res, next) {
-    if (chavesConfiguradas().length === 0) {
-      console.error('Nenhuma API_KEY configurada no .env');
-      return res.status(500).json({ erro: 'Configuração do servidor incompleta' });
-    }
+  return async function (req, res, next) {
+    try {
+      const recebida = req.get('x-api-key') || '';
+      if (!recebida.startsWith(PREFIXO_SESSAO) && chavesConfiguradas().length === 0) {
+        console.error('Nenhuma API_KEY configurada no .env');
+        return res.status(500).json({ erro: 'Configuração do servidor incompleta' });
+      }
 
-    const identificada = identificar(req);
-    if (!identificada) {
-      return res.status(401).json({ erro: 'Não autorizado' });
-    }
+      const identificada = await identificarComSessao(req);
+      if (!identificada) {
+        return res.status(401).json({ erro: 'Não autorizado' });
+      }
 
-    // Chave válida, mas de outro setor: a mensagem diz isso, para não parecer chave errada
-    if (setor && !identificada.setores.includes(setor)) {
-      return res.status(403).json({ erro: `Esta chave não tem acesso ao setor "${setor}"` });
-    }
+      // Chave válida, mas de outro setor: a mensagem diz isso, para não parecer chave errada
+      if (setor && !identificada.setores.includes(setor)) {
+        return res.status(403).json({ erro: `Esta chave não tem acesso ao setor "${setor}"` });
+      }
 
-    req.setores = identificada.setores;
-    next();
+      req.setores = identificada.setores;
+      req.usuarioNome = identificada.nome || null;
+      next();
+    } catch (err) {
+      if (err.status) return res.status(err.status).json({ erro: err.message });
+      next(err);
+    }
   };
 }
 
-module.exports = { exigirChave, identificar, SETORES };
+module.exports = { exigirChave, identificar, identificarComSessao, SETORES, PREFIXO_SESSAO };
