@@ -58,7 +58,7 @@ app.get('/health', async (req, res) => {
 });
 
 // Diz ao painel quais setores a chave informada abre (usado na tela de entrada)
-app.get('/acessos', exigirChave(), (req, res) => res.json({ setores: req.setores }));
+app.get('/acessos', exigirChave(), (req, res) => res.json({ setores: req.ehMestra ? [...req.setores, 'usuarios'] : req.setores }));
 
 // Rotas protegidas por chave, cada uma no seu setor
 app.use('/vendas', exigirChave('vendas'), vendasRoutes);

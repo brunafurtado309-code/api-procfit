@@ -12,6 +12,7 @@ const modulos = (() => {
     financeiro: { titulo: 'Financeiro', pagina: 'financeiro.html' },
     faturamento: { titulo: 'Faturamento', pagina: 'faturamento.html' },
     admin: { titulo: 'Administrativo', pagina: 'admin.html' },
+    usuarios: { titulo: 'Usu\u00e1rios', pagina: 'usuarios.html' }, // NOVO: so aparece para a chave mestra
   };
 
   const lerChave = () => sessionStorage.getItem('apiKey') ?? '';

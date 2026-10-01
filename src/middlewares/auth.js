@@ -48,7 +48,7 @@ async function identificarComSessao(req) {
   // carregado aqui dentro para evitar dependencia circular com o service
   const { sessaoPorToken } = require('../services/usuarios.service');
   const sessao = await sessaoPorToken(recebida);
-  return sessao ? { setores: sessao.setores, nome: sessao.nome } : null;
+  return sessao ? { setores: sessao.setores, nome: sessao.nome, usuario: true } : null;
 }
 
 // exigirChave('financeiro') protege uma rota de setor.
@@ -74,6 +74,7 @@ function exigirChave(setor = null) {
 
       req.setores = identificada.setores;
       req.usuarioNome = identificada.nome || null;
+      req.ehMestra = !identificada.usuario && identificada.nome === 'API_KEY'; // NOVO
       next();
     } catch (err) {
       if (err.status) return res.status(err.status).json({ erro: err.message });
