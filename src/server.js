@@ -7,7 +7,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const helmet = require('helmet');
 const { getPool } = require('./config/db');
-const { exigirChave, exigirMestra } = require('./middlewares/auth');
+const { exigirChave, exigirMestra, exigirLoginNaPagina } = require('./middlewares/auth');
 const errorHandler = require('./middlewares/errorHandler');
 const vendasRoutes = require('./routes/vendas.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
@@ -18,6 +18,7 @@ const authRoutes = require('./routes/auth.routes'); // NOVO: cadastro e login
 const usuariosRoutes = require('./routes/usuarios.routes'); // NOVO: liberacao de usuarios
 
 const app = express();
+app.use(exigirLoginNaPagina); // NOVO: sem login, as telas do painel vao para o login
 
 // Versão do painel: muda sempre que algum arquivo de src/public muda.
 // As telas abertas comparam esse valor e recarregam sozinhas depois de uma atualização.
@@ -58,7 +59,7 @@ app.get('/health', async (req, res) => {
 });
 
 // Diz ao painel quais setores a chave informada abre (usado na tela de entrada)
-app.get('/acessos', exigirChave(), (req, res) => res.json({ setores: req.ehMestra ? [...req.setores, 'usuarios'] : req.setores }));
+app.get('/acessos', exigirChave(), (req, res) => res.json({ setores: req.setores }));
 
 // Rotas protegidas por chave, cada uma no seu setor
 app.use('/vendas', exigirChave('vendas'), vendasRoutes);

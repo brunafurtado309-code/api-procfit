@@ -1,7 +1,8 @@
-// Cadastro, login e sair. Ficam sob /auth (definido no server.js) e sao publicas.
+// Cadastro, login, sair e "quem sou eu". Ficam sob /auth (definido no server.js) e sao publicas.
 
 const express = require('express');
 const service = require('../services/usuarios.service');
+const { credencialRecebida, identificarComSessao, COOKIE_SESSAO } = require('../middlewares/auth');
 
 const router = express.Router();
 router.use(express.json({ limit: '20kb' }));
@@ -26,7 +27,7 @@ function limitarTentativas(req, res, next) {
 
 const responder = (fn) => async (req, res) => {
   try {
-    res.json(await fn(req));
+    res.json(await fn(req, res));
   } catch (err) {
     if (err.status) return res.status(err.status).json({ erro: err.message });
     console.error(err);
@@ -34,8 +35,44 @@ const responder = (fn) => async (req, res) => {
   }
 };
 
+const opcoesCookie = (req) => ({
+  path: '/',
+  sameSite: 'lax',
+  secure: req.secure || req.get('x-forwarded-proto') === 'https',
+});
+
 router.post('/cadastro', limitarTentativas, responder((req) => service.cadastrar(req.body || {})));
-router.post('/login', limitarTentativas, responder((req) => service.entrar(req.body || {})));
-router.post('/sair', responder((req) => service.sair(req.get('x-api-key'))));
+
+router.post(
+  '/login',
+  limitarTentativas,
+  responder(async (req, res) => {
+    const resultado = await service.entrar(req.body || {});
+    res.cookie(COOKIE_SESSAO, resultado.token, { ...opcoesCookie(req), maxAge: service.HORAS_SESSAO * 60 * 60 * 1000 });
+    return resultado;
+  })
+);
+
+router.post(
+  '/sair',
+  responder(async (req, res) => {
+    await service.sair(credencialRecebida(req));
+    res.clearCookie(COOKIE_SESSAO, { path: '/' });
+    return { ok: true };
+  })
+);
+
+router.get(
+  '/eu',
+  responder(async (req) => {
+    const quem = await identificarComSessao(req);
+    if (!quem) {
+      const e = new Error('N\u00e3o autorizado');
+      e.status = 401;
+      throw e;
+    }
+    return { nome: quem.nome, setores: quem.setores, mestre: !!quem.mestre };
+  })
+);
 
 module.exports = router;

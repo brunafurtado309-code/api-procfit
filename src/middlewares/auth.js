@@ -1,28 +1,25 @@
-// Verificacao de acesso. Aceita dois tipos de credencial no cabecalho x-api-key:
-//  - as chaves do .env (API_KEY abre tudo; API_KEY_VENDAS etc. abrem um setor)
-//  - NOVO: o token de login de um usuario aprovado (comeca com "sess_")
+// Verificacao de acesso. Aceita:
+//  - o login de usuario (token "sess_...", no cabecalho x-api-key ou no cookie painel_sessao)
+//  - as chaves do .env (API_KEY abre tudo; API_KEY_VENDAS etc. abrem um setor) - so para emergencia
 
 const crypto = require('crypto');
 
 const SETORES = ['vendas', 'financeiro', 'admin', 'faturamento'];
 const PREFIXO_SESSAO = 'sess_';
+const COOKIE_SESSAO = 'painel_sessao';
 
 // Monta a lista de chaves a cada requisicao (o .env pode mudar sem reiniciar tudo).
-// Formato: [{ chave, setores: ['vendas'], nome: 'API_KEY_VENDAS' }]
 function chavesConfiguradas() {
   const lista = [];
-
   if (process.env.API_KEY) {
     lista.push({ chave: process.env.API_KEY, setores: SETORES, nome: 'API_KEY' });
   }
-
   for (const setor of SETORES) {
     const valor = process.env[`API_KEY_${setor.toUpperCase()}`];
     if (valor) {
       lista.push({ chave: valor, setores: [setor], nome: `API_KEY_${setor.toUpperCase()}` });
     }
   }
-
   return lista;
 }
 
@@ -33,48 +30,57 @@ function iguais(a, b) {
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
 
-// Devolve a configuracao da chave recebida, ou null se nao for nenhuma (so chaves do .env)
+function lerCookie(req, nome) {
+  const cabecalho = req.headers.cookie || '';
+  for (const parte of cabecalho.split(';')) {
+    const [chave, ...resto] = parte.trim().split('=');
+    if (chave === nome) return decodeURIComponent(resto.join('='));
+  }
+  return '';
+}
+
+// O token pode vir no cabecalho (como o painel sempre fez) ou no cookie do login
+function credencialRecebida(req) {
+  return req.get('x-api-key') || lerCookie(req, COOKIE_SESSAO) || '';
+}
+
+// So as chaves do .env
 function identificar(req) {
   const recebida = req.get('x-api-key') || '';
   if (!recebida) return null;
   return chavesConfiguradas().find((c) => iguais(recebida, c.chave)) || null;
 }
 
-// NOVO: igual ao identificar, mas tambem reconhece o login de usuario
+// Reconhece login de usuario e chaves do .env
 async function identificarComSessao(req) {
-  const recebida = req.get('x-api-key') || '';
-  if (!recebida.startsWith(PREFIXO_SESSAO)) return identificar(req);
+  const recebida = credencialRecebida(req);
+  if (!recebida) return null;
 
-  // carregado aqui dentro para evitar dependencia circular com o service
-  const { sessaoPorToken } = require('../services/usuarios.service');
-  const sessao = await sessaoPorToken(recebida);
-  return sessao ? { setores: sessao.setores, nome: sessao.nome, usuario: true } : null;
+  if (recebida.startsWith(PREFIXO_SESSAO)) {
+    // carregado aqui dentro para evitar dependencia circular com o service
+    const { sessaoPorToken } = require('../services/usuarios.service');
+    const sessao = await sessaoPorToken(recebida);
+    return sessao ? { setores: sessao.setores, nome: sessao.nome, usuario: true, mestre: sessao.mestre } : null;
+  }
+
+  const chave = chavesConfiguradas().find((c) => iguais(recebida, c.chave)) || null;
+  return chave ? { ...chave, mestre: chave.nome === 'API_KEY' } : null;
 }
 
-// exigirChave('financeiro') protege uma rota de setor.
-// exigirChave() aceita qualquer chave valida (usado por /acessos).
+// exigirChave('financeiro') protege uma rota de setor; exigirChave() aceita qualquer acesso valido.
 function exigirChave(setor = null) {
   return async function (req, res, next) {
     try {
-      const recebida = req.get('x-api-key') || '';
-      if (!recebida.startsWith(PREFIXO_SESSAO) && chavesConfiguradas().length === 0) {
-        console.error('Nenhuma API_KEY configurada no .env');
-        return res.status(500).json({ erro: 'Configura\u00e7\u00e3o do servidor incompleta' });
-      }
-
       const identificada = await identificarComSessao(req);
       if (!identificada) {
         return res.status(401).json({ erro: 'N\u00e3o autorizado' });
       }
-
-      // Chave valida, mas de outro setor: a mensagem diz isso, para nao parecer chave errada
       if (setor && !identificada.setores.includes(setor)) {
-        return res.status(403).json({ erro: `Esta chave n\u00e3o tem acesso ao setor "${setor}"` });
+        return res.status(403).json({ erro: `Voc\u00ea n\u00e3o tem acesso ao setor "${setor}"` });
       }
-
       req.setores = identificada.setores;
       req.usuarioNome = identificada.nome || null;
-      req.ehMestra = !identificada.usuario && identificada.nome === 'API_KEY'; // NOVO
+      req.ehMestra = !!identificada.mestre;
       next();
     } catch (err) {
       if (err.status) return res.status(err.status).json({ erro: err.message });
@@ -83,21 +89,53 @@ function exigirChave(setor = null) {
   };
 }
 
-// NOVO: so a chave mestra (API_KEY) passa. Usado na liberacao de usuarios,
-// para que nenhum usuario logado (nem do setor admin) consiga dar acesso a outros.
+// So a conta principal (ADMIN_EMAIL) ou a chave mestra de emergencia (API_KEY)
 function exigirMestra() {
-  return function (req, res, next) {
-    if (!process.env.API_KEY) {
-      console.error('API_KEY (chave mestra) n\u00e3o configurada');
-      return res.status(500).json({ erro: 'Configura\u00e7\u00e3o do servidor incompleta' });
+  return async function (req, res, next) {
+    try {
+      const identificada = await identificarComSessao(req);
+      if (!identificada || !identificada.mestre) {
+        return res.status(403).json({ erro: 'Somente a administradora principal pode liberar acessos.' });
+      }
+      req.setores = identificada.setores;
+      req.ehMestra = true;
+      next();
+    } catch (err) {
+      if (err.status) return res.status(err.status).json({ erro: err.message });
+      next(err);
     }
-    const recebida = req.get('x-api-key') || '';
-    if (!recebida || !iguais(recebida, process.env.API_KEY)) {
-      return res.status(403).json({ erro: 'Somente a administradora principal pode liberar acessos.' });
-    }
-    req.setores = SETORES;
-    next();
   };
 }
 
-module.exports = { exigirChave, exigirMestra, identificar, identificarComSessao, SETORES, PREFIXO_SESSAO };
+// Sem login valido, qualquer tela do painel leva para a tela de login
+async function exigirLoginNaPagina(req, res, next) {
+  if (req.method !== 'GET') return next();
+  const caminho = req.path;
+  const ehTela = caminho === '/painel/' || /^\/painel\/[^/]+\.html$/.test(caminho);
+  if (!ehTela || caminho === '/painel/login.html') return next();
+
+  try {
+    const token = lerCookie(req, COOKIE_SESSAO);
+    if (token.startsWith(PREFIXO_SESSAO)) {
+      const { sessaoPorToken } = require('../services/usuarios.service');
+      if (await sessaoPorToken(token)) return next();
+    }
+  } catch (err) {
+    console.error('Falha ao conferir o login:', err.message);
+  }
+
+  res.clearCookie(COOKIE_SESSAO, { path: '/' });
+  return res.redirect('/painel/login.html');
+}
+
+module.exports = {
+  exigirChave,
+  exigirMestra,
+  exigirLoginNaPagina,
+  identificar,
+  identificarComSessao,
+  credencialRecebida,
+  SETORES,
+  PREFIXO_SESSAO,
+  COOKIE_SESSAO,
+};
