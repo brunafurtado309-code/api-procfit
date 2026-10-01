@@ -1,0 +1,13 @@
+// Rotas da Conciliação de títulos (protegidas pela chave do setor financeiro no server.js)
+const express = require('express');
+const controller = require('../controllers/conciliacao.controller');
+
+const router = express.Router();
+
+// GET /conciliacao/titulos?mes=2026-09
+router.get('/titulos', controller.titulos);
+
+// GET /conciliacao/pedidos-sem-nota?mes=2026-09
+router.get('/pedidos-sem-nota', controller.pedidosSemNota);
+
+module.exports = router;
