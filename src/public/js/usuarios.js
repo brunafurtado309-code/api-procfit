@@ -28,7 +28,7 @@
     let corpo = {};
     try { corpo = await resposta.json(); } catch (_) { /* sem corpo */ }
     if (resposta.status === 401 || resposta.status === 403) {
-      throw new Error('Você precisa entrar com uma conta de administrador para ver esta tela.');
+      throw new Error('Somente a administradora principal pode liberar acessos. Entre no painel com a chave mestra.');
     }
     if (!resposta.ok) throw new Error(corpo.erro || 'Não foi possível carregar.');
     return corpo;

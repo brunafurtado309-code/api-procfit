@@ -7,7 +7,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const helmet = require('helmet');
 const { getPool } = require('./config/db');
-const { exigirChave } = require('./middlewares/auth');
+const { exigirChave, exigirMestra } = require('./middlewares/auth');
 const errorHandler = require('./middlewares/errorHandler');
 const vendasRoutes = require('./routes/vendas.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
@@ -67,7 +67,7 @@ app.use('/admin', exigirChave('admin'), adminRoutes);
 app.use('/faturamento', exigirChave('faturamento'), faturamentoRoutes);
 app.use('/conciliacao', exigirChave('financeiro'), conciliacaoRoutes); // NOVO: usa a chave do financeiro
 app.use('/auth', authRoutes); // NOVO: publico (cadastro, login, sair)
-app.use('/usuarios', exigirChave('admin'), usuariosRoutes); // NOVO: so admin
+app.use('/usuarios', exigirMestra(), usuariosRoutes); // NOVO: so a chave mestra
 
 // NOVO: biblioteca que lê Excel no navegador, servida pela própria API
 // (o helmet bloqueia scripts vindos da internet, então ela precisa sair daqui)
