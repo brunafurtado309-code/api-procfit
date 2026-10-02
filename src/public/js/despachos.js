@@ -73,7 +73,8 @@ function duracao(inicio, fim) {
 
 // Situação do título no contas a receber (vem do extrato do título)
 function situacaoTitulo(t) {
-  if (t.titulo_receber == null) return { texto: 'Sem título', classe: 'situacao--cancelada' };
+  // Nem a ligação do PROCFIT nem a busca pelo nome acharam título: valor que ninguém vai cobrar
+  if (t.titulo_receber == null) return { texto: 'Não virou título', classe: 'situacao--sem', alerta: true };
   const pendente = Number(t.pendente) || 0;
   const recebido = Number(t.recebido) || 0;
   const cancelado = Number(t.cancelado) || 0;
@@ -649,6 +650,14 @@ function montarAcerto(numero, resposta, opcoes = {}) {
       [['Nota', true], ['Cliente', true], ['Pedido', true], ['Como foi pago', true], ['Valor da nota'], ['Pago'], ['Falta pagar']],
       listaNotas.map((n) => {
         const falta = (Number(n.valor_nota) || 0) - n.pago;
+        // Para onde foi o que faltou: os títulos desta nota gerados no acerto (ex.: "10174/Parc")
+        const destino = falta > 0.01
+          ? parcelas.filter((p) => String(p.titulo ?? '').startsWith(`${n.nota}/`)
+              && !['Pago no acerto'].includes(situacaoTitulo(p).texto))
+            .map((p) => `${p.titulo}: ${situacaoTitulo(p).texto}`
+              + `${Number(p.pendente) > 0.009 ? ` ${dinheiro(p.pendente)}` : ''}`)
+            .join(' · ')
+          : '';
         const formas = n.formas.length
           ? n.formas.map((f) => `${f.nome} ${dinheiro(f.valor)}`).join(' + ')
           : 'nenhum pagamento informado';
@@ -659,7 +668,7 @@ function montarAcerto(numero, resposta, opcoes = {}) {
           td(formas, n.formas.length ? 'esquerda' : 'esquerda negativo'),
           td(dinheiro(n.valor_nota)),
           td(dinheiro(n.pago)),
-          td(falta > 0.01 ? dinheiro(falta) : '—', falta > 0.01 ? 'negativo' : null),
+          falta > 0.01 ? comAuxiliar(dinheiro(falta), destino || null, 'negativo') : td('—'),
         );
       }),
       linhaDe(rotuloTotal, td(dinheiro(totalNotas)), td(dinheiro(totalPago)),
@@ -690,7 +699,7 @@ function montarAcerto(numero, resposta, opcoes = {}) {
       ));
       if (rt.suspeitos.length) {
         partes.push(aviso(`Atenção: ${plural(rt.suspeitos.length, 'título foi baixado', 'títulos foram baixados')} `
-          + 'em mais de um lugar, recebido a mais ou cancelado manualmente. Confira na tabela abaixo (baixa em vermelho).'));
+          + 'em mais de um lugar, recebido a mais, cancelado manualmente ou não virou título. Confira na tabela abaixo (em vermelho).'));
       }
       partes.push(detalhes);
     }

@@ -129,6 +129,28 @@ const CAMPOS_SITUACAO_TITULO = `
   SX.cancelamento_manual    AS cancelamento_manual,
   SX.motivo_manual          AS motivo_manual`;
 
+// Título que o acerto gerou para cada linha de _RESULTADOS (validado em out/2026, NF 10174):
+//   - o PROCFIT às vezes cria o título mas NÃO grava a ligação em RESULTADOS.TITULO_RECEBER
+//     (ex.: a sobra "10174/Parc", R$ 400,00 em aberto). Medido: 236 de 243 linhas sem ligação
+//     tinham título; só 7 (R$ 4.079,78) ficaram sem título nenhum;
+//   - na linha de PIX que aponta para o título da NOTA (cancelado no acerto), o título que
+//     foi realmente pago é o novo, gerado pelo acerto (pago em Bancos por títulos).
+// Por isso procura primeiro o título gerado pelo acerto (TAB_MASTER_ORIGEM 455510), com o
+// mesmo nome e o mesmo cliente; se não houver, usa a ligação gravada pelo PROCFIT.
+const TITULO_DO_ACERTO = `
+  OUTER APPLY (
+    SELECT TOP 1 T.TITULO_RECEBER
+    FROM TITULOS_RECEBER T WITH (NOLOCK)
+    WHERE T.ENTIDADE = RS.ENTIDADE
+      AND T.TAB_MASTER_ORIGEM = 455510
+      AND T.MODALIDADE = RS.MODALIDADE
+      AND LTRIM(RTRIM(T.TITULO)) = LTRIM(RTRIM(RS.TITULO))
+    ORDER BY CASE WHEN T.REG_MASTER_ORIGEM IN (RS.RECEBIMENTO_FATURAMENTO_DESPACHO,
+                                               RS.RECEBIMENTO_FATURAMENTO_DESPACHO_DETALHE)
+                  THEN 0 ELSE 1 END,
+             T.TITULO_RECEBER DESC
+  ) TA`;
+
 const CAMPOS_DO_ACERTO = `
   R.RECEBIMENTO_FATURAMENTO_DESPACHO                                  AS acerto,
   CONVERT(varchar(10), COALESCE(R.DATA_RECEBIMENTO, R.DATA_HORA), 23) AS data_recebimento,
@@ -250,10 +272,12 @@ async function detalhe(acerto) {
         LTRIM(RTRIM(RS.DESC_MODALIDADE))       AS forma,
         CONVERT(varchar(10), RS.VENCIMENTO, 23) AS vencimento,
         RS.VALOR                               AS valor,
-        RS.TITULO_RECEBER                      AS titulo_receber,
+        COALESCE(TA.TITULO_RECEBER, RS.TITULO_RECEBER) AS titulo_receber,
+        CASE WHEN RS.TITULO_RECEBER IS NULL AND TA.TITULO_RECEBER IS NOT NULL THEN 1 ELSE 0 END AS achado_pelo_nome,
         ${CAMPOS_SITUACAO_TITULO}
       FROM ${D}_RESULTADOS RS WITH (NOLOCK)
-      ${SITUACAO_DO_TITULO('RS.TITULO_RECEBER')}
+      ${TITULO_DO_ACERTO}
+      ${SITUACAO_DO_TITULO('COALESCE(TA.TITULO_RECEBER, RS.TITULO_RECEBER)')}
       WHERE RS.RECEBIMENTO_FATURAMENTO_DESPACHO = @acerto
       ORDER BY RS.TITULO, RS.PARCELA;
 
