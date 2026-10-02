@@ -12,7 +12,7 @@
   <script src="js/graficos.js" defer></script>
   <script src="js/app.js" defer></script>
 </head>
-<body>
+<body class="tela-vendas">
   <header class="topo">
     <div>
       <p class="marca">Belo Norte</p>
@@ -69,56 +69,54 @@
         <p id="status" class="status" role="status" aria-live="polite"></p>
       </section>
 
-      <section class="destaque" aria-labelledby="titulo-liquida">
-        <h2 id="titulo-liquida">Venda líquida no período</h2>
-        <p id="venda-liquida" class="valor-grande">—</p>
+      <!-- Atalhos para cada parte da tela -->
+      <nav class="secoes" aria-label="Partes da tela">
+        <a href="#parte-resumo">Resumo</a>
+        <a href="#parte-vendedores">Vendedores</a>
+        <a href="#parte-caixa">Caixa das lojas</a>
+        <a href="#parte-graficos">Gráficos</a>
+      </nav>
 
-        <div id="barra" class="barra" aria-hidden="true"></div>
-        <ul id="legenda" class="legenda"></ul>
 
-        <p class="explica">
-          <span class="amostra amostra--cheia"></span> com custo cadastrado
-          <span class="amostra amostra--listrada"></span> sem custo cadastrado
-        </p>
-      </section>
+      <!-- 1. RESUMO: venda líquida (esquerda) e indicadores (direita); depois, como a venda se forma -->
+      <div id="parte-resumo" class="resumo parte">
+        <section class="destaque" aria-labelledby="titulo-liquida">
+          <h2 id="titulo-liquida">Venda líquida no período</h2>
+          <p id="venda-liquida" class="valor-grande">—</p>
 
-      <!-- Faturamento por vendedor: do orçamento à nota (dados do módulo faturamento) -->
-      <section class="bloco" aria-labelledby="titulo-fat-vendedores">
-        <h2 id="titulo-fat-vendedores">Faturamento por vendedor</h2>
-        <p class="bloco__descricao">Pedidos feitos no período, pelo vendedor do pedido: orçamentos, pedidos processados e o que já virou nota fiscal. Clique no nome para ver os pedidos.</p>
-        <p id="fat-vend-status" class="status" role="status" aria-live="polite"></p>
-        <div class="tabela-rolagem">
-          <table class="tabela">
-            <thead id="fat-vend-cab"></thead>
-            <tbody id="fat-vend"></tbody>
-            <tfoot id="fat-vend-total"></tfoot>
-          </table>
-        </div>
-      </section>
+          <div id="barra" class="barra" aria-hidden="true"></div>
+          <ul id="legenda" class="legenda"></ul>
 
-      <!-- Gráficos: evolução no período, lojas e produtos -->
-      <section class="bloco" aria-labelledby="titulo-dia-a-dia">
-        <h2 id="titulo-dia-a-dia">Venda dia a dia</h2>
-        <p class="bloco__descricao">Venda líquida de cada dia do período. Passe o mouse na coluna para ver o valor exato.</p>
-        <div id="grafico-dias"></div>
-      </section>
-
-      <div class="duas-colunas">
-        <section class="bloco" aria-labelledby="titulo-lojas">
-          <h2 id="titulo-lojas">Por loja</h2>
-          <p class="bloco__descricao">Participação de cada loja na venda líquida.</p>
-          <div id="grafico-lojas"></div>
+          <p class="explica">
+            <span class="amostra amostra--cheia"></span> com custo cadastrado
+            <span class="amostra amostra--listrada"></span> sem custo cadastrado
+          </p>
         </section>
-        <section class="bloco" aria-labelledby="titulo-produtos">
-          <h2 id="titulo-produtos">Produtos mais vendidos</h2>
-          <p class="bloco__descricao">Os 10 produtos com maior venda líquida no período.</p>
-          <div class="barras" id="barras-produtos"></div>
-        </section>
+        <dl class="numeros numeros--grade" aria-label="Indicadores do período">
+          <div class="numero">
+            <dt>Vendas</dt>
+            <dd id="qtd-vendas">—</dd>
+          </div>
+          <div class="numero">
+            <dt>Ticket médio</dt>
+            <dd id="ticket">—</dd>
+          </div>
+          <div class="numero numero--clicavel">
+            <dt>Descontos</dt>
+            <dd id="desconto">—</dd>
+            <dd><button type="button" class="ver-detalhes" data-detalhe="descontos">Ver descontos</button></dd>
+          </div>
+          <div class="numero">
+            <dt>Margem bruta</dt>
+            <dd id="margem">—</dd>
+            <dd id="margem-nota" class="nota"></dd>
+          </div>
+        </dl>
       </div>
-
       <section class="bloco" aria-labelledby="titulo-composicao">
         <h2 id="titulo-composicao">Como a venda se forma</h2>
-        <dl class="numeros">
+        <p class="bloco__descricao">Notas faturadas mais vendas no caixa, menos devoluções.</p>
+        <dl class="numeros conta">
           <div class="numero numero--clicavel">
             <dt>Notas faturadas</dt>
             <dd id="total-notas">—</dd>
@@ -144,26 +142,71 @@
         </dl>
       </section>
 
-      <dl class="numeros">
-        <div class="numero">
-          <dt>Vendas</dt>
-          <dd id="qtd-vendas">—</dd>
+      <!-- 2. VENDEDORES -->
+      <div id="parte-vendedores" class="parte">
+      <!-- Faturamento por vendedor: do orçamento à nota (dados do módulo faturamento) -->
+      <section class="bloco" aria-labelledby="titulo-fat-vendedores">
+        <h2 id="titulo-fat-vendedores">Faturamento por vendedor</h2>
+        <p class="bloco__descricao">Pedidos feitos no período, pelo vendedor do pedido: orçamentos, pedidos processados e o que já virou nota fiscal. Clique no nome para ver os pedidos.</p>
+        <p id="fat-vend-status" class="status" role="status" aria-live="polite"></p>
+        <div class="tabela-rolagem">
+          <table class="tabela">
+            <thead id="fat-vend-cab"></thead>
+            <tbody id="fat-vend"></tbody>
+            <tfoot id="fat-vend-total"></tfoot>
+          </table>
         </div>
-        <div class="numero">
-          <dt>Ticket médio</dt>
-          <dd id="ticket">—</dd>
+      </section>
+      </div>
+
+      <!-- 3. CAIXA DAS LOJAS -->
+      <div id="parte-caixa" class="parte">
+      <section class="bloco" aria-labelledby="titulo-caixa">
+        <h2 id="titulo-caixa">Caixa por operador</h2>
+        <p class="bloco__descricao">Cupons e devoluções no caixa das lojas, pelo operador que passou a venda. Clique no nome para ver os cupons.</p>
+        <div class="tabela-rolagem">
+          <table class="tabela">
+            <thead>
+              <tr>
+                <th scope="col">Operador</th>
+                <th scope="col">Cupons</th>
+                <th scope="col">Devoluções no caixa</th>
+                <th scope="col">Total líquido</th>
+              </tr>
+            </thead>
+            <tbody id="caixa"></tbody>
+            <tfoot id="caixa-total"></tfoot>
+          </table>
         </div>
-        <div class="numero numero--clicavel">
-          <dt>Descontos</dt>
-          <dd id="desconto">—</dd>
-          <dd><button type="button" class="ver-detalhes" data-detalhe="descontos">Ver descontos</button></dd>
-        </div>
-        <div class="numero">
-          <dt>Margem bruta</dt>
-          <dd id="margem">—</dd>
-          <dd id="margem-nota" class="nota"></dd>
-        </div>
-      </dl>
+      </section>
+      </div>
+
+      <!-- 4. GRÁFICOS -->
+      <div id="parte-graficos" class="parte">
+      <!-- Gráficos: evolução no período, lojas e produtos -->
+      <section class="bloco" aria-labelledby="titulo-dia-a-dia">
+        <h2 id="titulo-dia-a-dia">Venda dia a dia</h2>
+        <p class="bloco__descricao">Venda líquida de cada dia do período. Passe o mouse na coluna para ver o valor exato.</p>
+        <div id="grafico-dias"></div>
+      </section>
+
+      <div class="duas-colunas">
+        <section class="bloco" aria-labelledby="titulo-lojas">
+          <h2 id="titulo-lojas">Por loja</h2>
+          <p class="bloco__descricao">Participação de cada loja na venda líquida.</p>
+          <div id="grafico-lojas"></div>
+        </section>
+        <section class="bloco" aria-labelledby="titulo-produtos">
+          <h2 id="titulo-produtos">Produtos mais vendidos</h2>
+          <p class="bloco__descricao">Os 10 produtos com maior venda líquida no período.</p>
+          <div class="barras" id="barras-produtos"></div>
+        </section>
+      </div>
+      </div>
+
+
+
+
 
       <!-- Escondida: substituída por "Faturamento por vendedor" no topo. Os números dela continuam
            sendo usados em "Como a venda se forma", por isso a seção fica na página, só sem aparecer. -->
@@ -186,24 +229,6 @@
         </div>
       </section>
 
-      <section class="bloco" aria-labelledby="titulo-caixa">
-        <h2 id="titulo-caixa">Caixa por operador</h2>
-        <p class="bloco__descricao">Cupons e devoluções no caixa das lojas, pelo operador que passou a venda. Clique no nome para ver os cupons.</p>
-        <div class="tabela-rolagem">
-          <table class="tabela">
-            <thead>
-              <tr>
-                <th scope="col">Operador</th>
-                <th scope="col">Cupons</th>
-                <th scope="col">Devoluções no caixa</th>
-                <th scope="col">Total líquido</th>
-              </tr>
-            </thead>
-            <tbody id="caixa"></tbody>
-            <tfoot id="caixa-total"></tfoot>
-          </table>
-        </div>
-      </section>
     </div>
   </main>
 

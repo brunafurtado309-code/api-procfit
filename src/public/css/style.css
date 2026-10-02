@@ -1378,3 +1378,93 @@ button.barra:hover { background: var(--verde-suave); color: inherit; }
 .caixas__cartao small { font-size: 0.8rem; color: #5B6B62; }
 .caixas__cartao--destaque { background: #EEF6F1; border-color: #1E6B47; }
 .coluna-pagamento { min-width: 12rem; font-size: 0.9rem; }
+
+
+/* ===== Tela de vendas: atalhos para cada parte ===== */
+.secoes { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0 0 1.25rem; }
+.secoes a {
+  padding: 0.45rem 0.95rem; border: 1px solid #CFE3D6; border-radius: 999px;
+  background: #fff; color: #14532D; font-weight: 600; text-decoration: none; font-size: 0.95rem;
+}
+.secoes a:hover, .secoes a:focus-visible { background: #EEF6F1; border-color: #1E6B47; }
+.parte { scroll-margin-top: 1rem; }
+.numeros--resumo { margin-top: 1rem; }
+
+
+/* ==========================================================
+   Tela de vendas (body.tela-vendas) — acabamento
+   Mesmo padrão do painel: só verdes, seções abertas com linha fina.
+   ========================================================== */
+.tela-vendas .valor-grande, .tela-vendas .numero dd, .tela-vendas .tabela td { font-variant-numeric: tabular-nums; }
+
+/* Atalhos das partes: abas que acompanham a rolagem */
+.tela-vendas .secoes {
+  position: sticky; top: 0; z-index: 20;
+  gap: 0; margin: 0 0 0.25rem; padding: 0;
+  background: var(--superficie);
+  border-bottom: 1px solid var(--linha);
+}
+.tela-vendas .secoes a {
+  padding: 0.85rem 1.1rem 0.75rem;
+  border: 0; border-bottom: 3px solid transparent; border-radius: 0;
+  background: none; color: var(--tinta-suave); font-weight: 600;
+}
+.tela-vendas .secoes a:hover { color: var(--tinta); background: var(--verde-suave); }
+.tela-vendas .secoes a:focus-visible { outline: 2px solid var(--verde); outline-offset: -2px; }
+.tela-vendas .secoes a[aria-current="true"] { color: var(--verde-escuro); border-bottom-color: var(--verde); }
+.tela-vendas .parte { scroll-margin-top: 3.5rem; }
+
+/* Resumo: a venda líquida à esquerda, os indicadores numa grade à direita */
+.tela-vendas .resumo {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 0 3rem;
+  align-items: start;
+  padding: var(--respiro-secao) 0;
+}
+.tela-vendas .resumo > .destaque { padding: 0; border-top: 0; }
+.tela-vendas .numeros--grade {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  margin: 0;
+  border-top: 1px solid var(--linha);
+}
+.tela-vendas .numeros--grade .numero {
+  padding: 1rem 1.25rem;
+  border-left: 0;
+  border-bottom: 1px solid var(--linha);
+}
+.tela-vendas .numeros--grade .numero:nth-child(odd) { border-right: 1px solid var(--linha); padding-left: 0; }
+
+/* Como a venda se forma: uma conta (notas + caixa − devoluções = líquida).
+   O sinal fica sobre a linha que separa cada parte. */
+.tela-vendas .conta .numero { position: relative; }
+.tela-vendas .conta .numero + .numero::before {
+  position: absolute; left: -0.8rem; top: 0.15rem;
+  width: 1.6rem; height: 1.6rem;
+  display: grid; place-items: center;
+  border: 1px solid var(--linha-forte); border-radius: 50%;
+  background: var(--superficie); color: var(--tinta-suave);
+  font-weight: 700; font-size: 0.95rem; line-height: 1;
+}
+.tela-vendas .conta .numero:nth-child(2)::before { content: "+"; }
+.tela-vendas .conta .numero:nth-child(3)::before { content: "−"; }
+.tela-vendas .conta .numero:nth-child(4)::before { content: "="; color: var(--verde); border-color: var(--verde); }
+.tela-vendas .conta .numero:last-child dd { color: var(--verde-escuro); }
+.tela-vendas .conta .numero:last-child dt { color: var(--verde); }
+
+/* Cabeçalhos de seção com o mesmo ritmo */
+.tela-vendas .bloco > h2 + .bloco__descricao { margin-bottom: 1rem; }
+.tela-vendas .tabela thead th { white-space: nowrap; }
+
+@media (max-width: 1100px) {
+  .tela-vendas .resumo { grid-template-columns: 1fr; gap: 1.5rem; }
+}
+@media (max-width: 720px) {
+  .tela-vendas .secoes { overflow-x: auto; flex-wrap: nowrap; }
+  .tela-vendas .secoes a { flex: 0 0 auto; padding: 0.75rem 0.9rem; }
+  .tela-vendas .conta { grid-template-columns: 1fr 1fr; }
+  .tela-vendas .conta .numero:nth-child(3)::before { left: -0.8rem; }
+  .tela-vendas .conta .numero:nth-child(odd) { border-left: 0; padding-left: 0; }
+  .tela-vendas .conta .numero:nth-child(3)::before { display: none; }
+}

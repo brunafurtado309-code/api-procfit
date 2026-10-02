@@ -1608,7 +1608,24 @@ function marcarAtalho(ativo) {
 }
 
 // ===== Início =====
+// Atalhos das partes da tela: marca a parte que está na tela enquanto rola
+function iniciarAtalhosDasPartes() {
+  const links = [...document.querySelectorAll('.secoes a[href^="#"]')];
+  if (!links.length || !('IntersectionObserver' in window)) return;
+  const marcar = (id) => links.forEach((a) => a.setAttribute('aria-current', String(a.getAttribute('href') === `#${id}`)));
+  marcar(links[0].getAttribute('href').slice(1));
+  const observador = new IntersectionObserver((entradas) => {
+    const visivel = entradas.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+    if (visivel) marcar(visivel.target.id);
+  }, { rootMargin: '-15% 0px -70% 0px' });
+  links.forEach((a) => {
+    const alvo = document.getElementById(a.getAttribute('href').slice(1));
+    if (alvo) observador.observe(alvo);
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  iniciarAtalhosDasPartes();
   el('fat-janela-fechar').addEventListener('click', () => el('fat-janela').close());
   const hoje = new Date();
   el('inicio').value = formatarData(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
