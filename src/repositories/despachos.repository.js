@@ -155,6 +155,7 @@ const TITULO_DO_ACERTO = `
 // Hora e usuário vêm do formulário que gravou a baixa (colunas já validadas no financeiro):
 //   Bancos por títulos (668401) -> RECEBIMENTOS_BANCOS (DATA_HORA, USUARIO_LOGADO)
 //   Caixa (356928)              -> RECEBIMENTOS_CAIXA (USUARIO_LOGADO; a hora fica só a data)
+//   Retorno de despacho (455510)-> linha da nota no acerto -> acerto (nº e quem lançou)
 const ULTIMA_BAIXA = (coluna) => `
   OUTER APPLY (
     SELECT TOP 1 TX.TAB_MASTER_ORIGEM AS tab, TX.REG_MASTER_ORIGEM AS reg, TX.DEBITO AS valor
@@ -164,10 +165,17 @@ const ULTIMA_BAIXA = (coluna) => `
   ) BX
   LEFT JOIN RECEBIMENTOS_BANCOS BXB WITH (NOLOCK) ON BX.tab = 668401 AND BXB.RECEBIMENTO_BANCO = BX.reg
   LEFT JOIN RECEBIMENTOS_CAIXA BXC WITH (NOLOCK) ON BX.tab = 356928 AND BXC.RECEBIMENTO_CAIXA = BX.reg
-  LEFT JOIN USUARIOS BXU WITH (NOLOCK) ON BXU.USUARIO = COALESCE(BXB.USUARIO_LOGADO, BXC.USUARIO_LOGADO)`;
+  -- Retorno de despacho (455510): o registro é a LINHA da nota no acerto (_DETALHES); dela sai o nº do acerto
+  LEFT JOIN ${D}_DETALHES BXD WITH (NOLOCK)
+    ON BX.tab = 455510 AND BXD.RECEBIMENTO_FATURAMENTO_DESPACHO_DETALHE = BX.reg
+  LEFT JOIN ${D} BXR WITH (NOLOCK)
+    ON BXR.RECEBIMENTO_FATURAMENTO_DESPACHO = BXD.RECEBIMENTO_FATURAMENTO_DESPACHO
+  LEFT JOIN USUARIOS BXU WITH (NOLOCK)
+    ON BXU.USUARIO = COALESCE(BXB.USUARIO_LOGADO, BXC.USUARIO_LOGADO, BXR.USUARIO_LOGADO)`;
 
 const CAMPOS_ULTIMA_BAIXA = `
   BX.reg                                    AS baixa_registro,
+  BXR.RECEBIMENTO_FATURAMENTO_DESPACHO      AS baixa_acerto,
   BX.valor                                  AS baixa_valor,
   CONVERT(varchar(16), BXB.DATA_HORA, 120)  AS baixa_hora,
   ${NOME_USUARIO('BXU')}                    AS baixa_usuario`;

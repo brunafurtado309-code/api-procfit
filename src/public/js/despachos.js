@@ -149,7 +149,10 @@ function textoBaixa(t) {
       : (t.cancelado_no_acerto_em ? dataHoraBR(t.cancelado_no_acerto_em) : null));
   const partes = [quando];
   const unicoBanco = lugares.length === 1 && Number(t.baixas_bancos) === 1;
-  partes.push(unicoBanco && t.baixa_registro ? `${lugares[0]} nº ${t.baixa_registro}` : lugares.join(' + '));
+  const unicoRetorno = lugares.length === 1 && Number(t.baixas_despacho) === 1;
+  if (unicoBanco && t.baixa_registro) partes.push(`${lugares[0]} nº ${t.baixa_registro}`);
+  else if (unicoRetorno && t.baixa_acerto) partes.push(`${lugares[0]} · Acerto ${t.baixa_acerto}`);
+  else partes.push(lugares.join(' + '));
   if (t.baixa_usuario) partes.push(`por ${t.baixa_usuario}`);
   if (situacaoTitulo(t).texto === 'Pago em parte') {
     partes.push(`parcial: ${dinheiro(t.recebido)} de ${dinheiro(t.valor)}`);
