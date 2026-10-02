@@ -50,7 +50,9 @@ const ABAS = {
   titulos:  { situacao: 'aberto',  modalidade: null, titulo: 'Títulos em aberto' },
   parciais: { situacao: 'parcial', modalidade: null, titulo: 'Títulos com baixa parcial' },
   boletos:  { situacao: 'aberto',  modalidade: 1,    titulo: 'Boletos em aberto, por vencimento' },
-  cobranca: { situacao: 'aberto',  modalidade: null, titulo: 'Títulos vencidos', somenteVencidos: true },
+  // Cobrança: todos os títulos pendentes (vencidos e a vencer). Para ver só os atrasados,
+  // use "Vencimento: Já vencidos" no filtro em cima da lista.
+  cobranca: { situacao: 'aberto',  modalidade: null, titulo: 'Títulos pendentes' },
 };
 
 let abaAtual = 'titulos';
@@ -64,6 +66,8 @@ let pagina = 1;
 let totalPaginas = 1;
 // Ordem da lista ao clicar no nome da coluna. null = ordem padrão (vencimento)
 let ordem = null; // ex.: { coluna: 'devedor', direcao: 'asc' }
+// Filtro rápido "Vencimento" em cima da lista: null (todos), 'vencidos' ou 'a_vencer'
+let atrasoRapido = null;
 const LIMITE = 50;
 
 // Cada cartão é um recorte dos títulos
@@ -83,7 +87,7 @@ function filtrosAtuais() {
   const cartao = cartaoAtual ? CARTOES[cartaoAtual] : null;
   return {
     situacao: cartao ? cartao.situacao : aba.situacao,
-    atraso: cartao ? cartao.atraso : (aba.somenteVencidos ? 'vencidos' : null),
+    atraso: cartao ? cartao.atraso : (atrasoRapido ?? (aba.somenteVencidos ? 'vencidos' : null)),
     inicio: valorCampo('inicio'),
     // Na aba de cobrança, mostra só o que já venceu: "até ontem"
     fim: aba.somenteVencidos ? ontem() : valorCampo('fim'),
@@ -399,6 +403,16 @@ function celula(texto, classe = null) {
 
 // Colunas da lista. A visão de baixa parcial mostra os valores da NOTA
 // (soma das parcelas), além dos valores da parcela em si.
+
+// Boleto mostra a parcela: "Boleto · parcela 2 de 4" (ou "parcela única")
+function formaComParcela(t) {
+  const forma = t.modalidade ?? '—';
+  if (forma !== 'Boleto' || !t.parcela_total) return forma;
+  return Number(t.parcela_total) > 1
+    ? `${forma} · parcela ${t.parcela_num} de ${t.parcela_total}`
+    : `${forma} · parcela única`;
+}
+
 const COLUNAS_TITULO = [
   { titulo: 'Vencimento', ordem: 'vencimento', valor: (t) => dataBR(t.vencimento),
     nota: (t) => (t.dias_atraso > 0 ? `${numero(t.dias_atraso)} dias de atraso` : 'em dia'),
@@ -410,7 +424,7 @@ const COLUNAS_TITULO = [
     filtros: [{ campo: 'f_titulo', dica: 'título' }] },
   { titulo: 'Devedor', ordem: 'devedor', cliente: true,
     filtros: [{ campo: 'f_cliente', dica: 'nome ou código' }] },
-  { titulo: 'Forma', ordem: 'forma', valor: (t) => t.modalidade ?? '—', nota: (t) => t.origem,
+  { titulo: 'Forma', ordem: 'forma', valor: formaComParcela, nota: (t) => t.origem,
     filtroSelect: 'modalidade' },
   { titulo: 'Valor', ordem: 'valor', valor: (t) => dinheiro(t.valor) },
   { titulo: 'Recebido', ordem: 'recebido', valor: (t) => dinheiro(t.recebido) },
@@ -586,6 +600,20 @@ function montarFiltroRapidoDevedor() {
   }
   rotuloTipo.append(tipo);
 
+  const rotuloVenc = document.createElement('label');
+  rotuloVenc.style.cssText = 'display:grid;gap:0.25rem;font-size:0.85rem';
+  rotuloVenc.append('Vencimento');
+  const venc = document.createElement('select');
+  venc.id = 'rapido-vencimento';
+  venc.style.cssText = estiloCampo;
+  for (const [valor, texto] of [['', 'Todos os pendentes'], ['vencidos', 'Já vencidos'], ['a_vencer', 'A vencer']]) {
+    const opcao = document.createElement('option');
+    opcao.value = valor;
+    opcao.textContent = texto;
+    venc.append(opcao);
+  }
+  rotuloVenc.append(venc);
+
   const rotuloNome = document.createElement('label');
   rotuloNome.style.cssText = 'display:grid;gap:0.25rem;font-size:0.85rem';
   rotuloNome.append('Cliente ou adquirente');
@@ -603,24 +631,27 @@ function montarFiltroRapidoDevedor() {
   limpar.type = 'button';
   limpar.className = 'botao-secundario';
   limpar.textContent = 'Limpar';
-  form.append(rotuloTipo, rotuloNome, filtrar, limpar);
+  form.append(rotuloVenc, rotuloTipo, rotuloNome, filtrar, limpar);
 
   const aplicar = () => {
+    atrasoRapido = venc.value || null;
     el('devedor').value = tipo.value;
     el('f_cliente').value = nome.value.trim();
     if (nome.value.trim()) filtrosColuna.f_cliente = nome.value.trim();
     else delete filtrosColuna.f_cliente;
     // O cartão "De clientes"/"De adquirentes" manda no tipo; ao filtrar por aqui, ele sai
-    if (['de_clientes', 'adquirentes'].includes(cartaoAtual)) cartaoAtual = null;
+    if (['de_clientes', 'adquirentes', 'vencido', 'a_vencer'].includes(cartaoAtual)) cartaoAtual = null;
     pagina = 1;
     carregar();
   };
   tipo.addEventListener('change', aplicar);
+  venc.addEventListener('change', aplicar);
   form.addEventListener('submit', (evento) => {
     evento.preventDefault();
     aplicar();
   });
   limpar.addEventListener('click', () => {
+    venc.value = '';
     tipo.value = '';
     nome.value = '';
     aplicar();
@@ -630,6 +661,7 @@ function montarFiltroRapidoDevedor() {
 
 // Mantém o filtro rápido igual ao painel "Mais filtros" e aos marcadores
 function sincronizarFiltroRapido() {
+  if (el('rapido-vencimento')) el('rapido-vencimento').value = atrasoRapido ?? '';
   if (el('rapido-devedor')) el('rapido-devedor').value = el('devedor')?.value ?? '';
   if (el('rapido-cliente')) el('rapido-cliente').value = filtrosColuna.f_cliente ?? '';
 }

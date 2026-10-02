@@ -108,7 +108,13 @@ const TITULOS = `
       COUNT(*)      OVER (PARTITION BY T.EMPRESA, NF.NF_NUMERO) AS nota_parcelas,
       SUM(T.VALOR)  OVER (PARTITION BY T.EMPRESA, NF.NF_NUMERO) AS nota_valor,
       SUM(S.RECEBIDO) OVER (PARTITION BY T.EMPRESA, NF.NF_NUMERO) AS nota_recebido,
-      SUM(S.PENDENTE) OVER (PARTITION BY T.EMPRESA, NF.NF_NUMERO) AS nota_pendente
+      SUM(S.PENDENTE) OVER (PARTITION BY T.EMPRESA, NF.NF_NUMERO) AS nota_pendente,
+      -- Número da parcela ("2 de 4"): títulos gerados juntos, pela mesma origem (nota, acerto,
+      -- renegociação...), para o mesmo devedor e na mesma forma, em ordem de vencimento
+      ROW_NUMBER() OVER (PARTITION BY T.EMPRESA, T.ENTIDADE, T.TAB_MASTER_ORIGEM, T.REG_MASTER_ORIGEM, T.MODALIDADE
+                         ORDER BY T.VENCIMENTO, T.TITULO_RECEBER) AS parcela_num,
+      COUNT(*)     OVER (PARTITION BY T.EMPRESA, T.ENTIDADE, T.TAB_MASTER_ORIGEM, T.REG_MASTER_ORIGEM, T.MODALIDADE)
+                                                                   AS parcela_total
     FROM TITULOS_RECEBER T WITH (NOLOCK)
     JOIN SALDOS S ON S.TITULO_RECEBER = T.TITULO_RECEBER
     -- Só quando a origem É a nota fiscal; senão o REG_MASTER_ORIGEM aponta para outra tabela
