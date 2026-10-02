@@ -68,6 +68,8 @@ let totalPaginas = 1;
 let ordem = null; // ex.: { coluna: 'devedor', direcao: 'asc' }
 // Filtro rápido "Vencimento" em cima da lista: null (todos), 'vencidos' ou 'a_vencer'
 let atrasoRapido = null;
+// Tipo de Excel pedido pelo botão (null = o Excel normal da lista)
+let visaoExcel = null;
 const LIMITE = 50;
 
 // Cada cartão é um recorte dos títulos
@@ -1260,6 +1262,18 @@ document.addEventListener('DOMContentLoaded', () => {
   // Botão ao lado do título da lista: faz o mesmo que o "Baixar Excel" do topo
   el('baixar-excel-lista')?.addEventListener('click', () => el('baixar-excel')?.click());
 
+  // Excel para conciliar com o banco: títulos pendentes, uma aba por mês de vencimento
+  const botaoConciliar = document.createElement('button');
+  botaoConciliar.type = 'button';
+  botaoConciliar.className = 'botao-secundario';
+  botaoConciliar.textContent = 'Excel para conciliar com o banco';
+  botaoConciliar.title = 'Títulos pendentes separados por mês de vencimento, com colunas para anotar o extrato';
+  botaoConciliar.addEventListener('click', () => {
+    visaoExcel = 'conciliacao';
+    el('baixar-excel')?.click();
+  });
+  el('baixar-excel-lista')?.after(botaoConciliar);
+
   montarFiltroRapidoDevedor();
 
   // Filtros da ficha do cliente (valem para títulos, pedidos e recebimentos)
@@ -1287,6 +1301,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       // Cartão "Clientes" ativo: a tela mostra um resumo por cliente, então o Excel também
       if (CARTOES[cartaoAtual]?.porCliente) url.searchParams.set('visao', 'clientes');
+      // Botão "Excel para conciliar com o banco": mesma lista, separada por mês de vencimento
+      if (visaoExcel) url.searchParams.set('visao', visaoExcel);
 
       // Busca com a chave no cabeçalho e salva o arquivo: a chave não aparece na URL
       const resposta = await fetch(url, { headers: { 'x-api-key': chave.ler() ?? '' } });
@@ -1311,6 +1327,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (erro) {
       mostrarStatus(erro.message, true);
     } finally {
+      visaoExcel = null;
       botao.disabled = false;
       botao.textContent = 'Baixar Excel';
     }

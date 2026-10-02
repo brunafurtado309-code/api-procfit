@@ -106,7 +106,134 @@ function sufixoArquivo(f, visao) {
   return seguro ? `_${seguro}` : '';
 }
 
+// ===== Excel para conciliar com o banco =====
+// Uma aba de instruções, um resumo por mês de vencimento e uma aba por mês com os títulos
+// pendentes e colunas EM BRANCO para anotar o que foi achado no extrato.
+const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const nomeMes = (chave) => (chave === 'sem-data' ? 'Sem vencimento'
+  : `${MESES[Number(chave.slice(5, 7)) - 1]}/${chave.slice(0, 4)}`);
+const formaComParcela = (t) => (t.modalidade === 'Boleto' && Number(t.parcela_total) > 1
+  ? `Boleto ${t.parcela_num}/${t.parcela_total}` : (t.modalidade ?? ''));
+const quemDeve = (t) => (t.tipo_devedor === 'ADQUIRENTE'
+  ? `Adquirente${t.adquirente ? ` (${t.adquirente})` : ''}` : 'Cliente');
+
+const COL_CONCILIACAO = [
+  { titulo: 'Vencimento', chave: 'vencimento', tipo: 'data', largura: 12 },
+  { titulo: 'Dias de atraso', valor: (t) => (t.dias_atraso > 0 ? t.dias_atraso : 0), tipo: 'inteiro', largura: 9 },
+  { titulo: 'Cód. cliente', chave: 'cod_cliente', tipo: 'codigo', largura: 10 },
+  { titulo: 'Cliente', chave: 'cliente', largura: 36 },
+  { titulo: 'CPF/CNPJ', chave: 'documento', largura: 18 },
+  { titulo: 'Quem deve', valor: quemDeve, largura: 16 },
+  { titulo: 'Nº da nota', chave: 'nota', tipo: 'codigo', largura: 10 },
+  { titulo: 'Nº do pedido', chave: 'pedido', tipo: 'codigo', largura: 10 },
+  { titulo: 'Título', chave: 'titulo', largura: 13 },
+  { titulo: 'Forma', valor: formaComParcela, largura: 15 },
+  { titulo: 'Origem', chave: 'origem', largura: 20 },
+  { titulo: 'Emissão', chave: 'emissao', tipo: 'data', largura: 12 },
+  { titulo: 'Valor do título', chave: 'valor', tipo: 'moeda', largura: 14, somar: true },
+  { titulo: 'Já recebido', chave: 'recebido', tipo: 'moeda', largura: 13, somar: true },
+  { titulo: 'Pendente (procurar no banco)', chave: 'pendente', tipo: 'moeda', largura: 16, somar: true },
+  // Colunas para preencher durante a conciliação
+  { titulo: 'Data no extrato', valor: () => null, largura: 13 },
+  { titulo: 'Valor no extrato', valor: () => null, tipo: 'moeda', largura: 14 },
+  { titulo: 'Banco / conta', valor: () => null, largura: 16 },
+  { titulo: 'Baixado no PROCFIT? (S/N)', valor: () => null, largura: 12 },
+  { titulo: 'Observação', valor: () => null, largura: 30 },
+];
+
+function montarConciliacao(workbook, lista, filtros, hoje) {
+  const porMes = new Map();
+  for (const t of lista) {
+    const chave = t.vencimento ? String(t.vencimento).slice(0, 7) : 'sem-data';
+    if (!porMes.has(chave)) porMes.set(chave, []);
+    porMes.get(chave).push(t);
+  }
+  const meses = [...porMes.keys()].sort();
+
+  excel.adicionarTabela(workbook, 'Como usar', {
+    titulo: 'Conciliação do contas a receber com o banco',
+    subtitulo: `gerado em ${hoje.toLocaleString('pt-BR')}`,
+    colunas: [{ titulo: 'Passo a passo', chave: 'texto', largura: 110 }],
+    linhas: [
+      'Cada aba "Venc ..." traz os títulos PENDENTES que vencem naquele mês, em ordem de vencimento.',
+      'Para cada título, procure no extrato do banco um crédito com o valor da coluna "Pendente (procurar no banco)".',
+      'Use o CPF/CNPJ e o nome do cliente para confirmar: o PIX costuma mostrar o documento de quem pagou.',
+      'Achou? Preencha "Data no extrato", "Valor no extrato" e "Banco / conta". Depois faça a baixa no PROCFIT e marque "S".',
+      'Não achou? Deixe em branco: é título realmente em aberto (cobrança) ou pagamento ainda não identificado.',
+      'Os títulos de adquirentes (cartão) são pagos pela maquininha, em lote: confira pelo extrato da adquirente.',
+      'Os totais no fim de cada aba somam só as linhas visíveis quando você usa o filtro do Excel.',
+    ].map((texto) => ({ texto })),
+  });
+
+  // Resumo: mês de vencimento x forma x quem deve
+  const resumo = [];
+  for (const mes of meses) {
+    const grupos = new Map();
+    for (const t of porMes.get(mes)) {
+      const chave = `${t.modalidade ?? ''}|${quemDeve(t)}`;
+      const g = grupos.get(chave) ?? { mes: nomeMes(mes), forma: t.modalidade ?? '', quem: quemDeve(t), titulos: 0, pendente: 0 };
+      g.titulos += 1;
+      g.pendente += Number(t.pendente) || 0;
+      grupos.set(chave, g);
+    }
+    resumo.push(...[...grupos.values()].sort((a, b) => b.pendente - a.pendente));
+  }
+  excel.adicionarTabela(workbook, 'Resumo por mês', {
+    titulo: 'Pendente por mês de vencimento',
+    subtitulo: `${lista.length} títulos pendentes · ${meses.length} ${meses.length === 1 ? 'mês' : 'meses'}`,
+    colunas: [
+      { titulo: 'Mês de vencimento', chave: 'mes', largura: 16 },
+      { titulo: 'Forma', chave: 'forma', largura: 16 },
+      { titulo: 'Quem deve', chave: 'quem', largura: 22 },
+      { titulo: 'Títulos', chave: 'titulos', tipo: 'inteiro', largura: 9, somar: true },
+      { titulo: 'Pendente', chave: 'pendente', tipo: 'moeda', largura: 16, somar: true },
+    ],
+    linhas: resumo,
+    totais: true,
+  });
+
+  // Uma aba por mês
+  for (const mes of meses) {
+    const linhas = porMes.get(mes).sort((a, b) => String(a.vencimento).localeCompare(String(b.vencimento))
+      || String(a.cliente ?? '').localeCompare(String(b.cliente ?? ''), 'pt-BR'));
+    const total = linhas.reduce((s, t) => s + (Number(t.pendente) || 0), 0);
+    excel.adicionarTabela(workbook, mes === 'sem-data' ? 'Sem vencimento' : `Venc ${mes.slice(5, 7)}-${mes.slice(0, 4)}`, {
+      titulo: `Títulos pendentes com vencimento em ${nomeMes(mes)}`,
+      subtitulo: `${linhas.length} títulos · pendente ${moedaBR(total)}`,
+      colunas: COL_CONCILIACAO,
+      linhas,
+      totais: true,
+    });
+  }
+
+  excel.adicionarTabela(workbook, 'Filtros', {
+    titulo: 'Filtros usados nesta exportação',
+    colunas: [
+      { titulo: 'Filtro', chave: 'filtro', largura: 24 },
+      { titulo: 'Valor', chave: 'valor', largura: 50 },
+    ],
+    linhas: descreverFiltros(filtros, 'titulos'),
+  });
+}
+
 async function exportarTitulos(query) {
+  if (query.visao === 'conciliacao') {
+    // Sempre os títulos com saldo (em aberto ou baixa parcial), com os demais filtros da tela
+    const filtros = {
+      ...financeiro.montarFiltros({ ...query, situacao: 'aberto', limite: '', pagina: '' }),
+      pagina: 1, limite: LIMITE_EXPORTACAO,
+    };
+    const { lista } = await repo.titulos(filtros);
+    const hoje = new Date();
+    const workbook = excel.novaPlanilha();
+    workbook.creator = 'Painel financeiro - Belo Norte';
+    montarConciliacao(workbook, lista, filtros, hoje);
+    return {
+      workbook,
+      nomeArquivo: `conciliacao-receber${sufixoArquivo(filtros, 'titulos')}_${hoje.toISOString().slice(0, 10)}.xlsx`,
+    };
+  }
+
   const visao = query.visao === 'clientes' ? 'clientes' : 'titulos';
 
   // Mesmos filtros da tela, mas sem paginação

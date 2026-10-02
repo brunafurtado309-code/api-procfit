@@ -55,6 +55,8 @@ const TITULOS = `
       COALESCE(NULLIF(T.PEDIDO_PREVENDA, 0), NULLIF(NF.PEDIDO_CLIENTE, 0)) AS pedido,
       T.ENTIDADE                              AS cod_cliente,
       LTRIM(RTRIM(E.NOME))                    AS cliente,
+      -- CPF/CNPJ do devedor: ajuda a achar o pagamento no extrato do banco (PIX mostra o documento)
+      LTRIM(RTRIM(E.INSCRICAO_FEDERAL))       AS documento,
       T.MODALIDADE                            AS modalidade_id,
       CASE T.MODALIDADE
         WHEN 0  THEN 'Carteira'      WHEN 1  THEN 'Boleto'
