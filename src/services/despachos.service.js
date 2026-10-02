@@ -23,10 +23,15 @@ function montarFiltros(query) {
   if (situacao && !SITUACOES.includes(situacao)) {
     throw new AppError(`"situacao" deve ser: ${SITUACOES.join(', ')}`);
   }
+  const busca = (query.busca ?? '').trim().slice(0, 60) || null;
+  // Pesquisa por NÚMERO (despacho, acerto, nota, pedido ou código do cliente) procura em
+  // todas as datas: quem digita o número quer achar aquele registro, esteja no período ou não.
+  // Pesquisa por nome continua respeitando o período escolhido.
+  const porNumero = busca !== null && /^\d+$/.test(busca);
   return {
-    inicio: data(query.inicio, 'inicio'),
-    fim: data(query.fim, 'fim'),
-    busca: (query.busca ?? '').trim().slice(0, 60) || null,
+    inicio: porNumero ? null : data(query.inicio, 'inicio'),
+    fim: porNumero ? null : data(query.fim, 'fim'),
+    busca,
     situacao,
   };
 }
