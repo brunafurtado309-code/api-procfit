@@ -64,9 +64,31 @@ const TOTAIS_DO_ACERTO = `
 //   455510 retorno de despacho · 668401 bancos por títulos · 356928 caixa · 249008 cofre da loja
 // Serve para mapear a rota: se o título foi baixado aqui, não pode estar em aberto
 // nem ser baixado de novo em outro formulário.
+//
+// Dinheiro no acerto (validado em out/2026, acerto 150 / NF 8900):
+//   o acerto NÃO gera título novo para dinheiro (RESULTADOS.TIPO_GERACAO = 2 aponta para o
+//   título da própria nota). Ao processar, o PROCFIT CANCELA esse título pela tela
+//   "Cancelamento de Títulos a Receber" (tabela 451661 = CANCELAMENTO_TITULOS_RECEBER),
+//   com MOTIVO = 'Recebimento e Conferência de Despacho: <nº do acerto>'.
+//   Medido: 352 de 368 linhas de dinheiro seguem esse caminho. Por isso esse cancelamento
+//   conta como "pago no acerto"; cancelamento com outro motivo é manual e merece atenção.
+// CAST: garante que funcione mesmo se MOTIVO for do tipo text/ntext
+const MOTIVO_ACERTO = `CAST(C.MOTIVO AS varchar(200)) LIKE 'Recebimento e Confer%Despacho:%'`;
 const SITUACAO_DO_TITULO = (coluna) => `
   OUTER APPLY (
     SELECT
+      SUM(CASE WHEN TX.TRANSACAO_FINANCEIRA = 13 AND ${MOTIVO_ACERTO}
+               THEN ISNULL(TX.DEBITO, 0) ELSE 0 END)                                            AS cancelado_no_acerto,
+      MAX(CASE WHEN TX.TRANSACAO_FINANCEIRA = 13 AND ${MOTIVO_ACERTO}
+               THEN LTRIM(RTRIM(CAST(C.MOTIVO AS varchar(200)))) END)                                                 AS motivo_acerto,
+      MAX(CASE WHEN TX.TRANSACAO_FINANCEIRA = 13 AND ${MOTIVO_ACERTO}
+               THEN C.CANCELAMENTO_TITULO_RECEBER END)                                          AS cancelamento_acerto,
+      CONVERT(varchar(16), MAX(CASE WHEN TX.TRANSACAO_FINANCEIRA = 13 AND ${MOTIVO_ACERTO}
+               THEN C.DATA_HORA END), 120)                                                      AS cancelado_no_acerto_em,
+      MAX(CASE WHEN TX.TRANSACAO_FINANCEIRA = 13 AND NOT (${MOTIVO_ACERTO} AND CAST(C.MOTIVO AS varchar(200)) IS NOT NULL)
+               THEN TX.REG_MASTER_ORIGEM END)                                                   AS cancelamento_manual,
+      MAX(CASE WHEN TX.TRANSACAO_FINANCEIRA = 13 AND NOT (${MOTIVO_ACERTO} AND CAST(C.MOTIVO AS varchar(200)) IS NOT NULL)
+               THEN LTRIM(RTRIM(CAST(C.MOTIVO AS varchar(200)))) END)                                                 AS motivo_manual,
       SUM(ISNULL(TX.CREDITO, 0)) - SUM(ISNULL(TX.DEBITO, 0))                                   AS pendente,
       SUM(CASE WHEN TX.TRANSACAO_FINANCEIRA = 12 THEN ISNULL(TX.DEBITO, 0) ELSE 0 END)          AS recebido,
       SUM(CASE WHEN TX.TRANSACAO_FINANCEIRA = 13 THEN ISNULL(TX.DEBITO, 0) ELSE 0 END)          AS cancelado,
@@ -84,6 +106,8 @@ const SITUACAO_DO_TITULO = (coluna) => `
                   AND ISNULL(TX.TAB_MASTER_ORIGEM, 0) NOT IN (455510, 668401, 356928, 249008)
                  THEN 1 END)                                                                    AS baixas_outras
     FROM TITULOS_RECEBER_TRANSACOES TX WITH (NOLOCK)
+    LEFT JOIN CANCELAMENTO_TITULOS_RECEBER C WITH (NOLOCK)
+      ON TX.TAB_MASTER_ORIGEM = 451661 AND C.CANCELAMENTO_TITULO_RECEBER = TX.REG_MASTER_ORIGEM
     WHERE TX.TITULO_RECEBER = ${coluna}
   ) SX`;
 
@@ -97,7 +121,13 @@ const CAMPOS_SITUACAO_TITULO = `
   SX.baixas_bancos   AS baixas_bancos,
   SX.baixas_caixa    AS baixas_caixa,
   SX.baixas_cofre    AS baixas_cofre,
-  SX.baixas_outras   AS baixas_outras`;
+  SX.baixas_outras   AS baixas_outras,
+  SX.cancelado_no_acerto    AS cancelado_no_acerto,
+  SX.motivo_acerto          AS motivo_acerto,
+  SX.cancelamento_acerto    AS cancelamento_acerto,
+  SX.cancelado_no_acerto_em AS cancelado_no_acerto_em,
+  SX.cancelamento_manual    AS cancelamento_manual,
+  SX.motivo_manual          AS motivo_manual`;
 
 const CAMPOS_DO_ACERTO = `
   R.RECEBIMENTO_FATURAMENTO_DESPACHO                                  AS acerto,
@@ -255,8 +285,10 @@ async function detalhe(acerto) {
 // ===== Processamento do acerto (botão Processar do PROCFIT) =====
 // O PROCFIT não grava "fim da conferência" e, nesta base, o log de inclusões está desligado
 // (REG_LOG_INCLUSAO vazio; GERAL_LOG e LOG_FORMULARIOS sem linhas; TITULOS_RECEBER sem DATA_HORA).
-// Por isso o momento do Processar só é conhecido quando o acerto tem PIX:
-// é a hora em que o recebimento caiu em RECEBIMENTOS_BANCOS.
+// O momento do Processar é deduzido de dois registros que o próprio processamento grava:
+//   - PIX: a hora em que o recebimento caiu em RECEBIMENTOS_BANCOS;
+//   - dinheiro: a hora do cancelamento automático do título da nota (ver MOTIVO_ACERTO).
+// Acerto só com boleto/cartão não deixa hora registrada.
 // Regra validada: só o PIX (modalidade 11) gera recebimento em RECEBIMENTOS_BANCOS,
 // com FORM_ORIGEM = 456558 (Conferência e Recebimento) e REG_ORIGEM = número do acerto.
 //
@@ -289,12 +321,28 @@ async function processamento(pool, acertos) {
     WHERE RB.FORM_ORIGEM = 456558 AND RB.REG_ORIGEM IN (${lista})
     ORDER BY RB.REG_ORIGEM, RB.RECEBIMENTO_BANCO;`));
 
+  // Dinheiro: o cancelamento automático do título da nota marca a hora do Processar
+  const textos = numeros.map((n) => `'${n}'`).join(',');
+  const cancelamentos = await opcional(pool, 'cancelamentos-do-acerto', (r) => r.query(`
+    SELECT X.acerto_txt AS acerto, CONVERT(varchar(16), MAX(X.DATA_HORA), 120) AS processado_em
+    FROM (
+      SELECT C.DATA_HORA,
+             LTRIM(RTRIM(SUBSTRING(CAST(C.MOTIVO AS varchar(200)), CHARINDEX('Despacho:', CAST(C.MOTIVO AS varchar(200))) + 9, 20))) AS acerto_txt
+      FROM CANCELAMENTO_TITULOS_RECEBER C WITH (NOLOCK)
+      WHERE ${MOTIVO_ACERTO}
+    ) X
+    WHERE X.acerto_txt IN (${textos})
+    GROUP BY X.acerto_txt;`));
+
   const porAcerto = {};
   for (const n of numeros) {
-    const horasBanco = bancos.filter((x) => Number(x.acerto) === n).map((x) => x.gravado_em).filter(Boolean).sort();
+    const horas = [
+      ...bancos.filter((x) => Number(x.acerto) === n).map((x) => x.gravado_em),
+      ...cancelamentos.filter((x) => Number(x.acerto) === n).map((x) => x.processado_em),
+    ].filter(Boolean).sort();
     porAcerto[n] = {
-      processado_em: horasBanco[horasBanco.length - 1] ?? null,
-      fonte: horasBanco.length ? 'banco' : null,
+      processado_em: horas[horas.length - 1] ?? null,
+      fonte: horas.length ? 'registro' : null,
     };
   }
   return { porAcerto, bancos };

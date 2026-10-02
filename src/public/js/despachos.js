@@ -75,7 +75,11 @@ function situacaoTitulo(t) {
   const pendente = Number(t.pendente) || 0;
   const recebido = Number(t.recebido) || 0;
   const cancelado = Number(t.cancelado) || 0;
-  if (cancelado > 0.009 && recebido <= 0.009 && pendente <= 0.009) return { texto: 'Cancelado', classe: 'situacao--cancelada' };
+  const noAcerto = Number(t.cancelado_no_acerto) || 0;
+  // Cancelamento feito por uma pessoa (motivo diferente do automático do acerto)
+  if (cancelado - noAcerto > 0.009 && pendente <= 0.009) return { texto: 'Cancelado', classe: 'situacao--sem', alerta: true };
+  // Dinheiro: o processamento do acerto encerra o título da nota (cancelamento automático)
+  if (noAcerto > 0.009 && pendente <= 0.009 && pendente >= -0.009) return { texto: 'Pago no acerto', classe: 'situacao--faturada' };
   if (pendente < -0.009) return { texto: 'Recebido a mais', classe: 'situacao--sem', alerta: true };
   if (pendente <= 0.009) return { texto: 'Pago', classe: 'situacao--faturada' };
   if (recebido > 0.009) return { texto: 'Pago em parte', classe: 'situacao--devolucao' };
@@ -87,24 +91,37 @@ const LUGARES_BAIXA = [
   ['baixas_despacho', 'Retorno de despacho'], ['baixas_bancos', 'Bancos por títulos'],
   ['baixas_caixa', 'Caixa'], ['baixas_cofre', 'Cofre da loja'], ['baixas_outras', 'Outra tela'],
 ];
+// Número do acerto citado no motivo automático ("Recebimento e Conferência de Despacho: 150")
+const acertoDoMotivo = (motivo) => (String(motivo ?? '').match(/(\d+)\s*$/) || [])[1] ?? null;
+
 function lugaresDaBaixa(t) {
-  return LUGARES_BAIXA
+  const lugares = LUGARES_BAIXA
     .filter(([campo]) => Number(t[campo]) > 0)
     .map(([campo, nome]) => (Number(t[campo]) > 1 ? `${nome} ×${t[campo]}` : nome));
+  if (Number(t.cancelado_no_acerto) > 0.009) {
+    const n = acertoDoMotivo(t.motivo_acerto);
+    lugares.push(n ? `Acerto ${n}` : 'Acerto do despacho');
+  }
+  if (Number(t.cancelado) - (Number(t.cancelado_no_acerto) || 0) > 0.009) {
+    lugares.push(`Cancelamento manual${t.cancelamento_manual ? ` nº ${t.cancelamento_manual}` : ''}`);
+  }
+  return lugares;
 }
 // Sinal de baixa em duplicidade: baixado em mais de um formulário, ou recebido a mais que o valor.
 // (Duas baixas no MESMO lugar podem ser pagamentos parciais legítimos; se passarem do valor,
 // o título fica com saldo negativo e cai na segunda regra.)
 function baixaSuspeita(t) {
-  return lugaresDaBaixa(t).length > 1 || Number(t.pendente) < -0.009;
+  return lugaresDaBaixa(t).length > 1 || Number(t.pendente) < -0.009 || Boolean(situacaoTitulo(t).alerta);
 }
 
 // Colunas de situação usadas nas tabelas de títulos
 function celulasSituacaoTitulo(t) {
   const info = situacaoTitulo(t);
   const lugares = lugaresDaBaixa(t);
+  const quando = t.ultima_baixa ? dataBR(t.ultima_baixa)
+    : (t.cancelado_no_acerto_em ? dataHoraBR(t.cancelado_no_acerto_em) : null);
   const baixa = lugares.length
-    ? `${dataBR(t.ultima_baixa)} · ${lugares.join(' + ')}${Number(t.estornos) ? ` · ${plural(t.estornos, 'estorno', 'estornos')}` : ''}`
+    ? `${quando ? `${quando} · ` : ''}${lugares.join(' + ')}${Number(t.estornos) ? ` · ${plural(t.estornos, 'estorno', 'estornos')}` : ''}`
     : '—';
   const pendente = Number(t.pendente) || 0;
   return [
@@ -646,7 +663,7 @@ async function abrirAcerto(numero) {
       ));
       if (rt.suspeitos.length) {
         partes.push(aviso(`Atenção: ${plural(rt.suspeitos.length, 'título foi baixado', 'títulos foram baixados')} `
-          + 'em mais de um lugar ou recebido a mais. Confira na tabela abaixo (baixa em vermelho).'));
+          + 'em mais de um lugar, recebido a mais ou cancelado manualmente. Confira na tabela abaixo (baixa em vermelho).'));
       }
       partes.push(detalhes);
     }
@@ -988,7 +1005,7 @@ async function abrirNotasDaCarga(carga) {
         : 'Todos os títulos deste despacho estão pagos no sistema.', 'explica'));
       if (rt.suspeitos.length) {
         partes.push(aviso(`Atenção: ${plural(rt.suspeitos.length, 'título foi baixado', 'títulos foram baixados')} `
-          + 'em mais de um lugar ou recebido a mais. Confira as linhas com a baixa em vermelho.'));
+          + 'em mais de um lugar, recebido a mais ou cancelado manualmente. Confira as linhas com a baixa em vermelho.'));
       }
       const rotulo = td('Total', 'esquerda');
       rotulo.colSpan = variosAcertos ? 7 : 6;
