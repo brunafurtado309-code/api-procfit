@@ -140,10 +140,13 @@ function baixaSuspeita(t) {
 
 // Quanto da linha do acerto já foi pago: o valor da linha menos o que o título ainda deve
 // (cancelamento manual não conta como pagamento)
+// Pago = o que entrou de verdade (recebimentos). Antes era "valor - saldo", e um desconto
+// (ex.: taxa do cartão) aparecia como pagamento. "Pago no acerto" (dinheiro) é o valor da linha.
 function valorPago(t) {
-  if (t.titulo_receber == null || ['Cancelado', 'Renegociado'].includes(situacaoTitulo(t).texto)) return 0;
-  const devendo = Math.max(0, Number(t.pendente) || 0);
-  return Math.max(0, (Number(t.valor) || 0) - devendo);
+  const situacao = situacaoTitulo(t).texto;
+  if (t.titulo_receber == null || ['Cancelado', 'Renegociado'].includes(situacao)) return 0;
+  if (situacao === 'Pago no acerto') return Number(t.valor) || 0;
+  return Math.max(0, Number(t.recebido) || 0);
 }
 
 // Rastreio da baixa: quando, onde, nº do registro, quem fez e se foi parcial
@@ -158,6 +161,7 @@ function textoBaixa(t) {
   const partes = [quando];
   const unicoBanco = lugares.length === 1 && Number(t.baixas_bancos) === 1;
   const unicoRetorno = lugares.length === 1 && Number(t.baixas_despacho) === 1;
+  if (unicoRetorno && !t.baixa_acerto && t.acerto_via_banco) t.baixa_acerto = t.acerto_via_banco;
   if (unicoBanco && t.baixa_registro) partes.push(`${lugares[0]} nº ${t.baixa_registro}`);
   else if (unicoRetorno && t.baixa_acerto) partes.push(`${lugares[0]} · Acerto ${t.baixa_acerto}`);
   else partes.push(lugares.join(' + '));
@@ -182,11 +186,16 @@ function listaDeBaixas(t) {
     const estorno = Number(b.transacao) !== 12;
     const valor = estorno ? -(Number(b.estornado) || 0) : (Number(b.valor) || 0);
     soma += valor;
-    const lugar = LUGAR_POR_TELA[Number(b.tab)] ?? `Outra tela (${b.tab})`;
+    const viaAcerto = Number(b.via_acerto) === 1;
+    const lugar = viaAcerto ? 'Retorno de despacho' : (LUGAR_POR_TELA[Number(b.tab)] ?? `Outra tela (${b.tab})`);
+    let onde = `${lugar}${b.registro ? ` nº ${b.registro}` : ''}`;
+    if (Number(b.tab) === 455510 && b.acerto) onde = `${lugar} · Acerto ${b.acerto}`;
+    // PIX do acerto: baixado no despacho; o PROCFIT só registra o dinheiro em Bancos
+    if (viaAcerto) onde = `${lugar} · Acerto ${b.acerto} (PIX lançado em Bancos nº ${b.registro})`;
     const texto = [
       `${estorno ? 'estorno ' : ''}${dinheiro(valor)}`,
       b.hora ? dataHoraBR(b.hora) : dataBR(b.data),
-      Number(b.tab) === 455510 && b.acerto ? `${lugar} · Acerto ${b.acerto}` : `${lugar}${b.registro ? ` nº ${b.registro}` : ''}`,
+      onde,
       b.modalidade != null ? nomeForma(b.modalidade) : null,
       b.usuario ? `por ${b.usuario}` : null,
     ].filter(Boolean).join(' · ');

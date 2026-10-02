@@ -72,6 +72,11 @@ const TOTAIS_DO_ACERTO = `
 //   com MOTIVO = 'Recebimento e Conferência de Despacho: <nº do acerto>'.
 //   Medido: 352 de 368 linhas de dinheiro seguem esse caminho. Por isso esse cancelamento
 //   conta como "pago no acerto"; cancelamento com outro motivo é manual e merece atenção.
+// PIX recebido NO ACERTO: o PROCFIT grava o recebimento em RECEBIMENTOS_BANCOS (por isso a
+// transação aponta para Bancos por títulos, 668401), mas com FORM_ORIGEM = 456558
+// (Despacho - Conferência e Recebimento) e REG_ORIGEM = nº do acerto. Quem baixou foi o
+// despacho, não alguém na tela de Bancos. Validado em out/2026 (acerto 70, recebimento 3258).
+const VIA_ACERTO = '(TX.TAB_MASTER_ORIGEM = 668401 AND ISNULL(RBX.FORM_ORIGEM, 0) = 456558)';
 // CAST: garante que funcione mesmo se MOTIVO for do tipo text/ntext
 const MOTIVO_ACERTO = `CAST(C.MOTIVO AS varchar(200)) LIKE 'Recebimento e Confer%Despacho:%'`;
 const SITUACAO_DO_TITULO = (coluna) => `
@@ -99,9 +104,10 @@ const SITUACAO_DO_TITULO = (coluna) => `
       COUNT(CASE WHEN TX.TRANSACAO_FINANCEIRA BETWEEN 51 AND 55 THEN 1 END)                     AS estornos,
       CONVERT(varchar(10), MAX(CASE WHEN TX.TRANSACAO_FINANCEIRA = 12 THEN TX.DATA END), 23)    AS ultima_baixa,
       COUNT(CASE WHEN TX.TRANSACAO_FINANCEIRA = 12 AND ISNULL(TX.DEBITO, 0) > 0
-                  AND TX.TAB_MASTER_ORIGEM = 455510 THEN 1 END)                                 AS baixas_despacho,
+                  AND (TX.TAB_MASTER_ORIGEM = 455510 OR ${VIA_ACERTO}) THEN 1 END)             AS baixas_despacho,
       COUNT(CASE WHEN TX.TRANSACAO_FINANCEIRA = 12 AND ISNULL(TX.DEBITO, 0) > 0
-                  AND TX.TAB_MASTER_ORIGEM = 668401 THEN 1 END)                                 AS baixas_bancos,
+                  AND TX.TAB_MASTER_ORIGEM = 668401 AND NOT ${VIA_ACERTO} THEN 1 END)          AS baixas_bancos,
+      MAX(CASE WHEN TX.TRANSACAO_FINANCEIRA = 12 AND ${VIA_ACERTO} THEN RBX.REG_ORIGEM END)   AS acerto_via_banco,
       COUNT(CASE WHEN TX.TRANSACAO_FINANCEIRA = 12 AND ISNULL(TX.DEBITO, 0) > 0
                   AND TX.TAB_MASTER_ORIGEM = 356928 THEN 1 END)                                 AS baixas_caixa,
       COUNT(CASE WHEN TX.TRANSACAO_FINANCEIRA = 12 AND ISNULL(TX.DEBITO, 0) > 0
@@ -112,6 +118,8 @@ const SITUACAO_DO_TITULO = (coluna) => `
     FROM TITULOS_RECEBER_TRANSACOES TX WITH (NOLOCK)
     LEFT JOIN CANCELAMENTO_TITULOS_RECEBER C WITH (NOLOCK)
       ON TX.TAB_MASTER_ORIGEM = 451661 AND C.CANCELAMENTO_TITULO_RECEBER = TX.REG_MASTER_ORIGEM
+    LEFT JOIN RECEBIMENTOS_BANCOS RBX WITH (NOLOCK)
+      ON TX.TAB_MASTER_ORIGEM = 668401 AND RBX.RECEBIMENTO_BANCO = TX.REG_MASTER_ORIGEM
     WHERE TX.TITULO_RECEBER = ${coluna}
   ) SX`;
 
@@ -134,7 +142,8 @@ const CAMPOS_SITUACAO_TITULO = `
   SX.motivo_manual          AS motivo_manual,
   SX.renegociado            AS renegociado,
   SX.renegociado_em         AS renegociado_em,
-  SX.renegociacao           AS renegociacao`;
+  SX.renegociacao           AS renegociacao,
+  SX.acerto_via_banco       AS acerto_via_banco`;
 
 // Título que o acerto gerou para cada linha de _RESULTADOS (validado em out/2026, NF 10174):
 //   - o PROCFIT às vezes cria o título mas NÃO grava a ligação em RESULTADOS.TITULO_RECEBER
@@ -182,7 +191,9 @@ const ULTIMA_BAIXA = (coluna) => `
 
 const CAMPOS_ULTIMA_BAIXA = `
   BX.reg                                    AS baixa_registro,
-  BXR.RECEBIMENTO_FATURAMENTO_DESPACHO      AS baixa_acerto,
+  COALESCE(BXR.RECEBIMENTO_FATURAMENTO_DESPACHO,
+           CASE WHEN BXB.FORM_ORIGEM = 456558 THEN BXB.REG_ORIGEM END) AS baixa_acerto,
+  CASE WHEN BXB.FORM_ORIGEM = 456558 THEN 1 ELSE 0 END AS baixa_via_acerto,
   BX.valor                                  AS baixa_valor,
   CONVERT(varchar(16), BXB.DATA_HORA, 120)  AS baixa_hora,
   ${NOME_USUARIO('BXU')}                    AS baixa_usuario`;
@@ -385,7 +396,9 @@ async function baixasDosTitulos(pool, titulos) {
       TX.REG_MASTER_ORIGEM                           AS registro,
       CONVERT(varchar(16), RB.DATA_HORA, 120)        AS hora,
       COALESCE(RB.MODALIDADE, RC.MODALIDADE, DT.MODALIDADE) AS modalidade,
-      RD.RECEBIMENTO_FATURAMENTO_DESPACHO            AS acerto,
+      COALESCE(RD.RECEBIMENTO_FATURAMENTO_DESPACHO,
+               CASE WHEN RB.FORM_ORIGEM = 456558 THEN RB.REG_ORIGEM END) AS acerto,
+      CASE WHEN RB.FORM_ORIGEM = 456558 THEN 1 ELSE 0 END AS via_acerto,
       ${NOME_USUARIO('U')}                           AS usuario
     FROM TITULOS_RECEBER_TRANSACOES TX WITH (NOLOCK)
     LEFT JOIN RECEBIMENTOS_BANCOS RB WITH (NOLOCK)
@@ -617,9 +630,12 @@ async function pagasForaDoAcerto(pool, lista) {
       OUTER APPLY (
         SELECT SUM(ISNULL(X.CREDITO, 0)) - SUM(ISNULL(X.DEBITO, 0)) AS pendente,
                SUM(CASE WHEN X.TRANSACAO_FINANCEIRA = 12 AND ISNULL(X.TAB_MASTER_ORIGEM, 0) <> 455510
+                         AND NOT (X.TAB_MASTER_ORIGEM = 668401 AND ISNULL(XB.FORM_ORIGEM, 0) = 456558)
                         THEN ISNULL(X.DEBITO, 0) ELSE 0 END)       AS recebido_fora,
                SUM(CASE WHEN X.TRANSACAO_FINANCEIRA = 43 THEN ISNULL(X.DEBITO, 0) ELSE 0 END) AS renegociado
         FROM TITULOS_RECEBER_TRANSACOES X WITH (NOLOCK)
+        LEFT JOIN RECEBIMENTOS_BANCOS XB WITH (NOLOCK)
+          ON X.TAB_MASTER_ORIGEM = 668401 AND XB.RECEBIMENTO_BANCO = X.REG_MASTER_ORIGEM
         WHERE X.TITULO_RECEBER = TR.TITULO_RECEBER
       ) S
       GROUP BY N.carga, N.NF_NUMERO
