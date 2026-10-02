@@ -425,6 +425,60 @@ async function baixasDosTitulos(pool, titulos) {
   for (const t of titulos) t.baixas = porTitulo.get(Number(t.titulo_receber)) ?? [];
 }
 
+// Para o Excel detalhado: todos os títulos ligados a uma lista de despachos, com a situação.
+//   - títulos das NOTAS (nota fiscal 753289, renegociação 650512, gerados no acerto 455510),
+//     achados pelo nome "nota/parcela" e pelo cliente;
+//   - títulos gerados pelos ACERTOS do despacho (inclui os da adquirente, ex.: REDECARD).
+// Depois junta as baixas de cada um (baixasDosTitulos). Consulta opcional.
+async function titulosDasCargas(cargasLista) {
+  const numeros = [...new Set(cargasLista.map((c) => Number(c.carga)).filter((n) => Number.isInteger(n) && n > 0))];
+  if (!numeros.length) return [];
+  const pool = await getPool();
+  const lista = numeros.join(',');
+  const titulos = await opcional(pool, 'titulos-das-cargas', (r) => r.query(`
+    WITH NN AS (
+      SELECT FDN.FATURAMENTO_DESPACHO AS carga, FDN.NF_NUMERO AS nota, FDN.ENTIDADE, FDN.PEDIDO_PREVENDA AS pedido
+      FROM FATURAMENTO_DESPACHO_NOTAS FDN WITH (NOLOCK)
+      WHERE FDN.FATURAMENTO_DESPACHO IN (${lista})
+    ),
+    TT AS (
+      SELECT NN.carga, NN.nota, NN.pedido, T.TITULO_RECEBER
+      FROM NN
+      JOIN TITULOS_RECEBER T WITH (NOLOCK)
+        ON T.TAB_MASTER_ORIGEM IN (753289, 650512, 455510)
+       AND T.ENTIDADE = NN.ENTIDADE
+       AND LTRIM(RTRIM(T.TITULO)) LIKE CAST(CAST(NN.nota AS bigint) AS varchar(20)) + '/%'
+      UNION
+      SELECT R.FATURAMENTO_DESPACHO_FILTRO, DT.NF_NUMERO, NULLIF(DT.PEDIDO_PREVENDA, 0),
+             COALESCE(TA.TITULO_RECEBER, RS.TITULO_RECEBER)
+      FROM ${D}_RESULTADOS RS WITH (NOLOCK)
+      JOIN ${D} R WITH (NOLOCK) ON R.RECEBIMENTO_FATURAMENTO_DESPACHO = RS.RECEBIMENTO_FATURAMENTO_DESPACHO
+      LEFT JOIN ${D}_DETALHES DT WITH (NOLOCK)
+        ON DT.RECEBIMENTO_FATURAMENTO_DESPACHO_DETALHE = RS.RECEBIMENTO_FATURAMENTO_DESPACHO_DETALHE
+      ${TITULO_DO_ACERTO}
+      WHERE R.FATURAMENTO_DESPACHO_FILTRO IN (${lista})
+        AND COALESCE(TA.TITULO_RECEBER, RS.TITULO_RECEBER) IS NOT NULL
+    )
+    SELECT
+      TT.carga, TT.nota, TT.pedido,
+      T.TITULO_RECEBER                        AS titulo_receber,
+      LTRIM(RTRIM(T.TITULO))                  AS titulo,
+      T.ENTIDADE                              AS codigo_cliente,
+      LTRIM(RTRIM(E.NOME))                    AS cliente,
+      T.MODALIDADE                            AS modalidade,
+      T.VALOR                                 AS valor,
+      CONVERT(varchar(10), T.VENCIMENTO, 23)  AS vencimento,
+      T.TAB_MASTER_ORIGEM                     AS origem,
+      ${CAMPOS_SITUACAO_TITULO}
+    FROM TT
+    JOIN TITULOS_RECEBER T WITH (NOLOCK) ON T.TITULO_RECEBER = TT.TITULO_RECEBER
+    LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = T.ENTIDADE
+    ${SITUACAO_DO_TITULO('T.TITULO_RECEBER')}
+    ORDER BY TT.carga DESC, TT.nota, T.TITULO;`));
+  await baixasDosTitulos(pool, titulos);
+  return titulos;
+}
+
 async function processamento(pool, acertos) {
   const numeros = [...new Set(acertos.map(Number).filter((n) => Number.isInteger(n) && n > 0))];
   if (!numeros.length) return { porAcerto: {}, bancos: [] };
@@ -805,4 +859,4 @@ async function notasDaCarga(carga) {
   };
 }
 
-module.exports = { lista, detalhe, cargas, notasDaCarga, pendentes, SITUACOES_CARGA };
+module.exports = { lista, detalhe, cargas, notasDaCarga, pendentes, titulosDasCargas, SITUACOES_CARGA };
