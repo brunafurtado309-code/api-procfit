@@ -562,7 +562,80 @@ const ROTULOS_FILTRO = {
   f_valor_min: 'Pendente de R$', f_valor_max: 'Pendente até R$',
 };
 
+// Filtro rápido logo acima da tabela de títulos: cliente x adquirente e nome/código do devedor.
+// Usa os MESMOS campos do painel "Mais filtros" (devedor e f_cliente), então os dois ficam iguais.
+function montarFiltroRapidoDevedor() {
+  const topo = el('bloco-titulos')?.querySelector('.bloco-topo');
+  if (!topo || el('rapido-devedor')) return;
+  const form = document.createElement('form');
+  form.className = 'filtro-rapido-devedor';
+  form.style.cssText = 'display:flex;flex-wrap:wrap;gap:0.5rem;align-items:flex-end;margin:0.5rem 0 0.75rem';
+  const estiloCampo = 'padding:0.5rem 0.75rem;border:1px solid #cfd8d3;border-radius:8px;font:inherit';
+
+  const rotuloTipo = document.createElement('label');
+  rotuloTipo.style.cssText = 'display:grid;gap:0.25rem;font-size:0.85rem';
+  rotuloTipo.append('Quem deve');
+  const tipo = document.createElement('select');
+  tipo.id = 'rapido-devedor';
+  tipo.style.cssText = estiloCampo;
+  for (const [valor, texto] of [['', 'Todos'], ['cliente', 'Clientes'], ['adquirente', 'Adquirentes (cartão)']]) {
+    const opcao = document.createElement('option');
+    opcao.value = valor;
+    opcao.textContent = texto;
+    tipo.append(opcao);
+  }
+  rotuloTipo.append(tipo);
+
+  const rotuloNome = document.createElement('label');
+  rotuloNome.style.cssText = 'display:grid;gap:0.25rem;font-size:0.85rem';
+  rotuloNome.append('Cliente ou adquirente');
+  const nome = document.createElement('input');
+  nome.id = 'rapido-cliente';
+  nome.type = 'search';
+  nome.placeholder = 'nome ou código (ex.: REDECARD)';
+  nome.style.cssText = `${estiloCampo};min-width:16rem`;
+  rotuloNome.append(nome);
+
+  const filtrar = document.createElement('button');
+  filtrar.type = 'submit';
+  filtrar.textContent = 'Filtrar';
+  const limpar = document.createElement('button');
+  limpar.type = 'button';
+  limpar.className = 'botao-secundario';
+  limpar.textContent = 'Limpar';
+  form.append(rotuloTipo, rotuloNome, filtrar, limpar);
+
+  const aplicar = () => {
+    el('devedor').value = tipo.value;
+    el('f_cliente').value = nome.value.trim();
+    if (nome.value.trim()) filtrosColuna.f_cliente = nome.value.trim();
+    else delete filtrosColuna.f_cliente;
+    // O cartão "De clientes"/"De adquirentes" manda no tipo; ao filtrar por aqui, ele sai
+    if (['de_clientes', 'adquirentes'].includes(cartaoAtual)) cartaoAtual = null;
+    pagina = 1;
+    carregar();
+  };
+  tipo.addEventListener('change', aplicar);
+  form.addEventListener('submit', (evento) => {
+    evento.preventDefault();
+    aplicar();
+  });
+  limpar.addEventListener('click', () => {
+    tipo.value = '';
+    nome.value = '';
+    aplicar();
+  });
+  topo.after(form);
+}
+
+// Mantém o filtro rápido igual ao painel "Mais filtros" e aos marcadores
+function sincronizarFiltroRapido() {
+  if (el('rapido-devedor')) el('rapido-devedor').value = el('devedor')?.value ?? '';
+  if (el('rapido-cliente')) el('rapido-cliente').value = filtrosColuna.f_cliente ?? '';
+}
+
 function mostrarMarcadores() {
+  sincronizarFiltroRapido();
   const area = el('marcadores');
   const itens = [];
 
@@ -1154,6 +1227,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Botão ao lado do título da lista: faz o mesmo que o "Baixar Excel" do topo
   el('baixar-excel-lista')?.addEventListener('click', () => el('baixar-excel')?.click());
+
+  montarFiltroRapidoDevedor();
 
   // Filtros da ficha do cliente (valem para títulos, pedidos e recebimentos)
   for (const id of ['ficha-inicio', 'ficha-fim', 'ficha-valor']) {
