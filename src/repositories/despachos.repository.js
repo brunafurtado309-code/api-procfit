@@ -56,6 +56,49 @@ const TOTAIS_DO_ACERTO = `
     ORDER BY TT.RECEBIMENTO_FATURAMENTO_DESPACHO_TOTAL DESC
   ) TS`;
 
+// Situação de cada título gerado, lida do extrato TITULOS_RECEBER_TRANSACOES
+// (mesma regra validada no financeiro.repository.js):
+//   pendente = soma(CREDITO) - soma(DEBITO)      -> 0 = pago; negativo = recebido a mais
+//   TRANSACAO_FINANCEIRA 12 = recebimento (baixa), 13 = cancelamento, 51..55 = estornos
+// Onde a baixa foi feita (TAB_MASTER_ORIGEM da transação):
+//   455510 retorno de despacho · 668401 bancos por títulos · 356928 caixa · 249008 cofre da loja
+// Serve para mapear a rota: se o título foi baixado aqui, não pode estar em aberto
+// nem ser baixado de novo em outro formulário.
+const SITUACAO_DO_TITULO = (coluna) => `
+  OUTER APPLY (
+    SELECT
+      SUM(ISNULL(TX.CREDITO, 0)) - SUM(ISNULL(TX.DEBITO, 0))                                   AS pendente,
+      SUM(CASE WHEN TX.TRANSACAO_FINANCEIRA = 12 THEN ISNULL(TX.DEBITO, 0) ELSE 0 END)          AS recebido,
+      SUM(CASE WHEN TX.TRANSACAO_FINANCEIRA = 13 THEN ISNULL(TX.DEBITO, 0) ELSE 0 END)          AS cancelado,
+      COUNT(CASE WHEN TX.TRANSACAO_FINANCEIRA BETWEEN 51 AND 55 THEN 1 END)                     AS estornos,
+      CONVERT(varchar(10), MAX(CASE WHEN TX.TRANSACAO_FINANCEIRA = 12 THEN TX.DATA END), 23)    AS ultima_baixa,
+      COUNT(CASE WHEN TX.TRANSACAO_FINANCEIRA = 12 AND ISNULL(TX.DEBITO, 0) > 0
+                  AND TX.TAB_MASTER_ORIGEM = 455510 THEN 1 END)                                 AS baixas_despacho,
+      COUNT(CASE WHEN TX.TRANSACAO_FINANCEIRA = 12 AND ISNULL(TX.DEBITO, 0) > 0
+                  AND TX.TAB_MASTER_ORIGEM = 668401 THEN 1 END)                                 AS baixas_bancos,
+      COUNT(CASE WHEN TX.TRANSACAO_FINANCEIRA = 12 AND ISNULL(TX.DEBITO, 0) > 0
+                  AND TX.TAB_MASTER_ORIGEM = 356928 THEN 1 END)                                 AS baixas_caixa,
+      COUNT(CASE WHEN TX.TRANSACAO_FINANCEIRA = 12 AND ISNULL(TX.DEBITO, 0) > 0
+                  AND TX.TAB_MASTER_ORIGEM = 249008 THEN 1 END)                                 AS baixas_cofre,
+      COUNT(CASE WHEN TX.TRANSACAO_FINANCEIRA = 12 AND ISNULL(TX.DEBITO, 0) > 0
+                  AND ISNULL(TX.TAB_MASTER_ORIGEM, 0) NOT IN (455510, 668401, 356928, 249008)
+                 THEN 1 END)                                                                    AS baixas_outras
+    FROM TITULOS_RECEBER_TRANSACOES TX WITH (NOLOCK)
+    WHERE TX.TITULO_RECEBER = ${coluna}
+  ) SX`;
+
+const CAMPOS_SITUACAO_TITULO = `
+  SX.pendente        AS pendente,
+  SX.recebido        AS recebido,
+  SX.cancelado       AS cancelado,
+  SX.estornos        AS estornos,
+  SX.ultima_baixa    AS ultima_baixa,
+  SX.baixas_despacho AS baixas_despacho,
+  SX.baixas_bancos   AS baixas_bancos,
+  SX.baixas_caixa    AS baixas_caixa,
+  SX.baixas_cofre    AS baixas_cofre,
+  SX.baixas_outras   AS baixas_outras`;
+
 const CAMPOS_DO_ACERTO = `
   R.RECEBIMENTO_FATURAMENTO_DESPACHO                                  AS acerto,
   CONVERT(varchar(10), COALESCE(R.DATA_RECEBIMENTO, R.DATA_HORA), 23) AS data_recebimento,
@@ -177,8 +220,10 @@ async function detalhe(acerto) {
         LTRIM(RTRIM(RS.DESC_MODALIDADE))       AS forma,
         CONVERT(varchar(10), RS.VENCIMENTO, 23) AS vencimento,
         RS.VALOR                               AS valor,
-        RS.TITULO_RECEBER                      AS titulo_receber
+        RS.TITULO_RECEBER                      AS titulo_receber,
+        ${CAMPOS_SITUACAO_TITULO}
       FROM ${D}_RESULTADOS RS WITH (NOLOCK)
+      ${SITUACAO_DO_TITULO('RS.TITULO_RECEBER')}
       WHERE RS.RECEBIMENTO_FATURAMENTO_DESPACHO = @acerto
       ORDER BY RS.TITULO, RS.PARCELA;
 
@@ -208,9 +253,10 @@ async function detalhe(acerto) {
 }
 
 // ===== Processamento do acerto (botão Processar do PROCFIT) =====
-// O PROCFIT não grava "fim da conferência". O momento do Processar é deduzido de:
-//   1) a hora em que os títulos gerados foram criados no contas a receber (TITULOS_RECEBER.DATA_HORA);
-//   2) se não houver, a hora em que o recebimento PIX caiu em RECEBIMENTOS_BANCOS.
+// O PROCFIT não grava "fim da conferência" e, nesta base, o log de inclusões está desligado
+// (REG_LOG_INCLUSAO vazio; GERAL_LOG e LOG_FORMULARIOS sem linhas; TITULOS_RECEBER sem DATA_HORA).
+// Por isso o momento do Processar só é conhecido quando o acerto tem PIX:
+// é a hora em que o recebimento caiu em RECEBIMENTOS_BANCOS.
 // Regra validada: só o PIX (modalidade 11) gera recebimento em RECEBIMENTOS_BANCOS,
 // com FORM_ORIGEM = 456558 (Conferência e Recebimento) e REG_ORIGEM = número do acerto.
 //
@@ -232,15 +278,6 @@ async function processamento(pool, acertos) {
   // Os números vêm do próprio banco e são validados como inteiros acima
   const lista = numeros.join(',');
 
-  const titulos = await opcional(pool, 'titulos-processados', (r) => r.query(`
-    SELECT RS.RECEBIMENTO_FATURAMENTO_DESPACHO      AS acerto,
-           CONVERT(varchar(16), MIN(TR.DATA_HORA), 120) AS primeiro,
-           CONVERT(varchar(16), MAX(TR.DATA_HORA), 120) AS processado_em
-    FROM ${D}_RESULTADOS RS WITH (NOLOCK)
-    JOIN TITULOS_RECEBER TR WITH (NOLOCK) ON TR.TITULO_RECEBER = RS.TITULO_RECEBER
-    WHERE RS.RECEBIMENTO_FATURAMENTO_DESPACHO IN (${lista})
-    GROUP BY RS.RECEBIMENTO_FATURAMENTO_DESPACHO;`));
-
   const bancos = await opcional(pool, 'recebimentos-bancos', (r) => r.query(`
     SELECT RB.REG_ORIGEM                                   AS acerto,
            RB.RECEBIMENTO_BANCO                            AS recebimento,
@@ -254,11 +291,10 @@ async function processamento(pool, acertos) {
 
   const porAcerto = {};
   for (const n of numeros) {
-    const t = titulos.find((x) => Number(x.acerto) === n);
     const horasBanco = bancos.filter((x) => Number(x.acerto) === n).map((x) => x.gravado_em).filter(Boolean).sort();
     porAcerto[n] = {
-      processado_em: t?.processado_em ?? horasBanco[horasBanco.length - 1] ?? null,
-      fonte: t?.processado_em ? 'titulos' : (horasBanco.length ? 'banco' : null),
+      processado_em: horasBanco[horasBanco.length - 1] ?? null,
+      fonte: horasBanco.length ? 'banco' : null,
     };
   }
   return { porAcerto, bancos };
@@ -458,11 +494,13 @@ async function notasDaCarga(carga) {
         RS.CONTA_BANCARIA                       AS conta,
         CONVERT(varchar(10), RS.VENCIMENTO, 23) AS vencimento,
         RS.VALOR                                AS valor,
-        RS.TITULO_RECEBER                       AS titulo_receber
+        RS.TITULO_RECEBER                       AS titulo_receber,
+        ${CAMPOS_SITUACAO_TITULO}
       FROM ${D}_RESULTADOS RS WITH (NOLOCK)
       JOIN ${D} R WITH (NOLOCK) ON R.RECEBIMENTO_FATURAMENTO_DESPACHO = RS.RECEBIMENTO_FATURAMENTO_DESPACHO
       LEFT JOIN ${D}_DETALHES DT WITH (NOLOCK)
         ON DT.RECEBIMENTO_FATURAMENTO_DESPACHO_DETALHE = RS.RECEBIMENTO_FATURAMENTO_DESPACHO_DETALHE
+      ${SITUACAO_DO_TITULO('RS.TITULO_RECEBER')}
       WHERE R.FATURAMENTO_DESPACHO_FILTRO = @carga
       ORDER BY RS.RECEBIMENTO_FATURAMENTO_DESPACHO, DT.NF_NUMERO, RS.TITULO, RS.PARCELA;
     `);

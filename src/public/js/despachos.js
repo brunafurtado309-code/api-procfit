@@ -69,6 +69,59 @@ function duracao(inicio, fim) {
   return plural(Math.floor(minutos / (24 * 60)), 'dia', 'dias');
 }
 
+// Situação do título no contas a receber (vem do extrato do título)
+function situacaoTitulo(t) {
+  if (t.titulo_receber == null) return { texto: 'Sem título', classe: 'situacao--cancelada' };
+  const pendente = Number(t.pendente) || 0;
+  const recebido = Number(t.recebido) || 0;
+  const cancelado = Number(t.cancelado) || 0;
+  if (cancelado > 0.009 && recebido <= 0.009 && pendente <= 0.009) return { texto: 'Cancelado', classe: 'situacao--cancelada' };
+  if (pendente < -0.009) return { texto: 'Recebido a mais', classe: 'situacao--sem', alerta: true };
+  if (pendente <= 0.009) return { texto: 'Pago', classe: 'situacao--faturada' };
+  if (recebido > 0.009) return { texto: 'Pago em parte', classe: 'situacao--devolucao' };
+  return { texto: 'Em aberto', classe: 'situacao--sem' };
+}
+
+// Em quais formulários o título foi baixado (ex.: "Retorno de despacho", "Bancos ×2")
+const LUGARES_BAIXA = [
+  ['baixas_despacho', 'Retorno de despacho'], ['baixas_bancos', 'Bancos por títulos'],
+  ['baixas_caixa', 'Caixa'], ['baixas_cofre', 'Cofre da loja'], ['baixas_outras', 'Outra tela'],
+];
+function lugaresDaBaixa(t) {
+  return LUGARES_BAIXA
+    .filter(([campo]) => Number(t[campo]) > 0)
+    .map(([campo, nome]) => (Number(t[campo]) > 1 ? `${nome} ×${t[campo]}` : nome));
+}
+// Sinal de baixa em duplicidade: baixado em mais de um formulário, ou recebido a mais que o valor.
+// (Duas baixas no MESMO lugar podem ser pagamentos parciais legítimos; se passarem do valor,
+// o título fica com saldo negativo e cai na segunda regra.)
+function baixaSuspeita(t) {
+  return lugaresDaBaixa(t).length > 1 || Number(t.pendente) < -0.009;
+}
+
+// Colunas de situação usadas nas tabelas de títulos
+function celulasSituacaoTitulo(t) {
+  const info = situacaoTitulo(t);
+  const lugares = lugaresDaBaixa(t);
+  const baixa = lugares.length
+    ? `${dataBR(t.ultima_baixa)} · ${lugares.join(' + ')}${Number(t.estornos) ? ` · ${plural(t.estornos, 'estorno', 'estornos')}` : ''}`
+    : '—';
+  const pendente = Number(t.pendente) || 0;
+  return [
+    td(span(info.texto, `situacao ${info.classe}`), 'esquerda'),
+    td(baixa, `esquerda${baixaSuspeita(t) ? ' negativo' : ''}`),
+    td(pendente > 0.009 ? dinheiro(pendente) : '—', pendente > 0.009 ? 'negativo' : null),
+  ];
+}
+
+// Resumo dos títulos: quantos pagos, em aberto e com baixa suspeita
+function resumoTitulos(lista) {
+  const abertos = lista.filter((t) => ['Em aberto', 'Pago em parte'].includes(situacaoTitulo(t).texto));
+  const valorAberto = abertos.reduce((soma, t) => soma + (Number(t.pendente) || 0), 0);
+  const suspeitos = lista.filter(baixaSuspeita);
+  return { abertos, valorAberto, suspeitos };
+}
+
 // Recebimentos no banco repetidos: mais de um na MESMA conta para o mesmo acerto
 function recebimentosRepetidos(bancos) {
   const porConta = new Map();
@@ -576,17 +629,25 @@ async function abrirAcerto(numero) {
       const detalhes = document.createElement('details');
       detalhes.className = 'mais-detalhes';
       const resumo = document.createElement('summary');
-      resumo.textContent = `Ver os títulos gerados no contas a receber (${parcelas.length} · ${dinheiro(a.total_parcelas)})`;
+      const rt = resumoTitulos(parcelas);
+      resumo.textContent = `Ver os títulos gerados no contas a receber (${parcelas.length} · ${dinheiro(a.total_parcelas)}`
+        + `${rt.abertos.length ? ` · ${rt.abertos.length} em aberto` : ' · todos pagos'})`;
       detalhes.append(resumo, tabelaSimples(
-        [['Título', true], ['Cliente', true], ['Forma', true], ['Vencimento', true], ['Valor']],
+        [['Título', true], ['Cliente', true], ['Forma', true], ['Vencimento', true], ['Valor'],
+          ['No sistema', true], ['Baixa (data · onde)', true], ['Em aberto']],
         parcelas.map((p) => linhaDe(
           td(p.titulo ?? '—', 'esquerda sem-quebra'),
           td([p.codigo_cliente, p.cliente].filter(Boolean).join(' · ') || '—', 'esquerda'),
           td(p.forma ?? '—', 'esquerda'),
           td(dataBR(p.vencimento), 'esquerda'),
           td(dinheiro(p.valor)),
+          ...celulasSituacaoTitulo(p),
         )),
       ));
+      if (rt.suspeitos.length) {
+        partes.push(aviso(`Atenção: ${plural(rt.suspeitos.length, 'título foi baixado', 'títulos foram baixados')} `
+          + 'em mais de um lugar ou recebido a mais. Confira na tabela abaixo (baixa em vermelho).'));
+      }
       partes.push(detalhes);
     }
 
@@ -921,11 +982,21 @@ async function abrirNotasDaCarga(carga) {
       const variosAcertos = acertos.length > 1;
       partes.push(titulo(`Títulos do despacho (${titulos.length})`));
       const totalTitulos = titulos.reduce((t, x) => t + (Number(x.valor) || 0), 0);
+      const rt = resumoTitulos(titulos);
+      partes.push(span(rt.abertos.length
+        ? `${plural(rt.abertos.length, 'título em aberto', 'títulos em aberto')} no sistema: ${dinheiro(rt.valorAberto)} a receber.`
+        : 'Todos os títulos deste despacho estão pagos no sistema.', 'explica'));
+      if (rt.suspeitos.length) {
+        partes.push(aviso(`Atenção: ${plural(rt.suspeitos.length, 'título foi baixado', 'títulos foram baixados')} `
+          + 'em mais de um lugar ou recebido a mais. Confira as linhas com a baixa em vermelho.'));
+      }
       const rotulo = td('Total', 'esquerda');
       rotulo.colSpan = variosAcertos ? 7 : 6;
+      const valorAbertoTotal = rt.valorAberto;
       partes.push(tabelaSimples(
         [...(variosAcertos ? [['Acerto', true]] : []), ['Título', true], ['Nota', true], ['Cliente', true],
-          ['Forma', true], ['Conta', true], ['Vencimento', true], ['Valor']],
+          ['Forma', true], ['Conta', true], ['Vencimento', true], ['Valor'],
+          ['No sistema', true], ['Baixa (data · onde)', true], ['Em aberto']],
         titulos.map((t) => linhaDe(
           ...(variosAcertos ? [td(String(t.acerto), 'esquerda')] : []),
           td([t.titulo, t.parcela > 1 ? `parc. ${t.parcela}` : null].filter(Boolean).join(' · ') || '—', 'esquerda sem-quebra'),
@@ -935,8 +1006,10 @@ async function abrirNotasDaCarga(carga) {
           td(nomeConta(t.conta), 'esquerda'),
           td(dataBR(t.vencimento), 'esquerda'),
           td(dinheiro(t.valor)),
+          ...celulasSituacaoTitulo(t),
         )),
-        linhaDe(rotulo, td(dinheiro(totalTitulos))),
+        linhaDe(rotulo, td(dinheiro(totalTitulos)), td(''), td(''),
+          td(valorAbertoTotal > 0.009 ? dinheiro(valorAbertoTotal) : '—', valorAbertoTotal > 0.009 ? 'negativo' : null)),
       ));
     } else if (acertos.length) {
       partes.push(aviso('Nenhum título gerado ainda para este despacho.'));
