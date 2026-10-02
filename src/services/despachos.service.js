@@ -151,7 +151,8 @@ async function exportar(query) {
 
 // ===== Saída: as cargas que deixaram a empresa =====
 const SITUACAO_CARGA_TEXTO = {
-  EM_ROTA: 'Em rota (sem acerto)', PARCIAL: 'Acertada em parte', ACERTADA: 'Acertada',
+  EM_ROTA: 'Pendente de recebimento', PARCIAL: 'Acertada em parte', ACERTADA: 'Acertada',
+  NAO_PROC: 'Acerto não processado',
 };
 
 function filtrosCarga(query) {
@@ -193,6 +194,7 @@ async function exportarCargas(query) {
       { titulo: 'Valor que saiu', chave: 'valor', tipo: 'moeda', largura: 15, somar: true },
       { titulo: 'Notas acertadas', chave: 'notas_acertadas', tipo: 'inteiro', largura: 10, somar: true },
       { titulo: 'Informado no acerto', chave: 'informado', tipo: 'moeda', largura: 15, somar: true },
+      { titulo: 'Pago fora do acerto', chave: 'valor_pago_fora', tipo: 'moeda', largura: 15, somar: true },
       { titulo: 'Acerto', chave: 'acerto', tipo: 'codigo', largura: 9 },
       { titulo: 'Recebimento', chave: 'recebimento', tipo: 'data', largura: 12 },
       { titulo: 'Situação', valor: (c) => SITUACAO_CARGA_TEXTO[c.situacao] ?? c.situacao, largura: 20 },

@@ -423,10 +423,16 @@ const CARGAS = `
            MIN(R.RECEBIMENTO_FATURAMENTO_DESPACHO)            AS primeiro_acerto,
            MAX(R.DATA_RECEBIMENTO)                            AS ultimo_recebimento,
            COUNT(DISTINCT DT.NF_NUMERO)                       AS notas_acertadas,
-           SUM(ISNULL(DT.VALOR_PAGAMENTO, 0))                 AS informado
+           SUM(ISNULL(DT.VALOR_PAGAMENTO, 0))                 AS informado,
+           -- acerto lançado mas não processado = sem nenhuma linha em _RESULTADOS
+           COUNT(DISTINCT CASE WHEN P.acerto IS NULL THEN R.RECEBIMENTO_FATURAMENTO_DESPACHO END) AS sem_processar
     FROM RECEBIMENTOS_FATURAMENTO_DESPACHO R WITH (NOLOCK)
     LEFT JOIN RECEBIMENTOS_FATURAMENTO_DESPACHO_DETALHES DT WITH (NOLOCK)
       ON DT.RECEBIMENTO_FATURAMENTO_DESPACHO = R.RECEBIMENTO_FATURAMENTO_DESPACHO
+    LEFT JOIN (
+      SELECT DISTINCT RECEBIMENTO_FATURAMENTO_DESPACHO AS acerto
+      FROM RECEBIMENTOS_FATURAMENTO_DESPACHO_RESULTADOS WITH (NOLOCK)
+    ) P ON P.acerto = R.RECEBIMENTO_FATURAMENTO_DESPACHO
     GROUP BY R.FATURAMENTO_DESPACHO_FILTRO
   ),
   CARGAS AS (
@@ -453,6 +459,7 @@ const CARGAS = `
       CONVERT(varchar(10), A.ultimo_recebimento, 23)   AS recebimento,
       ISNULL(A.notas_acertadas, 0)                     AS notas_acertadas,
       ISNULL(A.informado, 0)                           AS informado,
+      ISNULL(A.sem_processar, 0)                       AS acertos_sem_processar,
       CASE
         WHEN ISNULL(A.acertos, 0) = 0                         THEN 'EM_ROTA'
         WHEN ISNULL(A.notas_acertadas, 0) < ISNULL(N.notas, 0) THEN 'PARCIAL'
@@ -469,6 +476,7 @@ const SITUACOES_CARGA = {
   EM_ROTA: 'situacao = \'EM_ROTA\'',
   PARCIAL: 'situacao = \'PARCIAL\'',
   ACERTADA: 'situacao = \'ACERTADA\'',
+  NAO_PROC: 'acertos_sem_processar > 0',
 };
 
 async function cargas(filtros) {
@@ -490,6 +498,7 @@ async function cargas(filtros) {
         SUM(CASE WHEN situacao = 'PARCIAL'  THEN 1 ELSE 0 END)             AS parciais,
         SUM(CASE WHEN situacao = 'PARCIAL'  THEN valor - informado ELSE 0 END) AS valor_parcial,
         SUM(CASE WHEN situacao = 'ACERTADA' THEN 1 ELSE 0 END)             AS acertadas,
+        SUM(CASE WHEN acertos_sem_processar > 0 THEN 1 ELSE 0 END)        AS nao_processados,
         SUM(informado)                                                    AS informado
       FROM CARGAS
       WHERE (@inicio IS NULL OR saida >= @inicio)

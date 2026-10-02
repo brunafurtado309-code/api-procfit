@@ -780,7 +780,7 @@ async function baixarExcel() {
 
 // ===== Saída: as cargas que deixaram a empresa =====
 const SITUACOES_CARGA = {
-  EM_ROTA: { texto: 'Em rota', classe: 'situacao--sem' },
+  EM_ROTA: { texto: 'Pendente de recebimento', classe: 'situacao--sem' },
   PARCIAL: { texto: 'Acertada em parte', classe: 'situacao--devolucao' },
   ACERTADA: { texto: 'Acertada', classe: 'situacao--faturada' },
 };
@@ -814,6 +814,7 @@ async function carregarCargas() {
 function mostrarResumoCargas(r) {
   el('carga-total').textContent = dinheiro(r.valor);
   el('carga-explica').textContent = `${plural(r.cargas, 'carga', 'cargas')} · ${plural(r.notas, 'nota', 'notas')}`;
+  el('carga-ind-rota').previousElementSibling.textContent = 'Pendentes de recebimento';
   el('carga-ind-rota').replaceChildren(inteiro(r.em_rota), span(`${dinheiro(r.valor_em_rota)} sem acerto`));
   el('carga-ind-parcial').replaceChildren(inteiro(r.parciais), span(`${dinheiro(r.valor_parcial)} faltando`));
   el('carga-ind-acertada').replaceChildren(inteiro(r.acertadas), span('cargas fechadas'));
@@ -825,8 +826,9 @@ function mostrarResumoCargas(r) {
 function mostrarCartoesCargas(r) {
   const itens = [
     { id: null, titulo: 'Todas', valor: inteiro(r.cargas), nota: `${dinheiro(r.valor)} em notas` },
-    { id: 'EM_ROTA', titulo: 'Em rota', valor: inteiro(r.em_rota), nota: `${dinheiro(r.valor_em_rota)} sem acerto`, alerta: true },
+    { id: 'EM_ROTA', titulo: 'Pendentes de recebimento', valor: inteiro(r.em_rota), nota: `${dinheiro(r.valor_em_rota)} sem acerto`, alerta: true },
     { id: 'PARCIAL', titulo: 'Acertadas em parte', valor: inteiro(r.parciais), nota: `${dinheiro(r.valor_parcial)} faltando`, alerta: true },
+    { id: 'NAO_PROC', titulo: 'Acerto não processado', valor: inteiro(r.nao_processados ?? 0), nota: 'lançado e sem títulos gerados', alerta: true },
     { id: 'ACERTADA', titulo: 'Acertadas', valor: inteiro(r.acertadas), nota: 'nada pendente' },
   ];
   // Despachos com notas pagas por fora do acerto (ex.: baixadas em Bancos por títulos)
@@ -928,9 +930,12 @@ function mostrarCargas() {
     const info = SITUACOES_CARGA[c.situacao] ?? { texto: c.situacao, classe: '' };
     // Todas as notas sem acerto já foram pagas por fora: não está mais "em rota" de verdade
     const todasPagasFora = Number(c.notas_sem_acerto) > 0 && Number(c.notas_pagas_fora) === Number(c.notas_sem_acerto);
-    const infoTela = todasPagasFora && c.situacao !== 'ACERTADA'
-      ? { texto: c.situacao === 'EM_ROTA' ? 'Pago fora do acerto' : 'Resto pago fora', classe: 'situacao--devolucao' }
-      : info;
+    let infoTela = info;
+    if (todasPagasFora && c.situacao !== 'ACERTADA') {
+      infoTela = { texto: c.situacao === 'EM_ROTA' ? 'Recebido fora do acerto' : 'Resto pago fora', classe: 'situacao--devolucao' };
+    } else if (Number(c.acertos_sem_processar) > 0) {
+      infoTela = { texto: 'Acerto não processado', classe: 'situacao--devolucao' };
+    }
     const botao = document.createElement('button');
     botao.type = 'button';
     botao.className = 'botao-expandir';
@@ -940,7 +945,8 @@ function mostrarCargas() {
     linha.append(
       // Número do despacho (é o que o conferente usa), com o acerto e o conferente embaixo
       comAuxiliar(`Despacho ${c.carga}`, c.acerto ? `acerto ${c.acerto}` : 'sem acerto', 'esquerda sem-quebra'),
-      comAuxiliar(dataBR(c.saida), c.recebimento ? `voltou ${dataBR(c.recebimento)}` : null, 'esquerda sem-quebra'),
+      comAuxiliar(dataBR(c.saida), c.recebimento ? `voltou ${dataBR(c.recebimento)}`
+        : (c.situacao === 'EM_ROTA' && c.criado_em ? `há ${duracaoAteHoje(c.criado_em) ?? '—'}` : null), 'esquerda sem-quebra'),
       // Rota com o responsável (motorista) embaixo
       comAuxiliar(c.rota || '—', c.responsavel ?? null, 'esquerda'),
       // Conferente = quem criou o despacho, com o momento em que criou
@@ -1327,5 +1333,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (guardado.situacaoCarga) cargaSituacao = guardado.situacaoCarga;
   el('limpar-pesquisa').hidden = !el('pesquisa-termo').value.trim();
 
-  mostrarVisao(guardado.visao === 'retorno' ? 'retorno' : 'saida');
+  // Tela única: todos os despachos numa lista só (saída, acerto e baixas por fora).
+  // A antiga divisão Saída × Retorno fica escondida; o período passa a ser a data de saída.
+  el('ver-saida').parentElement.hidden = true;
+  el('inicio').parentElement.firstChild.textContent = 'Saída de ';
+  const descricao = el('carga-titulo-lista').closest('.bloco').querySelector('.bloco__descricao');
+  if (descricao) {
+    descricao.textContent = 'Cada linha é um despacho que saiu. Clique para ver tudo: o acerto (quem lançou, '
+      + 'quando processou, formas e títulos) e onde cada título foi baixado, inclusive fora do acerto.';
+  }
+  el('baixar-excel').removeEventListener('click', baixarExcel);
+  el('baixar-excel').addEventListener('click', () => baixarExcelCargas());
+  mostrarVisao('saida');
 });
