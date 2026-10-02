@@ -5,10 +5,10 @@ const repo = require('../repositories/despachos.repository');
 const excel = require('../utils/excel');
 
 const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
-const SITUACOES = ['CONFERIDO', 'DIFERENCA', 'SEM_PARCELAS', 'SEM_NOTAS', 'DESCOBERTO'];
+const SITUACOES = ['CONFERIDO', 'DIFERENCA', 'SEM_PARCELAS', 'SEM_NOTAS', 'DESCOBERTO', 'PENDENTE'];
 const SITUACAO_TEXTO = {
   CONFERIDO: 'Ok', DIFERENCA: 'Conferir', SEM_PARCELAS: 'Não processado', SEM_NOTAS: 'Sem notas',
-  DESCOBERTO: 'Falta receber',
+  DESCOBERTO: 'Falta receber', PENDENTE: 'Pendente de recebimento',
 };
 const temDescoberto = (a) => Number(a.a_descoberto) > 0.01;
 
@@ -62,10 +62,47 @@ function filtrarSituacao(acertos, situacao) {
   return acertos.filter((a) => a.situacao === situacao);
 }
 
+// Despacho sem acerto, no mesmo formato de uma linha de acerto, para entrar na lista do Retorno.
+// "Recebido" aqui é o que já foi baixado por fora do acerto (ex.: Bancos por títulos).
+function linhaPendente(c) {
+  const valor = Number(c.valor) || 0;
+  const pagoFora = Number(c.valor_pago_fora) || 0;
+  return {
+    acerto: null,
+    carga: c.carga,
+    data_recebimento: c.saida,   // para ordenar junto; a tela mostra como "saiu em"
+    saida: c.saida,
+    criado_em: c.criado_em,
+    usuario: c.usuario,
+    usuario_nome: c.conferente,
+    rota: c.rota,
+    responsavel: c.responsavel,
+    notas: c.notas,
+    total_notas: valor,
+    total_informado: pagoFora,
+    a_descoberto: Math.max(0, valor - pagoFora),
+    notas_sem_acerto: c.notas_sem_acerto,
+    notas_pagas_fora: c.notas_pagas_fora,
+    notas_parciais_fora: c.notas_parciais_fora,
+    valor_pago_fora: pagoFora,
+    situacao: 'PENDENTE',
+  };
+}
+
 async function lista(query) {
   const filtros = montarFiltros(query);
-  const todos = await repo.lista(filtros);
-  return { resumo: resumir(todos), lista: filtrarSituacao(todos, filtros.situacao) };
+  const [todos, semAcerto] = await Promise.all([repo.lista(filtros), repo.pendentes(filtros)]);
+  const pend = semAcerto.map(linhaPendente);
+  const resumo = {
+    ...resumir(todos),
+    pendentes: pend.length,
+    valor_pendente: pend.reduce((t, p) => t + p.a_descoberto, 0),
+  };
+  let lista;
+  if (filtros.situacao === 'PENDENTE') lista = pend;
+  else if (filtros.situacao) lista = filtrarSituacao(todos, filtros.situacao);
+  else lista = [...todos, ...pend];
+  return { resumo, lista };
 }
 
 async function detalhe(query, params) {

@@ -36,10 +36,17 @@ const SITUACOES = {
   DESCOBERTO: { texto: 'Falta receber', classe: 'situacao--devolucao' },
   DIFERENCA: { texto: 'Conferir', classe: 'situacao--devolucao' },
   CONFERIDO: { texto: 'Ok', classe: 'situacao--faturada' },
+  // Despachos sem acerto (vêm da Saída para a lista do Retorno)
+  PENDENTE: { texto: 'Pendente de recebimento', classe: 'situacao--sem' },
+  PAGO_FORA: { texto: 'Recebido fora do acerto', classe: 'situacao--devolucao' },
 };
 const FILTRO_TEXTO = Object.fromEntries(Object.entries(SITUACOES).map(([k, v]) => [k, v.texto]));
 
 function situacaoDoDespacho(a) {
+  if (a.situacao === 'PENDENTE') {
+    const semAcerto = Number(a.notas_sem_acerto) || 0;
+    return semAcerto > 0 && Number(a.notas_pagas_fora) === semAcerto ? 'PAGO_FORA' : 'PENDENTE';
+  }
   if (a.situacao === 'SEM_PARCELAS' || a.situacao === 'SEM_NOTAS') return a.situacao;
   if (Number(a.a_descoberto) > 0.01) return 'DESCOBERTO';
   return a.situacao;
@@ -69,6 +76,13 @@ function duracao(inicio, fim) {
   const dias = Math.floor(minutos / (24 * 60));
   const horas = Math.floor((minutos % (24 * 60)) / 60);
   return `${plural(dias, 'dia', 'dias')}${horas ? ` e ${horas} h` : ''}`;
+}
+
+// Há quanto tempo (até agora) a partir de "AAAA-MM-DD HH:MM"
+function duracaoAteHoje(inicio) {
+  const d = new Date();
+  const agora = `${formatarData(d)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return duracao(inicio, agora);
 }
 
 // Situação do título no contas a receber (vem do extrato do título)
@@ -125,15 +139,29 @@ function valorPago(t) {
   return Math.max(0, (Number(t.valor) || 0) - devendo);
 }
 
+// Rastreio da baixa: quando, onde, nº do registro, quem fez e se foi parcial
+// ex.: "17/09/2026 14:36 · Bancos por títulos nº 2483 · por FULANA · parcial R$ 500,00 de R$ 1.000,00"
+function textoBaixa(t) {
+  const lugares = lugaresDaBaixa(t);
+  if (!lugares.length) return '';
+  const quando = t.baixa_hora ? dataHoraBR(t.baixa_hora)
+    : (t.ultima_baixa ? dataBR(t.ultima_baixa)
+      : (t.cancelado_no_acerto_em ? dataHoraBR(t.cancelado_no_acerto_em) : null));
+  const partes = [quando];
+  const unicoBanco = lugares.length === 1 && Number(t.baixas_bancos) === 1;
+  partes.push(unicoBanco && t.baixa_registro ? `${lugares[0]} nº ${t.baixa_registro}` : lugares.join(' + '));
+  if (t.baixa_usuario) partes.push(`por ${t.baixa_usuario}`);
+  if (situacaoTitulo(t).texto === 'Pago em parte') {
+    partes.push(`parcial: ${dinheiro(t.recebido)} de ${dinheiro(t.valor)}`);
+  }
+  if (Number(t.estornos)) partes.push(plural(t.estornos, 'estorno', 'estornos'));
+  return partes.filter(Boolean).join(' · ');
+}
+
 // Colunas de situação usadas nas tabelas de títulos
 function celulasSituacaoTitulo(t) {
   const info = situacaoTitulo(t);
-  const lugares = lugaresDaBaixa(t);
-  const quando = t.ultima_baixa ? dataBR(t.ultima_baixa)
-    : (t.cancelado_no_acerto_em ? dataHoraBR(t.cancelado_no_acerto_em) : null);
-  const baixa = lugares.length
-    ? `${quando ? `${quando} · ` : ''}${lugares.join(' + ')}${Number(t.estornos) ? ` · ${plural(t.estornos, 'estorno', 'estornos')}` : ''}`
-    : '—';
+  const baixa = textoBaixa(t) || '—';
   const pendente = Number(t.pendente) || 0;
   return [
     td(span(info.texto, `situacao ${info.classe}`), 'esquerda'),
@@ -263,10 +291,13 @@ function span(texto, classe) {
 // Cartões-filtro: clicar mostra só os acertos daquela situação
 function mostrarCartoes(r) {
   const cartoes = [
-    { situacao: null, titulo: 'Todos', valor: r.acertos, nota: 'despachos no período' },
+    { situacao: null, titulo: 'Todos', valor: (Number(r.acertos) || 0) + (Number(r.pendentes) || 0),
+      nota: 'com acerto e pendentes' },
     { situacao: 'DESCOBERTO', titulo: 'Falta receber', valor: r.com_descoberto, nota: 'nota paga em parte' },
     { situacao: 'SEM_PARCELAS', titulo: 'Não processados', valor: r.sem_parcelas, nota: 'sem títulos gerados' },
     { situacao: 'DIFERENCA', titulo: 'Para conferir', valor: r.com_diferenca, nota: 'títulos ≠ recebido' },
+    { situacao: 'PENDENTE', titulo: 'Pendentes de recebimento', valor: r.pendentes ?? 0,
+      nota: `${dinheiro(r.valor_pendente)} sem acerto lançado` },
   ];
   el('cartoes').replaceChildren(...cartoes.map((c) => {
     const botao = document.createElement('button');
@@ -386,6 +417,7 @@ function etiquetaSituacao(situacao) {
 function mostrarGraficoDespachos(lista) {
   const dias = new Map();
   for (const a of lista) {
+    if (a.situacao === 'PENDENTE') continue;   // sem acerto: não tem data de recebimento
     const dia = String(a.data_recebimento ?? '').slice(0, 10);
     if (!dia) continue;
     const d = dias.get(dia) ?? { recebido: 0, falta: 0 };
@@ -427,11 +459,16 @@ function mostrarLista() {
       botao.className = 'link-pedido';
       botao.textContent = a.carga ? `Despacho ${a.carga}` : `Acerto ${a.acerto}`;
       botao.title = 'Ver as notas e como cada uma foi paga';
-      botao.addEventListener('click', () => abrirAcerto(a.acerto));
+      const pendente = a.situacao === 'PENDENTE';
+      botao.addEventListener('click', () => (pendente ? abrirDespachoJanela(a.carga) : abrirAcerto(a.acerto)));
       const falta = Number(a.a_descoberto) || 0;
+      const dias = pendente ? duracaoAteHoje(a.criado_em) : null;
       linha.append(
-        comAuxiliar(botao, `acerto ${a.acerto}`, 'esquerda sem-quebra'),
-        comAuxiliar(dataBR(a.data_recebimento), `lançado por ${pessoa(a.usuario_nome, a.usuario, 'usuário')}`, 'esquerda sem-quebra'),
+        comAuxiliar(botao, pendente ? 'sem acerto' : `acerto ${a.acerto}`, 'esquerda sem-quebra'),
+        pendente
+          ? comAuxiliar(`saiu ${dataBR(a.saida)}`, [dias ? `há ${dias}` : null,
+            `conferente ${pessoa(a.usuario_nome, a.usuario, 'usuário')}`].filter(Boolean).join(' · '), 'esquerda sem-quebra')
+          : comAuxiliar(dataBR(a.data_recebimento), `lançado por ${pessoa(a.usuario_nome, a.usuario, 'usuário')}`, 'esquerda sem-quebra'),
         td(inteiro(a.notas)),
         td(dinheiro(a.total_notas)),
         td(dinheiro(a.total_informado)),
@@ -953,6 +990,35 @@ async function abrirNotasDaCarga(carga) {
   const linha = el(`carga-notas-${carga}`);
   if (!linha) return;
   try {
+    const caixa = await montarDespacho(carga);
+    linha.firstChild.replaceChildren(caixa);
+  } catch (erro) {
+    linha.firstChild.replaceChildren(span(erro.message, 'status--erro'));
+  }
+}
+
+// O mesmo detalhe do despacho, numa janela (usado na lista do Retorno para os pendentes)
+async function abrirDespachoJanela(carga) {
+  const dialogo = janelaAcerto();
+  el('acerto-titulo').textContent = `Despacho ${carga}`;
+  el('acerto-resumo').textContent = 'pendente de recebimento: ainda sem acerto lançado';
+  el('acerto-status').textContent = 'Carregando o despacho…';
+  el('acerto-status').classList.remove('status--erro');
+  el('acerto-corpo').replaceChildren();
+  if (!dialogo.open) dialogo.showModal();
+  try {
+    const caixa = await montarDespacho(carga);
+    el('acerto-status').textContent = '';
+    el('acerto-corpo').replaceChildren(caixa);
+  } catch (erro) {
+    el('acerto-status').textContent = erro.message;
+    el('acerto-status').classList.add('status--erro');
+  }
+}
+
+// Monta o detalhe completo de um despacho (dados, acertos e notas) e devolve a caixa pronta
+async function montarDespacho(carga) {
+  {
     const { carga: c, notas, acertos = [], titulosDasNotas = [] } = await buscar(`despachos/cargas/${carga}`);
     const detalhesAcertos = await Promise.all(acertos.map((a) => buscar(`despachos/${a.acerto}`)));
     const partes = [];
@@ -986,7 +1052,8 @@ async function abrirNotasDaCarga(carga) {
         const ultimo = acertos[acertos.length - 1];
         item('Da saída ao processamento', duracao(c.criado_em, ultimo.processado_em) ?? 'sem registro de hora');
       } else {
-        item('Retorno', 'ainda sem acerto (em rota)', true);
+        const ha = duracaoAteHoje(c.criado_em);
+        item('Retorno', `pendente de recebimento${ha ? ` há ${ha}` : ''} (sem acerto)`, true);
       }
       partes.push(dados);
     }
@@ -1048,17 +1115,12 @@ async function abrirNotasDaCarga(carga) {
         for (const t of lista) {
           const linhaTitulo = document.createElement('div');
           const info = situacaoTitulo(t);
-          const lugares = lugaresDaBaixa(t);
-          const quando = t.ultima_baixa ? dataBR(t.ultima_baixa)
-            : (t.cancelado_no_acerto_em ? dataHoraBR(t.cancelado_no_acerto_em) : null);
+          const rastreio = textoBaixa(t);
           linhaTitulo.append(
             `${t.titulo} · ${nomeForma(t.modalidade)} · ${dinheiro(t.valor)} `,
             span(info.texto, `situacao ${info.classe}`),
           );
-          if (lugares.length) {
-            linhaTitulo.append(span(` ${[quando, lugares.join(' + ')].filter(Boolean).join(' · ')}`,
-              baixaSuspeita(t) ? 'negativo' : 'explica'));
-          }
+          if (rastreio) linhaTitulo.append(span(` ${rastreio}`, baixaSuspeita(t) ? 'negativo' : 'explica'));
           celula.append(linhaTitulo);
         }
         return celula;
@@ -1098,9 +1160,7 @@ async function abrirNotasDaCarga(carga) {
     // Cliques dentro do detalhe não fecham a linha
     caixa.addEventListener('click', (evento) => evento.stopPropagation());
     caixa.append(...partes);
-    linha.firstChild.replaceChildren(caixa);
-  } catch (erro) {
-    linha.firstChild.replaceChildren(span(erro.message, 'status--erro'));
+    return caixa;
   }
 }
 

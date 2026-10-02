@@ -151,6 +151,27 @@ const TITULO_DO_ACERTO = `
              T.TITULO_RECEBER DESC
   ) TA`;
 
+// Rastreio da última baixa (recebimento) do título: onde, nº do registro, valor, quem e a hora.
+// Hora e usuário vêm do formulário que gravou a baixa (colunas já validadas no financeiro):
+//   Bancos por títulos (668401) -> RECEBIMENTOS_BANCOS (DATA_HORA, USUARIO_LOGADO)
+//   Caixa (356928)              -> RECEBIMENTOS_CAIXA (USUARIO_LOGADO; a hora fica só a data)
+const ULTIMA_BAIXA = (coluna) => `
+  OUTER APPLY (
+    SELECT TOP 1 TX.TAB_MASTER_ORIGEM AS tab, TX.REG_MASTER_ORIGEM AS reg, TX.DEBITO AS valor
+    FROM TITULOS_RECEBER_TRANSACOES TX WITH (NOLOCK)
+    WHERE TX.TITULO_RECEBER = ${coluna} AND TX.TRANSACAO_FINANCEIRA = 12 AND ISNULL(TX.DEBITO, 0) > 0
+    ORDER BY TX.DATA DESC
+  ) BX
+  LEFT JOIN RECEBIMENTOS_BANCOS BXB WITH (NOLOCK) ON BX.tab = 668401 AND BXB.RECEBIMENTO_BANCO = BX.reg
+  LEFT JOIN RECEBIMENTOS_CAIXA BXC WITH (NOLOCK) ON BX.tab = 356928 AND BXC.RECEBIMENTO_CAIXA = BX.reg
+  LEFT JOIN USUARIOS BXU WITH (NOLOCK) ON BXU.USUARIO = COALESCE(BXB.USUARIO_LOGADO, BXC.USUARIO_LOGADO)`;
+
+const CAMPOS_ULTIMA_BAIXA = `
+  BX.reg                                    AS baixa_registro,
+  BX.valor                                  AS baixa_valor,
+  CONVERT(varchar(16), BXB.DATA_HORA, 120)  AS baixa_hora,
+  ${NOME_USUARIO('BXU')}                    AS baixa_usuario`;
+
 const CAMPOS_DO_ACERTO = `
   R.RECEBIMENTO_FATURAMENTO_DESPACHO                                  AS acerto,
   CONVERT(varchar(10), COALESCE(R.DATA_RECEBIMENTO, R.DATA_HORA), 23) AS data_recebimento,
@@ -274,10 +295,12 @@ async function detalhe(acerto) {
         RS.VALOR                               AS valor,
         COALESCE(TA.TITULO_RECEBER, RS.TITULO_RECEBER) AS titulo_receber,
         CASE WHEN RS.TITULO_RECEBER IS NULL AND TA.TITULO_RECEBER IS NOT NULL THEN 1 ELSE 0 END AS achado_pelo_nome,
-        ${CAMPOS_SITUACAO_TITULO}
+        ${CAMPOS_SITUACAO_TITULO},
+        ${CAMPOS_ULTIMA_BAIXA}
       FROM ${D}_RESULTADOS RS WITH (NOLOCK)
       ${TITULO_DO_ACERTO}
       ${SITUACAO_DO_TITULO('COALESCE(TA.TITULO_RECEBER, RS.TITULO_RECEBER)')}
+      ${ULTIMA_BAIXA('COALESCE(TA.TITULO_RECEBER, RS.TITULO_RECEBER)')}
       WHERE RS.RECEBIMENTO_FATURAMENTO_DESPACHO = @acerto
       ORDER BY RS.TITULO, RS.PARCELA;
 
@@ -554,6 +577,32 @@ async function pagasForaDoAcerto(pool, lista) {
   }
 }
 
+// Despachos que saíram e ainda NÃO têm acerto (pendentes de recebimento), para a aba Retorno.
+// Não usam a data de início do período: pendência antiga continua pendência. Só a data
+// final vale (saída até o fim do período) e a pesquisa.
+async function pendentes(filtros) {
+  const pool = await getPool();
+  const { recordset } = await pool
+    .request()
+    .input('fim', sql.VarChar(10), filtros.fim ?? null)
+    .input('busca', sql.VarChar(60), filtros.busca ?? null)
+    .query(`
+      ${CARGAS}
+      SELECT TOP 2000 *
+      FROM CARGAS
+      WHERE situacao = 'EM_ROTA'
+        AND (@fim IS NULL OR saida <= @fim)
+        AND (@busca IS NULL
+          OR CAST(carga AS varchar(20)) = @busca
+          OR rota LIKE '%' + @busca + '%'
+          OR conferente LIKE '%' + @busca + '%'
+          OR responsavel LIKE '%' + @busca + '%')
+      ORDER BY saida_data DESC, carga DESC;
+    `);
+  await pagasForaDoAcerto(pool, recordset);
+  return recordset;
+}
+
 // As notas que saíram numa carga, marcando as que já voltaram acertadas
 async function notasDaCarga(carga) {
   const pool = await getPool();
@@ -626,13 +675,15 @@ async function notasDaCarga(carga) {
         T.MODALIDADE                            AS modalidade,
         T.VALOR                                 AS valor,
         CONVERT(varchar(10), T.VENCIMENTO, 23)  AS vencimento,
-        ${CAMPOS_SITUACAO_TITULO}
+        ${CAMPOS_SITUACAO_TITULO},
+        ${CAMPOS_ULTIMA_BAIXA}
       FROM FATURAMENTO_DESPACHO_NOTAS FDN WITH (NOLOCK)
       JOIN TITULOS_RECEBER T WITH (NOLOCK)
         ON T.TAB_MASTER_ORIGEM = 753289
        AND T.ENTIDADE = FDN.ENTIDADE
        AND LTRIM(RTRIM(T.TITULO)) LIKE CAST(CAST(FDN.NF_NUMERO AS bigint) AS varchar(20)) + '/%'
       ${SITUACAO_DO_TITULO('T.TITULO_RECEBER')}
+      ${ULTIMA_BAIXA('T.TITULO_RECEBER')}
       WHERE FDN.FATURAMENTO_DESPACHO = @carga
       ORDER BY FDN.NF_NUMERO, T.TITULO;`));
 
@@ -652,4 +703,4 @@ async function notasDaCarga(carga) {
   };
 }
 
-module.exports = { lista, detalhe, cargas, notasDaCarga, SITUACOES_CARGA };
+module.exports = { lista, detalhe, cargas, notasDaCarga, pendentes, SITUACOES_CARGA };
