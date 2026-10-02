@@ -93,6 +93,8 @@ function situacaoTitulo(t) {
   const recebido = Number(t.recebido) || 0;
   const cancelado = Number(t.cancelado) || 0;
   const noAcerto = Number(t.cancelado_no_acerto) || 0;
+  // Renegociado: o título foi zerado e trocado por parcelas novas (não é pagamento)
+  if (Number(t.renegociado) > 0.009 && pendente <= 0.009) return { texto: 'Renegociado', classe: 'situacao--devolucao' };
   // Cancelamento feito por uma pessoa (motivo diferente do automático do acerto)
   if (cancelado - noAcerto > 0.009 && pendente <= 0.009) return { texto: 'Cancelado', classe: 'situacao--sem', alerta: true };
   // Dinheiro: o processamento do acerto encerra o título da nota (cancelamento automático)
@@ -119,6 +121,9 @@ function lugaresDaBaixa(t) {
     const n = acertoDoMotivo(t.motivo_acerto);
     lugares.push(n ? `Acerto ${n}` : 'Acerto do despacho');
   }
+  if (Number(t.renegociado) > 0.009) {
+    lugares.push(`Renegociação${t.renegociacao ? ` nº ${t.renegociacao}` : ''}`);
+  }
   if (Number(t.cancelado) - (Number(t.cancelado_no_acerto) || 0) > 0.009) {
     lugares.push(`Cancelamento manual${t.cancelamento_manual ? ` nº ${t.cancelamento_manual}` : ''}`);
   }
@@ -134,7 +139,7 @@ function baixaSuspeita(t) {
 // Quanto da linha do acerto já foi pago: o valor da linha menos o que o título ainda deve
 // (cancelamento manual não conta como pagamento)
 function valorPago(t) {
-  if (t.titulo_receber == null || situacaoTitulo(t).texto === 'Cancelado') return 0;
+  if (t.titulo_receber == null || ['Cancelado', 'Renegociado'].includes(situacaoTitulo(t).texto)) return 0;
   const devendo = Math.max(0, Number(t.pendente) || 0);
   return Math.max(0, (Number(t.valor) || 0) - devendo);
 }
@@ -146,7 +151,8 @@ function textoBaixa(t) {
   if (!lugares.length) return '';
   const quando = t.baixa_hora ? dataHoraBR(t.baixa_hora)
     : (t.ultima_baixa ? dataBR(t.ultima_baixa)
-      : (t.cancelado_no_acerto_em ? dataHoraBR(t.cancelado_no_acerto_em) : null));
+      : (t.cancelado_no_acerto_em ? dataHoraBR(t.cancelado_no_acerto_em)
+        : (t.renegociado_em ? dataBR(t.renegociado_em) : null)));
   const partes = [quando];
   const unicoBanco = lugares.length === 1 && Number(t.baixas_bancos) === 1;
   const unicoRetorno = lugares.length === 1 && Number(t.baixas_despacho) === 1;
@@ -832,7 +838,7 @@ function mostrarCartoesCargas(r) {
     { id: 'ACERTADA', titulo: 'Acertadas', valor: inteiro(r.acertadas), nota: 'nada pendente' },
   ];
   // Despachos com notas pagas por fora do acerto (ex.: baixadas em Bancos por títulos)
-  const fora = cargas.filter((c) => Number(c.notas_pagas_fora) + Number(c.notas_parciais_fora) > 0);
+  const fora = cargas.filter((c) => Number(c.notas_pagas_fora) + Number(c.notas_parciais_fora) + Number(c.notas_renegociadas || 0) > 0);
   if (soPagasFora || fora.length) {
     itens.push({
       id: 'FORA', titulo: 'Pagas fora do acerto', valor: inteiro(fora.length),
@@ -874,7 +880,7 @@ function mostrarCargas() {
   estado.salvar('despachos', { ...filtrosAtuais(), situacaoCarga: cargaSituacao, visao: 'saida' });
   const fator = ordemCargas.direcao === 'asc' ? 1 : -1;
   const base = soPagasFora
-    ? cargas.filter((c) => Number(c.notas_pagas_fora) + Number(c.notas_parciais_fora) > 0)
+    ? cargas.filter((c) => Number(c.notas_pagas_fora) + Number(c.notas_parciais_fora) + Number(c.notas_renegociadas || 0) > 0)
     : cargas;
   const lista = [...base].sort((a, b) => {
     const x = a[ordemCargas.coluna];
@@ -928,11 +934,16 @@ function mostrarCargas() {
     const linha = document.createElement('tr');
     linha.className = `linha-dia${aberta ? ' linha-dia--aberta' : ''}`;
     const info = SITUACOES_CARGA[c.situacao] ?? { texto: c.situacao, classe: '' };
-    // Todas as notas sem acerto já foram pagas por fora: não está mais "em rota" de verdade
-    const todasPagasFora = Number(c.notas_sem_acerto) > 0 && Number(c.notas_pagas_fora) === Number(c.notas_sem_acerto);
+    // Todas as notas sem acerto já foram resolvidas por fora (título da nota zerado: pago,
+    // renegociado...): ninguém vai lançar acerto, então não é mais "pendente de recebimento"
+    const semAcerto = Number(c.notas_sem_acerto) || 0;
+    const todasPagasFora = semAcerto > 0 && Number(c.notas_resolvidas) === semAcerto;
+    const aindaDeve = Number(c.valor_aberto_sem_acerto) > 0.009;
     let infoTela = info;
     if (todasPagasFora && c.situacao !== 'ACERTADA') {
-      infoTela = { texto: c.situacao === 'EM_ROTA' ? 'Recebido fora do acerto' : 'Resto pago fora', classe: 'situacao--devolucao' };
+      infoTela = aindaDeve
+        ? { texto: c.situacao === 'EM_ROTA' ? 'Resolvido fora · a receber' : 'Resto resolvido fora', classe: 'situacao--devolucao' }
+        : { texto: c.situacao === 'EM_ROTA' ? 'Quitado sem acerto' : 'Resto quitado fora', classe: 'situacao--faturada' };
     } else if (Number(c.acertos_sem_processar) > 0) {
       infoTela = { texto: 'Acerto não processado', classe: 'situacao--devolucao' };
     }
@@ -957,9 +968,12 @@ function mostrarCargas() {
       td(Number(c.informado) > 0.009 ? dinheiro(c.informado) : '—'),
       // Notas que não passaram pelo acerto, mas foram baixadas em outra tela (ex.: Bancos por títulos)
       comAuxiliar(Number(c.valor_pago_fora) > 0.009 ? dinheiro(c.valor_pago_fora) : '—',
-        Number(c.notas_pagas_fora) + Number(c.notas_parciais_fora) > 0
+        [Number(c.notas_pagas_fora) + Number(c.notas_parciais_fora) > 0
           ? `${inteiro(Number(c.notas_pagas_fora) + Number(c.notas_parciais_fora))} de ${inteiro(c.notas_sem_acerto)} notas sem acerto`
-          : null),
+          : null,
+        Number(c.notas_renegociadas) > 0 ? plural(c.notas_renegociadas, 'renegociada', 'renegociadas') : null,
+        aindaDeve && todasPagasFora ? `${dinheiro(c.valor_aberto_sem_acerto)} a receber` : null]
+          .filter(Boolean).join(' · ') || null),
       td(span(infoTela.texto, `situacao ${infoTela.classe}`), 'esquerda'),
       td(botao, 'esquerda'),
     );
@@ -1109,6 +1123,12 @@ async function montarDespacho(carga) {
       // Notas que não passaram pelo acerto, mas cujo título já foi baixado em outro formulário
       const baixadasFora = pendentes.filter((n) => (titulosPorNota.get(Number(n.nota)) ?? [])
         .some((t) => lugaresDaBaixa(t).length > 0));
+      const renegociadas = pendentes.filter((n) => (titulosPorNota.get(Number(n.nota)) ?? [])
+        .some((t) => Number(t.renegociado) > 0.009));
+      if (renegociadas.length) {
+        partes.push(aviso(`${plural(renegociadas.length, 'nota foi renegociada', 'notas foram renegociadas')}: `
+          + 'o título da nota foi trocado por novas parcelas. O que ainda falta receber aparece na coluna "Em aberto".'));
+      }
       if (baixadasFora.length) {
         partes.push(aviso(`${plural(baixadasFora.length, 'nota deste despacho foi baixada', 'notas deste despacho foram baixadas')} `
           + 'fora do acerto do despacho (veja a coluna "Títulos da nota").'));
@@ -1121,6 +1141,33 @@ async function montarDespacho(carga) {
           celula.textContent = titulosDasNotas.length ? 'sem título no contas a receber' : '—';
           return celula;
         }
+        // Muitos títulos (ex.: renegociação em 31 parcelas): resumo por situação + lista recolhida
+        let destino = celula;
+        if (lista.length > 6) {
+          const grupos = new Map();
+          for (const t of lista) {
+            const nome = situacaoTitulo(t).texto;
+            const g = grupos.get(nome) ?? { qtd: 0, valor: 0, aberto: 0 };
+            g.qtd += 1;
+            g.valor += Number(t.valor) || 0;
+            g.aberto += Math.max(0, Number(t.pendente) || 0);
+            grupos.set(nome, g);
+          }
+          for (const [nome, g] of grupos) {
+            const linhaGrupo = document.createElement('div');
+            linhaGrupo.append(`${plural(g.qtd, 'título', 'títulos')} · ${dinheiro(g.valor)} `,
+              span(nome, `situacao ${situacaoTitulo(lista.find((t) => situacaoTitulo(t).texto === nome)).classe}`));
+            celula.append(linhaGrupo);
+          }
+          const abertos = lista.filter((t) => Number(t.pendente) > 0.009 && t.vencimento).sort((a, b) => (a.vencimento < b.vencimento ? -1 : 1));
+          if (abertos.length) celula.append(span(`próximo vencimento: ${dataBR(abertos[0].vencimento)}`, 'explica'));
+          const mais = document.createElement('details');
+          const resumo = document.createElement('summary');
+          resumo.textContent = 'ver todos os títulos';
+          mais.append(resumo);
+          celula.append(mais);
+          destino = mais;
+        }
         for (const t of lista) {
           const linhaTitulo = document.createElement('div');
           const info = situacaoTitulo(t);
@@ -1130,7 +1177,8 @@ async function montarDespacho(carga) {
             span(info.texto, `situacao ${info.classe}`),
           );
           if (rastreio) linhaTitulo.append(span(` ${rastreio}`, baixaSuspeita(t) ? 'negativo' : 'explica'));
-          celula.append(linhaTitulo);
+          if (Number(t.origem) === 650512) linhaTitulo.append(span(' · parcela da renegociação', 'explica'));
+          destino.append(linhaTitulo);
         }
         return celula;
       };

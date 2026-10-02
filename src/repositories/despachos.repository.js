@@ -89,6 +89,10 @@ const SITUACAO_DO_TITULO = (coluna) => `
                THEN TX.REG_MASTER_ORIGEM END)                                                   AS cancelamento_manual,
       MAX(CASE WHEN TX.TRANSACAO_FINANCEIRA = 13 AND NOT (${MOTIVO_ACERTO} AND CAST(C.MOTIVO AS varchar(200)) IS NOT NULL)
                THEN LTRIM(RTRIM(CAST(C.MOTIVO AS varchar(200)))) END)                                                 AS motivo_manual,
+      -- 43 = renegociação (tabela 650512): o título é zerado e substituído por novas parcelas
+      SUM(CASE WHEN TX.TRANSACAO_FINANCEIRA = 43 THEN ISNULL(TX.DEBITO, 0) ELSE 0 END)          AS renegociado,
+      CONVERT(varchar(10), MAX(CASE WHEN TX.TRANSACAO_FINANCEIRA = 43 THEN TX.DATA END), 23)    AS renegociado_em,
+      MAX(CASE WHEN TX.TRANSACAO_FINANCEIRA = 43 THEN TX.REG_MASTER_ORIGEM END)                AS renegociacao,
       SUM(ISNULL(TX.CREDITO, 0)) - SUM(ISNULL(TX.DEBITO, 0))                                   AS pendente,
       SUM(CASE WHEN TX.TRANSACAO_FINANCEIRA = 12 THEN ISNULL(TX.DEBITO, 0) ELSE 0 END)          AS recebido,
       SUM(CASE WHEN TX.TRANSACAO_FINANCEIRA = 13 THEN ISNULL(TX.DEBITO, 0) ELSE 0 END)          AS cancelado,
@@ -127,7 +131,10 @@ const CAMPOS_SITUACAO_TITULO = `
   SX.cancelamento_acerto    AS cancelamento_acerto,
   SX.cancelado_no_acerto_em AS cancelado_no_acerto_em,
   SX.cancelamento_manual    AS cancelamento_manual,
-  SX.motivo_manual          AS motivo_manual`;
+  SX.motivo_manual          AS motivo_manual,
+  SX.renegociado            AS renegociado,
+  SX.renegociado_em         AS renegociado_em,
+  SX.renegociacao           AS renegociacao`;
 
 // Título que o acerto gerou para cada linha de _RESULTADOS (validado em out/2026, NF 10174):
 //   - o PROCFIT às vezes cria o título mas NÃO grava a ligação em RESULTADOS.TITULO_RECEBER
@@ -552,17 +559,20 @@ async function pagasForaDoAcerto(pool, lista) {
     ),
     T AS (
       SELECT N.carga, N.NF_NUMERO,
+             SUM(CASE WHEN TR.TAB_MASTER_ORIGEM = 753289 THEN ISNULL(S.pendente, 0) ELSE 0 END) AS nf_pendente,
              SUM(ISNULL(S.pendente, 0))      AS pendente,
-             SUM(ISNULL(S.recebido_fora, 0)) AS recebido_fora
+             SUM(ISNULL(S.recebido_fora, 0)) AS recebido_fora,
+             SUM(ISNULL(S.renegociado, 0))   AS renegociado
       FROM N
       JOIN TITULOS_RECEBER TR WITH (NOLOCK)
-        ON TR.TAB_MASTER_ORIGEM = 753289
+        ON TR.TAB_MASTER_ORIGEM IN (753289, 650512)
        AND TR.ENTIDADE = N.ENTIDADE
        AND LTRIM(RTRIM(TR.TITULO)) LIKE CAST(CAST(N.NF_NUMERO AS bigint) AS varchar(20)) + '/%'
       OUTER APPLY (
         SELECT SUM(ISNULL(X.CREDITO, 0)) - SUM(ISNULL(X.DEBITO, 0)) AS pendente,
                SUM(CASE WHEN X.TRANSACAO_FINANCEIRA = 12 AND ISNULL(X.TAB_MASTER_ORIGEM, 0) <> 455510
-                        THEN ISNULL(X.DEBITO, 0) ELSE 0 END)       AS recebido_fora
+                        THEN ISNULL(X.DEBITO, 0) ELSE 0 END)       AS recebido_fora,
+               SUM(CASE WHEN X.TRANSACAO_FINANCEIRA = 43 THEN ISNULL(X.DEBITO, 0) ELSE 0 END) AS renegociado
         FROM TITULOS_RECEBER_TRANSACOES X WITH (NOLOCK)
         WHERE X.TITULO_RECEBER = TR.TITULO_RECEBER
       ) S
@@ -573,14 +583,19 @@ async function pagasForaDoAcerto(pool, lista) {
            ISNULL(A.notas_pagas_fora, 0)  AS notas_pagas_fora,
            ISNULL(A.notas_parciais_fora, 0) AS notas_parciais_fora,
            ISNULL(A.valor_pago_fora, 0)   AS valor_pago_fora,
-           ISNULL(A.valor_aberto, 0)      AS valor_aberto_sem_acerto
+           ISNULL(A.valor_aberto, 0)      AS valor_aberto_sem_acerto,
+           ISNULL(A.notas_resolvidas, 0)  AS notas_resolvidas,
+           ISNULL(A.notas_renegociadas, 0) AS notas_renegociadas
     FROM (SELECT carga, COUNT(*) AS notas_sem_acerto FROM N GROUP BY carga) Q
     LEFT JOIN (
       SELECT carga,
              SUM(CASE WHEN recebido_fora > 0.009 AND pendente <= 0.009 THEN 1 ELSE 0 END) AS notas_pagas_fora,
              SUM(CASE WHEN recebido_fora > 0.009 AND pendente > 0.009 THEN 1 ELSE 0 END)  AS notas_parciais_fora,
              SUM(recebido_fora)                                                          AS valor_pago_fora,
-             SUM(CASE WHEN pendente > 0.009 THEN pendente ELSE 0 END)                    AS valor_aberto
+             SUM(CASE WHEN pendente > 0.009 THEN pendente ELSE 0 END)                    AS valor_aberto,
+             -- nota resolvida fora do acerto: o título da NOTA foi zerado (pago, renegociado...)
+             SUM(CASE WHEN nf_pendente <= 0.009 THEN 1 ELSE 0 END)                       AS notas_resolvidas,
+             SUM(CASE WHEN renegociado > 0.009 THEN 1 ELSE 0 END)                        AS notas_renegociadas
       FROM T GROUP BY carga
     ) A ON A.carga = Q.carga;`));
   const porCarga = new Map(linhas.map((l) => [Number(l.carga), l]));
@@ -591,6 +606,8 @@ async function pagasForaDoAcerto(pool, lista) {
     c.notas_parciais_fora = l ? Number(l.notas_parciais_fora) : 0;
     c.valor_pago_fora = l ? Number(l.valor_pago_fora) : 0;
     c.valor_aberto_sem_acerto = l ? Number(l.valor_aberto_sem_acerto) : 0;
+    c.notas_resolvidas = l ? Number(l.notas_resolvidas) : 0;
+    c.notas_renegociadas = l ? Number(l.notas_renegociadas) : 0;
   }
 }
 
@@ -680,8 +697,11 @@ async function notasDaCarga(carga) {
 
   // Títulos de cada nota da carga (nasceram da NF), com a situação e onde foram baixados.
   // Serve para ver onde o título está sendo baixado mesmo quando o despacho não tem acerto.
-  // A nota se liga ao título pelo número: TITULO = "nota/parcela" e o título de nota fiscal
-  // tem TAB_MASTER_ORIGEM = 753289 (ver financeiro.repository.js). Consulta opcional.
+  // A nota se liga ao título pelo número: TITULO = "nota/parcela". Origens incluídas:
+  //   753289 título da nota fiscal (ver financeiro.repository.js)
+  //   650512 renegociação: as parcelas novas que substituíram o título da nota
+  //          (validado em out/2026, NF 11610: 4 boletos trocados por entrada + 31 parcelas)
+  // Consulta opcional.
   const titulosDasNotas = await opcional(pool, 'titulos-das-notas', (r) => r
     .input('carga', sql.Int, carga)
     .query(`
@@ -692,17 +712,18 @@ async function notasDaCarga(carga) {
         T.MODALIDADE                            AS modalidade,
         T.VALOR                                 AS valor,
         CONVERT(varchar(10), T.VENCIMENTO, 23)  AS vencimento,
+        T.TAB_MASTER_ORIGEM                     AS origem,
         ${CAMPOS_SITUACAO_TITULO},
         ${CAMPOS_ULTIMA_BAIXA}
       FROM FATURAMENTO_DESPACHO_NOTAS FDN WITH (NOLOCK)
       JOIN TITULOS_RECEBER T WITH (NOLOCK)
-        ON T.TAB_MASTER_ORIGEM = 753289
+        ON T.TAB_MASTER_ORIGEM IN (753289, 650512)
        AND T.ENTIDADE = FDN.ENTIDADE
        AND LTRIM(RTRIM(T.TITULO)) LIKE CAST(CAST(FDN.NF_NUMERO AS bigint) AS varchar(20)) + '/%'
       ${SITUACAO_DO_TITULO('T.TITULO_RECEBER')}
       ${ULTIMA_BAIXA('T.TITULO_RECEBER')}
       WHERE FDN.FATURAMENTO_DESPACHO = @carga
-      ORDER BY FDN.NF_NUMERO, T.TITULO;`));
+      ORDER BY FDN.NF_NUMERO, CASE WHEN T.TAB_MASTER_ORIGEM = 753289 THEN 0 ELSE 1 END, T.VENCIMENTO, T.TITULO;`));
 
   const acertos = recordsets[2];
   const proc = await processamento(pool, acertos.map((a) => a.acerto));
