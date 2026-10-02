@@ -42,6 +42,7 @@
   .nome-arquivo{font-size:14px;color:#A9CDB8;max-width:340px;line-height:1.35}
   .nome-arquivo summary{cursor:pointer;color:#fff;font-weight:600}
   .nome-arquivo details[open] summary{margin-bottom:6px}
+  .remover-arquivo{background:none;border:0;color:#FFD3C9;text-decoration:underline;cursor:pointer;font-size:13px;padding:0 0 0 6px}
 
   /* fechamento do mês: uma linha, sem caixas */
   .fechamento{display:flex;flex-wrap:wrap;background:var(--verde);color:#fff;padding:14px 28px;gap:0}
@@ -117,7 +118,35 @@
   .decisao{border:1px solid var(--verde-linha);border-radius:6px;padding:6px 8px;background:#fff;min-width:150px}
   .decisao.marcada{border-color:var(--verde);background:var(--verde-claro);font-weight:600}
   .barra .dias{border:1px solid var(--verde-linha);border-radius:6px;padding:6px 8px;width:64px;background:#fff}
-  .grupo-abas{font-size:13px;color:var(--texto-suave);padding:10px 6px 10px 12px;align-self:center}
+  .grupo-abas{font-size:12px;color:var(--texto-suave);padding:10px 4px 10px 14px;align-self:center;text-transform:uppercase;letter-spacing:.04em;border-left:1px solid var(--verde-linha)}
+  .grupo-abas:first-child{border-left:0;padding-left:0}
+  nav button small{display:block;font-size:12px;font-weight:600;color:var(--texto-suave)}
+  nav button.vazia{opacity:.55}
+  /* quadro de prova */
+  .fechamento{display:block;padding:18px 28px}
+  .prova-topo{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-bottom:10px}
+  .prova-topo h2{margin:0;font-size:20px}
+  .prova{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px 36px}
+  .prova table{font-size:15px;color:#fff}
+  .prova th{background:transparent;color:#D2EBDD;border-bottom:1px solid rgba(255,255,255,.35);position:static}
+  .prova td{border-bottom:1px solid rgba(255,255,255,.15);padding:6px 8px}
+  .prova tr:hover td{background:rgba(255,255,255,.06)}
+  .prova tr.total td{font-weight:700}
+  .prova tr.resultado td{font-weight:700;font-size:17px;border-top:2px solid rgba(255,255,255,.5)}
+  .prova tr.alerta td{color:#FFE2A8}
+  .prova tr.ruim td{color:#FFD3C9}
+  .prova .ir{background:none;border:0;padding:0;color:inherit;font:inherit;cursor:pointer;text-align:left}
+  .prova .ir:hover{text-decoration:underline}
+  .prova-nota{margin:10px 0 0;font-size:14px;color:#D2EBDD}
+  .prova-vazia{font-size:16px;color:#D2EBDD}
+  .selo{display:inline-block;border-radius:999px;padding:4px 12px;font-size:14px;font-weight:700}
+  .selo-ok{background:#DDF3E5;color:var(--verde-noite)} .selo-alerta{background:#FFE9C2;color:#6B4E16} .selo-neutro{background:rgba(255,255,255,.15);color:#fff}
+  /* guia da aba */
+  .guia{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px 24px;margin:14px 0 4px;padding:12px 16px;background:var(--verde-claro);border-radius:8px;font-size:15px}
+  .guia span{display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--verde)}
+  /* confiança */
+  .conf{display:inline-block;border-radius:4px;padding:1px 7px;font-size:12px;font-weight:700}
+  .conf-alta{background:#DDF3E5;color:var(--verde)} .conf-media{background:#FFF1D6;color:#6B4E16} .conf-baixa{background:#FBE3E3;color:var(--problema)}
 </style>
 </head>
 <body>
@@ -125,13 +154,15 @@
 <header>
   <div class="titulo">
     <h1>Conciliação de títulos</h1>
+    <a href="financeiro.html#cobranca" style="color:#A9CDB8;font-size:15px">← Voltar ao contas a receber</a>
     <span class="fonte" id="fonteTitulos">Títulos: banco do PROCFIT</span>
+    <span class="fonte">Títulos vêm sozinhos do PROCFIT · extratos ficam guardados no painel</span>
   </div>
   <div class="controles" id="controles" hidden>
     <label>Mês
       <input type="month" id="mes">
     </label>
-    <label>Tipo do arquivo
+    <label hidden>Tipo do arquivo
       <select id="tipo">
         <option value="auto">Detectar sozinho</option>
         <option value="banco">Extrato do banco</option>
@@ -139,12 +170,13 @@
       </select>
     </label>
     <div class="arquivo">
-      <button class="btn" type="button" tabindex="-1">Adicionar arquivos do banco ou da Rede</button>
+      <button class="btn" type="button" tabindex="-1">Enviar extrato do banco ou da Rede</button>
       <input type="file" id="arquivo" accept=".xlsx,.xls,.csv" multiple aria-label="Adicionar arquivos do banco ou da Rede">
     </div>
-    <span class="nome-arquivo" id="nomeArquivo">Nenhum arquivo escolhido</span>
+    <span class="nome-arquivo" id="nomeArquivo">Nenhum extrato guardado para este mês</span>
     <button class="btn claro" type="button" id="limparArquivos" hidden>Limpar arquivos</button>
-    <div class="arquivo" style="margin-left:auto">
+    <!-- Plano B (banco do PROCFIT fora do ar): títulos de uma planilha. Escondido: os títulos vêm sozinhos do PROCFIT -->
+    <div class="arquivo" style="margin-left:auto" hidden>
       <button class="btn claro" type="button" tabindex="-1">Usar títulos de uma planilha</button>
       <input type="file" id="arquivoTitulos" accept=".xlsx,.xls,.csv" aria-label="Usar títulos de uma planilha">
     </div>
@@ -166,6 +198,7 @@
   <main>
     <div id="aviso"></div>
     <nav id="abas" role="tablist"></nav>
+    <div id="guia"></div>
     <div class="barra">
       <input type="search" id="busca" placeholder="Buscar cliente, pedido, nota ou valor">
       <label id="rotuloDias">Pedido parado há mais de <input type="number" class="dias" id="dias" min="1" value="15"> dias é candidato a cancelar</label>

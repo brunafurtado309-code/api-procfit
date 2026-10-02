@@ -41,7 +41,8 @@ app.use(helmet({
   // Permite abrir o painel pela rede (http) sem forçar https
   contentSecurityPolicy: { directives: { upgradeInsecureRequests: null } },
 }));
-app.use(express.json());
+// 10 MB: a Conciliação envia o extrato do mês inteiro de uma vez (milhares de lançamentos)
+app.use(express.json({ limit: '10mb' }));
 
 // Rota de saúde (pública): confirma que a API está viva e conectada ao banco.
 app.get('/health', async (req, res) => {
