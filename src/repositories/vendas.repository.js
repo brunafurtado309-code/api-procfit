@@ -630,6 +630,74 @@ async function itensDoDocumento(filtros, doc) {
   return recordset;
 }
 
+// ===== Caixas do operador (livro de caixa por dia) =====
+// Um "caixa" = loja + caixa + dia + nº da ABERTURA (o PDV numera cada abertura em sequência).
+// Formas de pagamento (PDV_FINALIZADORAS.TIPO, cadastro TIPOS_FINALIZADORAS), validado em out/2026:
+//   1 = dinheiro · 4 = TEF · 9 = POS · 5 = convênio · 6 = cartão próprio · 7 = faturado
+//   No TEF/POS a BANDEIRA separa: começa com 01 = débito, 02 = crédito (só o 02 tem parcelas);
+//   00002 = PIX (forma mais usada, sem parcelas; confirmar num cupom pago no PIX).
+// SEGURANÇA: das tabelas do caixa só lemos códigos, valores e horários (nada de cartão, cheque ou senha).
+async function caixasDoOperador(filtros, operador) {
+  const request = await criarRequest(filtros);
+  request.input('operador', sql.Int, operador);
+  const { recordsets } = await request.query(`
+    IF OBJECT_ID('tempdb..#VENDAS_OP') IS NOT NULL DROP TABLE #VENDAS_OP;
+    SELECT PV.LOJA, PV.CAIXA, PV.MOVIMENTO, PV.VENDA, LTRIM(RTRIM(PV.ECF_CUPOM)) AS CUPOM
+    INTO #VENDAS_OP
+    FROM PDV_VENDAS PV WITH (NOLOCK)
+    WHERE PV.OPERADOR = @operador
+      AND PV.MOVIMENTO >= CAST(@inicio AS date) AND PV.MOVIMENTO < DATEADD(day, 1, CAST(@fim AS date))
+      AND (@empresa IS NULL OR PV.EMPRESA = @empresa)
+      AND ISNULL(PV.STATUS, '') NOT LIKE 'C';            -- cupom cancelado não entra no caixa
+
+    IF OBJECT_ID('tempdb..#PAG_OP') IS NOT NULL DROP TABLE #PAG_OP;
+    SELECT F.LOJA, F.CAIXA, F.MOVIMENTO, F.ABERTURA, V.CUPOM,
+           CASE
+             WHEN F.TIPO = 1 THEN 'Dinheiro'
+             WHEN F.TIPO IN (4, 9) AND LTRIM(RTRIM(F.BANDEIRA)) = '00002' THEN 'PIX'
+             WHEN F.TIPO IN (4, 9) AND LEFT(LTRIM(RTRIM(F.BANDEIRA)), 2) = '01' THEN 'Débito'
+             WHEN F.TIPO IN (4, 9) AND LEFT(LTRIM(RTRIM(F.BANDEIRA)), 2) = '02' THEN 'Crédito'
+             WHEN F.TIPO IN (4, 9) THEN 'Cartão'
+             WHEN F.TIPO = 5 THEN 'Convênio'
+             WHEN F.TIPO = 6 THEN 'Cartão próprio'
+             WHEN F.TIPO = 7 THEN 'Faturado'
+             ELSE 'Outras'
+           END AS FORMA,
+           ISNULL(F.VALOR, 0) - ISNULL(F.TROCO, 0) AS VALOR,
+           F.DATA_HORA_GRAVACAO
+    INTO #PAG_OP
+    FROM #VENDAS_OP V
+    JOIN PDV_FINALIZADORAS F WITH (NOLOCK)
+      ON F.LOJA = V.LOJA AND F.CAIXA = V.CAIXA AND F.MOVIMENTO = V.MOVIMENTO AND F.VENDA = V.VENDA;
+
+    -- 1) Cada pagamento (o service monta os caixas e o pagamento de cada cupom)
+    SELECT LOJA AS loja, CAIXA AS caixa, CONVERT(varchar(10), MOVIMENTO, 23) AS dia, ABERTURA AS abertura,
+           CUPOM AS cupom, FORMA AS forma, CAST(VALOR AS decimal(15, 2)) AS valor,
+           CONVERT(varchar(5), DATA_HORA_GRAVACAO, 108) AS hora
+    FROM #PAG_OP
+    ORDER BY MOVIMENTO, CAIXA, ABERTURA, DATA_HORA_GRAVACAO;
+
+    -- 2) Sangrias dos caixas (aberturas) em que o operador passou cupons
+    SELECT S.LOJA AS loja, S.CAIXA AS caixa, CONVERT(varchar(10), S.MOVIMENTO, 23) AS dia, S.ABERTURA AS abertura,
+           CONVERT(varchar(5), S.DATA_HORA, 108) AS hora,
+           CAST(ISNULL(S.VALOR, 0) AS decimal(15, 2)) AS dinheiro,
+           CAST(ISNULL(S.CHEQUES, 0) + ISNULL(S.PREDATADOS, 0) + ISNULL(S.VALE_CREDITO, 0) + ISNULL(S.CARTOES_TEF, 0)
+              + ISNULL(S.CARTOES_POS, 0) + ISNULL(S.CONVENIOS, 0) + ISNULL(S.FATURADOS, 0) + ISNULL(S.CARTOES_PROPRIO, 0)
+              + ISNULL(S.CARTOES_TEF_DEBITO, 0) + ISNULL(S.CARTOES_POS_DEBITO, 0) AS decimal(15, 2)) AS outros,
+           S.RESP_ENTREGA AS cod_entregou, LTRIM(RTRIM(VE.NOME)) AS entregou,
+           S.RESP_RETIRADA AS cod_retirou, LTRIM(RTRIM(VR.NOME)) AS retirou,
+           LTRIM(RTRIM(TS.DESCRICAO)) AS tipo
+    FROM PDV_SANGRIAS S WITH (NOLOCK)
+    JOIN (SELECT DISTINCT LOJA, CAIXA, MOVIMENTO, ABERTURA FROM #PAG_OP) A
+      ON A.LOJA = S.LOJA AND A.CAIXA = S.CAIXA AND A.MOVIMENTO = S.MOVIMENTO AND A.ABERTURA = S.ABERTURA
+    LEFT JOIN VENDEDORES VE WITH (NOLOCK) ON VE.VENDEDOR = S.RESP_ENTREGA
+    LEFT JOIN VENDEDORES VR WITH (NOLOCK) ON VR.VENDEDOR = S.RESP_RETIRADA
+    LEFT JOIN TIPOS_SANGRIAS TS WITH (NOLOCK) ON TS.TIPO_SANGRIA = S.TIPO
+    ORDER BY S.MOVIMENTO, S.CAIXA, S.DATA_HORA;
+  `);
+  return { pagamentos: recordsets[0] ?? [], sangrias: recordsets[1] ?? [] };
+}
+
 async function nomeDoOperador(operador) {
   const pool = await getPool();
   const { recordset } = await pool
@@ -684,7 +752,7 @@ async function topProdutos(filtros, limite) {
 
 module.exports = {
   resumo, porDia, porLoja, porOrigem, porVendedor, notasDoVendedor, nomeDoVendedor,
-  porOperador, cuponsDoOperador, nomeDoOperador, itensDoDocumento, topProdutos,
+  porOperador, cuponsDoOperador, caixasDoOperador, nomeDoOperador, itensDoDocumento, topProdutos,
   LIMITE_NOTAS,
   nomearTabelas, // usado também pelo detalhe do pedido
 };

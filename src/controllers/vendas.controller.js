@@ -40,6 +40,7 @@ module.exports = {
   // Janelas de detalhe da tela de vendas (o service ja tinha, faltava ligar)
   notasDoVendedor: acao(service.notasDoVendedor),
   cuponsDoOperador: acao(service.cuponsDoOperador),
+  caixasDoOperador: acao(service.caixasDoOperador),
   pesquisar: acao(service.pesquisar),
   todasNotas: acao(service.todasNotas),
   todosCupons: acao(service.todosCupons),

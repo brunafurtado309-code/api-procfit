@@ -22,6 +22,7 @@ router.get('/vendedores/:vendedor/notas', controller.notasDoVendedor);
 router.get('/vendedores/:vendedor/notas/excel', controller.excelNotasVendedor);
 router.get('/operadores/:operador/cupons', controller.cuponsDoOperador);
 router.get('/operadores/:operador/cupons/excel', controller.excelCuponsOperador);
+router.get('/operadores/:operador/caixas', controller.caixasDoOperador);   // caixas por dia (abertura)
 router.get('/pesquisa', controller.pesquisar);
 router.get('/notas', controller.todasNotas);
 router.get('/cupons', controller.todosCupons);

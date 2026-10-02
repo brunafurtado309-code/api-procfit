@@ -581,12 +581,14 @@ const DETALHES = {
   cupons: {
     rota: (codigo) => `operadores/${encodeURIComponent(codigo)}/cupons`,
     rotaExcel: (codigo) => `operadores/${encodeURIComponent(codigo)}/cupons/excel`,
+    // Caixas do operador por dia (abertura), com formas de pagamento e sangrias
+    rotaCaixas: (codigo) => (Number(codigo) > 0 ? `operadores/${encodeURIComponent(codigo)}/caixas` : null),
     pessoa: (d) => d.operador,
     linhas: (d) => d.cupons.map(comTipo('Cupom', 'cupom')),
     carregando: 'Carregando cupons…',
     situacoes: ['Emitido', 'Cancelado', 'Devolução'],
     dicaBusca: 'Nº do cupom, caixa, vendedor, cliente ou código',
-    busca: (c) => [c.cupom, c.pedido, c.tabela_preco, c.caixa, c.vendedor, c.codigo_cliente, c.cliente, c.fantasia, c.observacao],
+    busca: (c) => [c.cupom, c.pedido, c.tabela_preco, c.caixa, c.vendedor, c.codigo_cliente, c.cliente, c.fantasia, c.observacao, textoPagamento(c)],
     vazio: 'Nenhum cupom deste operador no período.',
     resumo: (t) => [
       contar(t.emitidos_qtd, 'cupom emitido', 'cupons emitidos'),
@@ -604,10 +606,216 @@ const DETALHES = {
       { titulo: 'Tabela', esquerda: true, celula: celulaTabela },
       { titulo: 'Vendedor', esquerda: true, celula: (c) => celulaTexto(c.vendedor || 'Não informado', 'esquerda coluna-pessoa') },
       { titulo: 'Cliente', esquerda: true, celula: celulaCliente },
+      { titulo: 'Pagamento', esquerda: true, celula: (c) => celulaTexto(textoPagamento(c), 'esquerda coluna-pagamento') },
       ...COLUNAS_VALORES,
     ],
   },
 };
+
+// ===== Caixas do operador: um caixa por dia, com formas de pagamento e sangrias =====
+const numeroCupom = (cupom) => String(cupom ?? '').replace(/^0+(?=\d)/, '');
+
+// Formas de pagamento de um cupom, ex.: "PIX R$ 20,00 + Dinheiro R$ 8,00"
+function textoPagamento(c) {
+  const mapa = detalheAberto?.caixas?.pagamento_por_cupom;
+  if (!mapa) return '';
+  const lista = mapa[`${c.data}|${c.caixa}|${numeroCupom(c.cupom)}`];
+  if (!lista) return c.situacao === 'Emitido' ? '—' : '';
+  return lista.map((p) => `${p.forma} ${moeda.format(p.valor)}`).join(' + ');
+}
+
+function celulaMoeda(valor, forte = false) {
+  const td = celulaTexto(valor ? moeda.format(valor) : '—');
+  if (forte) td.classList.add('forte');
+  return td;
+}
+
+function mostrarCaixas() {
+  const area = el('detalhe-caixas');
+  const dados = detalheAberto?.caixas;
+  if (!dados) { area.hidden = true; area.replaceChildren(); return; }
+  area.hidden = false;
+  if (dados.erro) {
+    const p = document.createElement('p');
+    p.className = 'status status--erro';
+    p.textContent = `Não consegui carregar os caixas: ${dados.erro}`;
+    area.replaceChildren(p);
+    return;
+  }
+  if (!dados.caixas.length) {
+    const p = document.createElement('p');
+    p.className = 'status';
+    p.textContent = 'Nenhum caixa com pagamentos deste operador no período.';
+    area.replaceChildren(p);
+    return;
+  }
+  const sel = detalheAberto.caixaSelecionado;
+  area.replaceChildren(sel ? painelDoCaixa(sel, dados.formas) : tabelaDeCaixas(dados));
+}
+
+// Lista: uma linha por caixa aberto (dia + caixa + abertura)
+function tabelaDeCaixas(dados) {
+  const bloco = document.createElement('div');
+  const titulo = document.createElement('h3');
+  titulo.className = 'caixas__titulo';
+  titulo.textContent = 'Caixas do período';
+  const dica = document.createElement('p');
+  dica.className = 'caixas__dica';
+  dica.textContent = 'Clique num caixa para ver só os cupons dele, as formas de pagamento e as sangrias.';
+
+  const tabela = document.createElement('table');
+  tabela.className = 'tabela caixas__tabela';
+  const cab = document.createElement('tr');
+  for (const t of ['Dia', 'Caixa', 'Horário', 'Cupons', ...dados.formas, 'Total recebido', 'Sangrias']) {
+    const th = document.createElement('th');
+    th.scope = 'col';
+    th.textContent = t;
+    if (['Dia', 'Horário'].includes(t)) th.className = 'esquerda';
+    cab.append(th);
+  }
+  const thead = document.createElement('thead');
+  thead.append(cab);
+
+  const tbody = document.createElement('tbody');
+  const total = { cupons: 0, total: 0, sangrias_qtd: 0, sangrias_dinheiro: 0, formas: {} };
+  for (const c of dados.caixas) {
+    const tr = document.createElement('tr');
+    tr.className = 'caixas__linha';
+    tr.tabIndex = 0;
+    tr.title = 'Ver este caixa';
+    const abrir = () => {
+      detalheAberto.caixaSelecionado = c;
+      mostrarCaixas();
+      aplicarFiltroDetalhe();
+    };
+    tr.addEventListener('click', abrir);
+    tr.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrir(); } });
+
+    const dia = celulaTexto(dataBR(c.dia), 'esquerda sem-quebra');
+    const botao = document.createElement('span');
+    botao.className = 'caixas__abrir';
+    botao.textContent = ' ver ▸';
+    dia.append(botao);
+    tr.append(dia, celulaTexto(`Caixa ${c.caixa}`),
+      celulaTexto(`${c.primeiro ?? '—'} às ${c.ultimo ?? '—'}`, 'esquerda sem-quebra'),
+      celulaTexto(inteiro.format(c.cupons)));
+    for (const f of dados.formas) {
+      tr.append(celulaMoeda(c.formas[f]));
+      total.formas[f] = (total.formas[f] || 0) + (c.formas[f] || 0);
+    }
+    tr.append(celulaMoeda(c.total, true),
+      celulaTexto(c.sangrias_qtd ? `${c.sangrias_qtd} · ${moeda.format(c.sangrias_dinheiro)}` : '—'));
+    tbody.append(tr);
+    total.cupons += c.cupons;
+    total.total += c.total;
+    total.sangrias_qtd += c.sangrias_qtd;
+    total.sangrias_dinheiro += c.sangrias_dinheiro;
+  }
+
+  const tfoot = document.createElement('tfoot');
+  const tr = document.createElement('tr');
+  const rotulo = celulaTexto(`Total · ${dados.caixas.length} ${dados.caixas.length === 1 ? 'caixa' : 'caixas'}`, 'esquerda');
+  rotulo.colSpan = 3;
+  tr.append(rotulo, celulaTexto(inteiro.format(total.cupons)));
+  for (const f of dados.formas) tr.append(celulaMoeda(Math.round(total.formas[f] * 100) / 100));
+  tr.append(celulaMoeda(Math.round(total.total * 100) / 100, true),
+    celulaTexto(total.sangrias_qtd ? `${total.sangrias_qtd} · ${moeda.format(total.sangrias_dinheiro)}` : '—'));
+  tfoot.append(tr);
+
+  tabela.append(thead, tbody, tfoot);
+  const rolagem = document.createElement('div');
+  rolagem.className = 'tabela-rolagem';
+  rolagem.append(tabela);
+  bloco.append(titulo, dica, rolagem);
+  return bloco;
+}
+
+// Um caixa aberto: totais por forma, sangrias e (embaixo) só os cupons dele
+function painelDoCaixa(c, formas) {
+  const bloco = document.createElement('div');
+  const topo = document.createElement('div');
+  topo.className = 'caixas__topo';
+  const titulo = document.createElement('h3');
+  titulo.className = 'caixas__titulo';
+  titulo.textContent = `Caixa ${c.caixa} · ${dataBR(c.dia)} · aberto das ${c.primeiro ?? '—'} às ${c.ultimo ?? '—'}`;
+  const voltar = document.createElement('button');
+  voltar.type = 'button';
+  voltar.className = 'botao-secundario';
+  voltar.textContent = '← Todos os caixas';
+  voltar.addEventListener('click', () => {
+    detalheAberto.caixaSelecionado = null;
+    mostrarCaixas();
+    aplicarFiltroDetalhe();
+  });
+  topo.append(titulo, voltar);
+
+  const cartoes = document.createElement('div');
+  cartoes.className = 'caixas__cartoes';
+  const cartao = (rotulo, valor, detalhe, destaque = false) => {
+    const d = document.createElement('div');
+    d.className = destaque ? 'caixas__cartao caixas__cartao--destaque' : 'caixas__cartao';
+    const r = document.createElement('span');
+    r.textContent = rotulo;
+    const v = document.createElement('strong');
+    v.textContent = valor;
+    d.append(r, v);
+    if (detalhe) {
+      const x = document.createElement('small');
+      x.textContent = detalhe;
+      d.append(x);
+    }
+    return d;
+  };
+  cartoes.append(cartao('Total recebido', moeda.format(c.total), `${inteiro.format(c.cupons)} cupons`, true));
+  for (const f of formas) {
+    if (!c.formas[f]) continue;
+    const pct = c.total ? Math.round((c.formas[f] / c.total) * 100) : 0;
+    cartoes.append(cartao(f, moeda.format(c.formas[f]), `${pct}% do caixa`));
+  }
+  cartoes.append(cartao('Sangrias', c.sangrias_qtd ? moeda.format(c.sangrias_dinheiro) : 'Nenhuma',
+    c.sangrias_qtd ? `${c.sangrias_qtd} ${c.sangrias_qtd === 1 ? 'sangria' : 'sangrias'}` : ''));
+  bloco.append(topo, cartoes);
+
+  if (c.sangrias.length) {
+    const titulo2 = document.createElement('h4');
+    titulo2.className = 'caixas__subtitulo';
+    titulo2.textContent = 'Sangrias deste caixa';
+    const tabela = document.createElement('table');
+    tabela.className = 'tabela caixas__tabela';
+    const cab = document.createElement('tr');
+    const temOutros = c.sangrias.some((s) => Number(s.outros) > 0);
+    for (const t of ['Hora', 'Valor em dinheiro', ...(temOutros ? ['Outros valores'] : []), 'Entregou', 'Retirou', 'Tipo']) {
+      const th = document.createElement('th');
+      th.scope = 'col';
+      th.textContent = t;
+      if (['Hora', 'Entregou', 'Retirou', 'Tipo'].includes(t)) th.className = 'esquerda';
+      cab.append(th);
+    }
+    const thead = document.createElement('thead');
+    thead.append(cab);
+    const tbody = document.createElement('tbody');
+    for (const s of c.sangrias) {
+      const tr = document.createElement('tr');
+      tr.append(celulaTexto(s.hora ?? '—', 'esquerda'), celulaMoeda(Number(s.dinheiro)));
+      if (temOutros) tr.append(celulaMoeda(Number(s.outros)));
+      tr.append(celulaTexto(s.entregou || (s.cod_entregou ? `Código ${s.cod_entregou}` : '—'), 'esquerda'),
+        celulaTexto(s.retirou || (s.cod_retirou ? `Código ${s.cod_retirou}` : '—'), 'esquerda'),
+        celulaTexto(s.tipo || '—', 'esquerda'));
+      tbody.append(tr);
+    }
+    tabela.append(thead, tbody);
+    const rolagem = document.createElement('div');
+    rolagem.className = 'tabela-rolagem';
+    rolagem.append(tabela);
+    bloco.append(titulo2, rolagem);
+  }
+
+  const aviso = document.createElement('h4');
+  aviso.className = 'caixas__subtitulo';
+  aviso.textContent = 'Cupons deste caixa';
+  bloco.append(aviso);
+  return bloco;
+}
 
 // Pesquisa e cartões: notas e cupons juntos na mesma lista
 function celulaTipo(linha) {
@@ -777,12 +985,14 @@ function aplicarFiltroDetalhe() {
     return;
   }
 
+  const caixaSel = detalheAberto.caixaSelecionado;
   const visiveis = linhas.filter((linha) => {
+    if (caixaSel && (linha.data !== caixaSel.dia || Number(linha.caixa) !== Number(caixaSel.caixa))) return false;
     if (situacao && linha.situacao !== situacao) return false;
     return palavras.every((palavra) => linha._textoBusca.includes(palavra));
   });
 
-  const filtrando = palavras.length > 0 || Boolean(situacao);
+  const filtrando = palavras.length > 0 || Boolean(situacao) || Boolean(caixaSel);
   el('detalhe-contagem').textContent = filtrando
     ? `Mostrando ${inteiro.format(visiveis.length)} de ${inteiro.format(linhas.length)}`
     : `${inteiro.format(linhas.length)} registros`;
@@ -858,11 +1068,22 @@ async function abrirDetalhe(tipo, codigo, nome, filtrosExtras = {}) {
   prepararFiltrosDetalhe(config);
   el('detalhe-linhas').replaceChildren();
   el('detalhe-total').replaceChildren();
+  mostrarCaixas();
   mostrarStatusDetalhe(config.carregando);
   el('detalhe').showModal();
 
   try {
-    const dados = await buscar(config.rota(codigo), detalheAberto.filtros);
+    const rotaCaixas = config.rotaCaixas ? config.rotaCaixas(codigo) : null;
+    const [dados, caixas] = await Promise.all([
+      buscar(config.rota(codigo), detalheAberto.filtros),
+      rotaCaixas ? buscar(rotaCaixas, detalheAberto.filtros).catch((erro) => {
+        if (erro instanceof ChaveInvalida) throw erro;
+        return { erro: erro.message };
+      }) : null,
+    ]);
+    detalheAberto.caixas = caixas;
+    detalheAberto.caixaSelecionado = null;
+    mostrarCaixas();
     mostrarDetalhe(config, dados);
   } catch (erro) {
     if (erro instanceof ChaveInvalida) return pedirChaveDeNovo();
@@ -1023,6 +1244,17 @@ const ABAS_VENDEDOR = [
 let fatVendedores = [];
 let fatPedidos = [];
 let fatAba = 'todos';
+// Ordem da tabela: clique no nome da coluna (vendedor = ordem alfabética; valores = maior/menor)
+let fatOrdem = { coluna: 'valor_processados', direcao: 'desc' };
+const COLUNAS_FAT_VENDEDOR = [
+  { titulo: 'Vendedor', chave: 'vendedor', texto: true },
+  { titulo: 'Orçamentos', chave: 'valor_orcamentos' },
+  { titulo: 'Processados', chave: 'valor_processados' },
+  { titulo: 'Aguardando faturar', chave: 'valor_aguardando' },
+  { titulo: 'Faturado em nota', chave: 'valor_notas' },
+  { titulo: 'Vendido no caixa', chave: 'valor_cupons' },
+  { titulo: 'Cancelados', chave: 'valor_cancelados' },
+];
 
 async function carregarFatVendedores(filtros, minhaCarga) {
   const status = el('fat-vend-status');
@@ -1058,17 +1290,42 @@ function celulaEtapa(valor, quantidade, rotulo, alerta = false) {
 }
 
 function mostrarFatVendedores() {
+  // Cabeçalho com botões: clicar ordena; clicar de novo inverte (A→Z / Z→A, maior / menor)
   const cab = document.createElement('tr');
-  for (const titulo of ['Vendedor', 'Orçamentos', 'Processados', 'Aguardando faturar', 'Faturado em nota',
-    'Vendido no caixa', 'Cancelados']) {
+  for (const coluna of COLUNAS_FAT_VENDEDOR) {
     const th = document.createElement('th');
     th.scope = 'col';
-    th.textContent = titulo;
+    const ativa = fatOrdem.coluna === coluna.chave;
+    const crescente = fatOrdem.direcao === 'asc';
+    if (ativa) th.setAttribute('aria-sort', crescente ? 'ascending' : 'descending');
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    botao.className = ativa ? 'ordenar ordenar--ativo' : 'ordenar';
+    botao.title = coluna.texto ? 'Ordenar em ordem alfabética' : 'Ordenar pelo valor';
+    const seta = document.createElement('span');
+    seta.className = 'ordenar__seta';
+    seta.setAttribute('aria-hidden', 'true');
+    seta.textContent = ativa ? (crescente ? '▲' : '▼') : '↕';
+    botao.append(coluna.titulo, seta);
+    botao.addEventListener('click', () => {
+      // Primeiro clique: nome em A→Z, valores do maior para o menor
+      const inicial = coluna.texto ? 'asc' : 'desc';
+      fatOrdem = { coluna: coluna.chave, direcao: ativa ? (crescente ? 'desc' : 'asc') : inicial };
+      mostrarFatVendedores();
+    });
+    th.append(botao);
     cab.append(th);
   }
   el('fat-vend-cab').replaceChildren(cab);
 
-  const lista = [...fatVendedores].sort((a, b) => (Number(b.valor_processados) || 0) - (Number(a.valor_processados) || 0));
+  const fator = fatOrdem.direcao === 'asc' ? 1 : -1;
+  const nomeDe = (v) => v.vendedor || `Vendedor ${v.cod_vendedor ?? ''}`;
+  const lista = [...fatVendedores].sort((a, b) => {
+    if (fatOrdem.coluna === 'vendedor') {
+      return nomeDe(a).localeCompare(nomeDe(b), 'pt-BR', { sensitivity: 'base' }) * fator;
+    }
+    return ((Number(a[fatOrdem.coluna]) || 0) - (Number(b[fatOrdem.coluna]) || 0)) * fator;
+  });
   const PEDIDOS = ['pedido', 'pedidos'];
   const linhas = lista.map((v) => {
     const tr = document.createElement('tr');

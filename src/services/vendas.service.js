@@ -156,6 +156,64 @@ async function cuponsDoOperador(query, params) {
   };
 }
 
+// ===== Caixas do operador: um caixa por dia (abertura), com formas de pagamento e sangrias =====
+const ORDEM_FORMAS = ['Dinheiro', 'PIX', 'Débito', 'Crédito', 'Convênio', 'Cartão próprio', 'Faturado', 'Cartão', 'Outras'];
+// Nº do cupom sem zeros à esquerda, para casar "004878" com 4878
+const numeroCupom = (cupom) => String(cupom ?? '').replace(/^0+(?=\d)/, '');
+
+async function caixasDoOperador(query, params) {
+  const filtros = montarFiltros(query);
+  const codigo = Number(params.operador);
+  if (!Number.isInteger(codigo) || codigo <= 0) {
+    throw new AppError('Código de operador inválido');
+  }
+  const { pagamentos, sangrias } = await repo.caixasDoOperador(filtros, codigo);
+
+  const caixas = new Map();
+  const pagamentoPorCupom = {};
+  for (const p of pagamentos) {
+    const chave = `${p.loja}|${p.caixa}|${p.dia}|${p.abertura}`;
+    if (!caixas.has(chave)) {
+      caixas.set(chave, {
+        chave, loja: p.loja, caixa: p.caixa, dia: p.dia, abertura: p.abertura,
+        primeiro: p.hora, ultimo: p.hora, cupons: new Set(), formas: {}, total: 0,
+        sangrias_qtd: 0, sangrias_dinheiro: 0, sangrias_outros: 0, sangrias: [],
+      });
+    }
+    const c = caixas.get(chave);
+    const valor = Number(p.valor) || 0;
+    if (p.hora && (!c.primeiro || p.hora < c.primeiro)) c.primeiro = p.hora;
+    if (p.hora && (!c.ultimo || p.hora > c.ultimo)) c.ultimo = p.hora;
+    c.cupons.add(p.cupom);
+    c.formas[p.forma] = arredondar((c.formas[p.forma] || 0) + valor);
+    c.total = arredondar(c.total + valor);
+
+    const chaveCupom = `${p.dia}|${p.caixa}|${numeroCupom(p.cupom)}`;
+    (pagamentoPorCupom[chaveCupom] ??= []).push({ forma: p.forma, valor: arredondar(valor) });
+  }
+
+  for (const s of sangrias) {
+    const c = caixas.get(`${s.loja}|${s.caixa}|${s.dia}|${s.abertura}`);
+    if (!c) continue;
+    c.sangrias_qtd += 1;
+    c.sangrias_dinheiro = arredondar(c.sangrias_dinheiro + Number(s.dinheiro || 0));
+    c.sangrias_outros = arredondar(c.sangrias_outros + Number(s.outros || 0));
+    c.sangrias.push(s);
+  }
+
+  const lista = [...caixas.values()]
+    .map((c) => ({ ...c, cupons: c.cupons.size }))
+    .sort((a, b) => (a.dia === b.dia ? a.caixa - b.caixa : a.dia.localeCompare(b.dia)));
+  const formasUsadas = ORDEM_FORMAS.filter((f) => lista.some((c) => c.formas[f]));
+
+  return {
+    periodo: { inicio: filtros.inicio, fim: filtros.fim },
+    formas: formasUsadas,
+    caixas: lista,
+    pagamento_por_cupom: pagamentoPorCupom,
+  };
+}
+
 // ===== Listas dos cartões (todas as notas, cupons, descontos, devoluções) =====
 const somarValores = (lista, campo = 'valor') =>
   arredondar(lista.reduce((s, item) => s + Number(item[campo] || 0), 0));
@@ -278,7 +336,7 @@ const topProdutos = (query) =>
 
 module.exports = {
   resumo, porDia, porLoja, porOrigem, porVendedor, notasDoVendedor,
-  porOperador, cuponsDoOperador, pesquisar, topProdutos,
+  porOperador, cuponsDoOperador, caixasDoOperador, pesquisar, topProdutos,
   todasNotas, todosCupons, listaDevolucoes, listaDescontos, itensDoDocumento,
   montarFiltros, montarLimite,
 };

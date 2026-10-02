@@ -1358,3 +1358,23 @@ button.barra:hover { background: var(--verde-suave); color: inherit; }
 }
 .grafico-rosca__nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .grafico-rosca__lista strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+
+/* ===== Janela do operador: caixas por dia ===== */
+.detalhe__caixas { margin: 0.5rem 0 1.25rem; padding-bottom: 1rem; border-bottom: 2px solid #1E6B47; }
+.caixas__titulo { margin: 0.25rem 0; font-size: 1.15rem; }
+.caixas__subtitulo { margin: 1rem 0 0.4rem; font-size: 1rem; }
+.caixas__dica { margin: 0 0 0.6rem; color: #5B6B62; font-size: 0.92rem; }
+.caixas__topo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.caixas__tabela td.forte { font-weight: 700; }
+.caixas__linha { cursor: pointer; }
+.caixas__linha:hover td, .caixas__linha:focus td { background: #EEF6F1; }
+.caixas__linha:focus { outline: 2px solid #1E6B47; outline-offset: -2px; }
+.caixas__abrir { color: #1E6B47; font-weight: 600; font-size: 0.85rem; }
+.caixas__cartoes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.6rem; margin: 0.75rem 0; }
+.caixas__cartao { display: grid; gap: 0.15rem; padding: 0.6rem 0.8rem; border: 1px solid #D4E5DA; border-radius: 8px; background: #fff; }
+.caixas__cartao span { font-size: 0.85rem; color: #5B6B62; }
+.caixas__cartao strong { font-size: 1.1rem; }
+.caixas__cartao small { font-size: 0.8rem; color: #5B6B62; }
+.caixas__cartao--destaque { background: #EEF6F1; border-color: #1E6B47; }
+.coluna-pagamento { min-width: 12rem; font-size: 0.9rem; }
