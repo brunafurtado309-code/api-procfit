@@ -66,7 +66,9 @@ function duracao(inicio, fim) {
   if (!Number.isFinite(minutos) || minutos < 0) return null;
   if (minutos < 60) return `${minutos} min`;
   if (minutos < 24 * 60) return `${Math.floor(minutos / 60)} h ${minutos % 60} min`;
-  return plural(Math.floor(minutos / (24 * 60)), 'dia', 'dias');
+  const dias = Math.floor(minutos / (24 * 60));
+  const horas = Math.floor((minutos % (24 * 60)) / 60);
+  return `${plural(dias, 'dia', 'dias')}${horas ? ` e ${horas} h` : ''}`;
 }
 
 // Situação do título no contas a receber (vem do extrato do título)
@@ -112,6 +114,14 @@ function lugaresDaBaixa(t) {
 // o título fica com saldo negativo e cai na segunda regra.)
 function baixaSuspeita(t) {
   return lugaresDaBaixa(t).length > 1 || Number(t.pendente) < -0.009 || Boolean(situacaoTitulo(t).alerta);
+}
+
+// Quanto da linha do acerto já foi pago: o valor da linha menos o que o título ainda deve
+// (cancelamento manual não conta como pagamento)
+function valorPago(t) {
+  if (t.titulo_receber == null || situacaoTitulo(t).texto === 'Cancelado') return 0;
+  const devendo = Math.max(0, Number(t.pendente) || 0);
+  return Math.max(0, (Number(t.valor) || 0) - devendo);
 }
 
 // Colunas de situação usadas nas tabelas de títulos
@@ -509,10 +519,25 @@ async function abrirAcerto(numero) {
   if (!dialogo.open) dialogo.showModal();
 
   try {
-    const { acerto: a, notas, parcelas, cartoes, bancos = [] } = await buscar(`despachos/${numero}`);
+    const dados = await buscar(`despachos/${numero}`);
+    const { titulo, resumo, partes } = montarAcerto(numero, dados);
     el('acerto-status').textContent = '';
-    el('acerto-titulo').textContent = a.carga ? `Despacho ${a.carga}` : `Acerto ${numero}`;
-    el('acerto-resumo').textContent = [
+    el('acerto-titulo').textContent = titulo;
+    el('acerto-resumo').textContent = resumo;
+    el('acerto-corpo').replaceChildren(...partes);
+  } catch (erro) {
+    el('acerto-status').textContent = erro.message;
+    el('acerto-status').classList.add('status--erro');
+  }
+}
+
+// Conteúdo completo de um acerto (usado na janela e ao abrir um despacho na lista).
+// opcoes.titulosAbertos: mostra a tabela de títulos já aberta
+function montarAcerto(numero, resposta, opcoes = {}) {
+  {
+    const { acerto: a, notas, parcelas, cartoes, bancos = [] } = resposta;
+    const tituloJanela = a.carga ? `Despacho ${a.carga}` : `Acerto ${numero}`;
+    const resumoJanela = [
       `acerto ${numero}`,
       `recebido em ${dataBR(a.data_recebimento)}`,
       `lançado ${dataHoraBR(a.digitado_em)} por ${pessoa(a.usuario_nome, a.usuario, 'usuário')}`,
@@ -645,12 +670,13 @@ async function abrirAcerto(numero) {
     if (parcelas.length) {
       const detalhes = document.createElement('details');
       detalhes.className = 'mais-detalhes';
+      if (opcoes.titulosAbertos) detalhes.open = true;
       const resumo = document.createElement('summary');
       const rt = resumoTitulos(parcelas);
       resumo.textContent = `Ver os títulos gerados no contas a receber (${parcelas.length} · ${dinheiro(a.total_parcelas)}`
         + `${rt.abertos.length ? ` · ${rt.abertos.length} em aberto` : ' · todos pagos'})`;
       detalhes.append(resumo, tabelaSimples(
-        [['Título', true], ['Cliente', true], ['Forma', true], ['Vencimento', true], ['Valor'],
+        [['Título', true], ['Cliente', true], ['Forma', true], ['Vencimento', true], ['Valor'], ['Pago'],
           ['No sistema', true], ['Baixa (data · onde)', true], ['Em aberto']],
         parcelas.map((p) => linhaDe(
           td(p.titulo ?? '—', 'esquerda sem-quebra'),
@@ -658,6 +684,7 @@ async function abrirAcerto(numero) {
           td(p.forma ?? '—', 'esquerda'),
           td(dataBR(p.vencimento), 'esquerda'),
           td(dinheiro(p.valor)),
+          td(valorPago(p) > 0.009 ? dinheiro(valorPago(p)) : '—'),
           ...celulasSituacaoTitulo(p),
         )),
       ));
@@ -668,10 +695,7 @@ async function abrirAcerto(numero) {
       partes.push(detalhes);
     }
 
-    el('acerto-corpo').replaceChildren(...partes);
-  } catch (erro) {
-    el('acerto-status').textContent = erro.message;
-    el('acerto-status').classList.add('status--erro');
+    return { titulo: tituloJanela, resumo: resumoJanela, partes };
   }
 }
 
@@ -880,14 +904,14 @@ function mostrarCargas() {
   tabela.tFoot.replaceChildren(rodape);
 }
 
-// Ao abrir um despacho: o recebimento (acerto), as formas, os títulos e as notas da carga
+// Ao abrir um despacho: dados do despacho, o acerto completo (o mesmo detalhe da janela
+// do Retorno) e as notas que ainda não voltaram
 async function abrirNotasDaCarga(carga) {
   const linha = el(`carga-notas-${carga}`);
   if (!linha) return;
   try {
-    const {
-      notas, acertos = [], formas = [], titulos = [], bancos = [],
-    } = await buscar(`despachos/cargas/${carga}`);
+    const { carga: c, notas, acertos = [] } = await buscar(`despachos/cargas/${carga}`);
+    const detalhesAcertos = await Promise.all(acertos.map((a) => buscar(`despachos/${a.acerto}`)));
     const partes = [];
     const titulo = (texto) => {
       const h3 = document.createElement('h3');
@@ -895,12 +919,8 @@ async function abrirNotasDaCarga(carga) {
       return h3;
     };
 
-    // ----- 1) Recebimento do despacho (um bloco por acerto) -----
-    partes.push(titulo(acertos.length > 1 ? `Recebimentos do despacho (${acertos.length})` : 'Recebimento do despacho'));
-    if (!acertos.length) {
-      partes.push(aviso('Este despacho ainda não tem recebimento lançado: as notas continuam em rota.'));
-    }
-    for (const a of acertos) {
+    // ----- 1) O despacho: quem conferiu, quando saiu e quanto tempo ficou na rua -----
+    if (c) {
       const dados = document.createElement('dl');
       dados.className = 'pedido-dados';
       const item = (rotulo, valor, alerta = false) => {
@@ -908,179 +928,72 @@ async function abrirNotasDaCarga(carga) {
         const dt = document.createElement('dt');
         dt.textContent = rotulo;
         const dd = document.createElement('dd');
-        if (valor instanceof Node) dd.append(valor); else dd.textContent = valor ?? '—';
+        dd.textContent = valor ?? '—';
         if (alerta) dd.className = 'negativo';
         bloco.append(dt, dd);
         dados.append(bloco);
       };
+      item('Conferente (criou o despacho)', pessoa(c.conferente, c.usuario, 'usuário'));
+      item('Criado em', dataHoraBR(c.criado_em));
+      item('Rota', c.rota || '—');
+      item('Responsável', c.responsavel ?? '—');
+      item('Valor que saiu', `${dinheiro(c.valor)} · ${plural(c.notas, 'nota', 'notas')}`);
+      if (acertos.length) {
+        item('Da saída ao retorno', duracao(c.criado_em, acertos[0].aberto_em) ?? '—');
+        const ultimo = acertos[acertos.length - 1];
+        item('Da saída ao processamento', duracao(c.criado_em, ultimo.processado_em) ?? 'sem registro de hora');
+      } else {
+        item('Retorno', 'ainda sem acerto (em rota)', true);
+      }
+      partes.push(dados);
+    }
+
+    // ----- 2) Cada acerto, com o mesmo detalhe da janela do Retorno -----
+    acertos.forEach((a, i) => {
+      const montado = montarAcerto(a.acerto, detalhesAcertos[i], { titulosAbertos: true });
+      const cabecalho = document.createElement('div');
+      cabecalho.style.display = 'flex';
+      cabecalho.style.flexWrap = 'wrap';
+      cabecalho.style.gap = '0.75rem';
+      cabecalho.style.alignItems = 'center';
+      const h3 = titulo(`Acerto ${a.acerto}`);
+      h3.style.margin = '0';
       const abrir = document.createElement('button');
       abrir.type = 'button';
       abrir.className = 'botao-secundario';
-      abrir.textContent = `Acerto ${a.acerto} · ver completo`;
+      abrir.textContent = 'Abrir em janela';
       abrir.addEventListener('click', (evento) => {
         evento.stopPropagation();
         abrirAcerto(a.acerto);
       });
-      const naoProcessado = !Number(a.parcelas);
-      item('Recebimento', abrir);
-      item('Lançado por', pessoa(a.usuario_nome, a.usuario, 'usuário'));
-      item('Abertura (início das baixas)', dataHoraBR(a.aberto_em));
-      item('Data do recebimento informada', dataBR(a.data_recebimento));
-      item('Processado em', a.processado_em ? dataHoraBR(a.processado_em)
-        : (naoProcessado ? 'ainda não processado' : 'sem registro de hora'), naoProcessado);
-      const tempo = duracao(a.aberto_em, a.processado_em);
-      if (tempo) item('Tempo até processar', tempo);
-      item('Recebido no acerto', dinheiro(a.informado));
-      item('Títulos gerados', `${plural(a.parcelas, 'título', 'títulos')} · ${dinheiro(a.total_parcelas)}`);
-      partes.push(dados);
+      cabecalho.append(h3, span(montado.resumo, 'explica'), abrir);
+      partes.push(cabecalho, ...montado.partes);
+    });
 
-      // Recebimentos que caíram no banco (PIX) e alerta de repetição
-      const doAcerto = bancos.filter((b) => Number(b.acerto) === Number(a.acerto));
-      if (doAcerto.length) {
-        partes.push(span(`Recebimento no banco: ${doAcerto.map((b) =>
-          `nº ${b.recebimento} (${nomeConta(b.conta)}, gravado ${dataHoraBR(b.gravado_em)})`).join('; ')}`, 'explica'));
-      }
-      for (const repetidos of recebimentosRepetidos(doAcerto)) {
-        partes.push(aviso(`Atenção: ${repetidos.length} recebimentos no banco para o acerto ${a.acerto} na conta `
-          + `${nomeConta(repetidos[0].conta)} (nº ${repetidos.map((b) => b.recebimento).join(', ')}). `
-          + 'O normal é um só: confira se houve duplicidade.'));
-      }
-      if (naoProcessado && Number(a.informado) > 0.009) {
-        partes.push(aviso(`O acerto ${a.acerto} tem ${dinheiro(a.informado)} recebidos, mas ainda não foi processado: `
-          + 'nada virou título no contas a receber.'));
-      }
+    // ----- 3) Notas: as que não voltaram (ou todas, se ainda não há acerto) -----
+    const pendentes = acertos.length ? notas.filter((n) => !(Number(n.informado) > 0.009)) : notas;
+    if (acertos.length && !pendentes.length) {
+      partes.push(span('Todas as notas do despacho voltaram no acerto.', 'explica'));
     }
-
-    // ----- 2) Formas de recebimento: informado no acerto x títulos gerados -----
-    if (formas.length || titulos.length) {
-      const descricoes = new Map();
-      for (const t of titulos) if (t.forma) descricoes.set(Number(t.modalidade), t.forma);
-      const porForma = new Map();
-      const linhaForma = (codigo) => {
-        const chaveForma = Number(codigo);
-        if (!porForma.has(chaveForma)) porForma.set(chaveForma, { codigo, notas: 0, informado: 0, titulos: 0, gerado: 0 });
-        return porForma.get(chaveForma);
-      };
-      for (const f of formas) {
-        const l = linhaForma(f.modalidade);
-        l.notas += Number(f.notas) || 0;
-        l.informado += Number(f.informado) || 0;
-      }
-      for (const t of titulos) {
-        const l = linhaForma(t.modalidade);
-        l.titulos += 1;
-        l.gerado += Number(t.valor) || 0;
-      }
-      const lista = [...porForma.values()].sort((x, y) => y.informado - x.informado);
-      const soma = (campo) => lista.reduce((t, l) => t + l[campo], 0);
-      partes.push(titulo('Formas de recebimento'));
-      const difTotal = soma('informado') - soma('gerado');
+    if (pendentes.length) {
+      partes.push(titulo(acertos.length
+        ? `Notas que não voltaram no acerto (${pendentes.length})`
+        : `Notas da carga (${pendentes.length})`));
+      const soma = pendentes.reduce((t, n) => t + (Number(n.valor) || 0), 0);
+      const rotulo = td(`Total (${plural(pendentes.length, 'nota', 'notas')})`, 'esquerda');
+      rotulo.colSpan = 4;
       partes.push(tabelaSimples(
-        [['Forma', true], ['Notas'], ['Recebido no acerto'], ['Títulos'], ['Títulos gerados'], ['Diferença']],
-        lista.map((l) => {
-          const dif = l.informado - l.gerado;
-          return linhaDe(
-            td(nomeForma(l.codigo, descricoes.get(Number(l.codigo))), 'esquerda'),
-            td(l.notas ? inteiro(l.notas) : '—'),
-            td(dinheiro(l.informado)),
-            td(l.titulos ? inteiro(l.titulos) : '—'),
-            td(dinheiro(l.gerado)),
-            td(Math.abs(dif) > 0.009 ? dinheiro(dif) : '—', Math.abs(dif) > 0.009 ? 'negativo' : null),
-          );
-        }),
-        linhaDe(td('Total', 'esquerda'), td(''), td(dinheiro(soma('informado'))), td(inteiro(soma('titulos'))),
-          td(dinheiro(soma('gerado'))),
-          td(Math.abs(difTotal) > 0.009 ? dinheiro(difTotal) : '—', Math.abs(difTotal) > 0.009 ? 'negativo' : null)),
-      ));
-    }
-
-    // ----- 3) Títulos do despacho -----
-    if (titulos.length) {
-      const variosAcertos = acertos.length > 1;
-      partes.push(titulo(`Títulos do despacho (${titulos.length})`));
-      const totalTitulos = titulos.reduce((t, x) => t + (Number(x.valor) || 0), 0);
-      const rt = resumoTitulos(titulos);
-      partes.push(span(rt.abertos.length
-        ? `${plural(rt.abertos.length, 'título em aberto', 'títulos em aberto')} no sistema: ${dinheiro(rt.valorAberto)} a receber.`
-        : 'Todos os títulos deste despacho estão pagos no sistema.', 'explica'));
-      if (rt.suspeitos.length) {
-        partes.push(aviso(`Atenção: ${plural(rt.suspeitos.length, 'título foi baixado', 'títulos foram baixados')} `
-          + 'em mais de um lugar, recebido a mais ou cancelado manualmente. Confira as linhas com a baixa em vermelho.'));
-      }
-      const rotulo = td('Total', 'esquerda');
-      rotulo.colSpan = variosAcertos ? 7 : 6;
-      const valorAbertoTotal = rt.valorAberto;
-      partes.push(tabelaSimples(
-        [...(variosAcertos ? [['Acerto', true]] : []), ['Título', true], ['Nota', true], ['Cliente', true],
-          ['Forma', true], ['Conta', true], ['Vencimento', true], ['Valor'],
-          ['No sistema', true], ['Baixa (data · onde)', true], ['Em aberto']],
-        titulos.map((t) => linhaDe(
-          ...(variosAcertos ? [td(String(t.acerto), 'esquerda')] : []),
-          td([t.titulo, t.parcela > 1 ? `parc. ${t.parcela}` : null].filter(Boolean).join(' · ') || '—', 'esquerda sem-quebra'),
-          td(t.nota ? `NF ${t.nota}` : '—', 'esquerda sem-quebra'),
-          td([t.codigo_cliente, t.cliente].filter(Boolean).join(' · ') || '—', 'esquerda'),
-          td(nomeForma(t.modalidade, t.forma), 'esquerda'),
-          td(nomeConta(t.conta), 'esquerda'),
-          td(dataBR(t.vencimento), 'esquerda'),
-          td(dinheiro(t.valor)),
-          ...celulasSituacaoTitulo(t),
+        [['Nota', true], ['Cliente', true], ['Pedido', true], ['Volume'], ['Valor da nota']],
+        pendentes.map((n) => linhaDe(
+          td(`NF ${n.nota}`, 'esquerda sem-quebra'),
+          comAuxiliar(n.cliente ?? `Cliente ${n.cod_cliente}`, `código ${n.cod_cliente}`, 'esquerda'),
+          td(pedidoJanela.link(n.pedido), 'esquerda'),
+          td(inteiro(n.volume)),
+          td(dinheiro(n.valor)),
         )),
-        linhaDe(rotulo, td(dinheiro(totalTitulos)), td(''), td(''),
-          td(valorAbertoTotal > 0.009 ? dinheiro(valorAbertoTotal) : '—', valorAbertoTotal > 0.009 ? 'negativo' : null)),
+        linhaDe(rotulo, td(dinheiro(soma))),
       ));
-    } else if (acertos.length) {
-      partes.push(aviso('Nenhum título gerado ainda para este despacho.'));
     }
-
-    // ----- 4) Notas que foram na carga -----
-    partes.push(titulo(`Notas da carga (${notas.length})`));
-    const tabela = document.createElement('table');
-    tabela.className = 'tabela tabela--itens';
-    const cab = document.createElement('tr');
-    for (const [texto, esquerda] of [['Nota', true], ['Cliente', true], ['Pedido', true], ['Volume'],
-      ['Valor da nota'], ['Informado no acerto'], ['Situação', true]]) {
-      const th = document.createElement('th');
-      th.scope = 'col';
-      th.textContent = texto;
-      if (esquerda) th.className = 'esquerda';
-      cab.append(th);
-    }
-    tabela.createTHead().append(cab);
-    const corpo = tabela.createTBody();
-    let somaValor = 0;
-    let somaInformado = 0;
-    for (const n of notas) {
-      const informado = Number(n.informado) || 0;
-      const valor = Number(n.valor) || 0;
-      somaValor += valor;
-      somaInformado += informado;
-      const acertada = informado > 0.009;
-      const completa = acertada && informado + 0.009 >= valor;
-      const etiqueta = span(
-        acertada ? (completa ? 'Acertada' : 'Acertada em parte') : 'Não voltou no acerto',
-        `situacao ${acertada ? (completa ? 'situacao--faturada' : 'situacao--devolucao') : 'situacao--sem'}`,
-      );
-      const tr = document.createElement('tr');
-      tr.append(
-        comAuxiliar(`NF ${n.nota}`, n.acerto ? `acerto ${n.acerto}` : null, 'esquerda sem-quebra'),
-        comAuxiliar(n.cliente ?? `Cliente ${n.cod_cliente}`, `código ${n.cod_cliente}`, 'esquerda'),
-        td(pedidoJanela.link(n.pedido), 'esquerda'),
-        td(inteiro(n.volume)),
-        td(dinheiro(valor)),
-        td(acertada ? dinheiro(informado) : '—', acertada ? null : 'negativo'),
-        td(etiqueta, 'esquerda'),
-      );
-      corpo.append(tr);
-    }
-    const rodape = document.createElement('tr');
-    const rotulo = td(`Total da carga (${plural(notas.length, 'nota', 'notas')})`, 'esquerda');
-    rotulo.colSpan = 4;
-    rodape.append(rotulo, td(dinheiro(somaValor)), td(dinheiro(somaInformado)), td(''));
-    tabela.createTFoot().append(rodape);
-    const rolagem = document.createElement('div');
-    rolagem.className = 'tabela-rolagem';
-    rolagem.append(tabela);
-    partes.push(rolagem);
 
     const caixa = document.createElement('div');
     caixa.style.display = 'grid';

@@ -517,40 +517,6 @@ async function notasDaCarga(carga) {
       ) PT
       WHERE R.FATURAMENTO_DESPACHO_FILTRO = @carga
       ORDER BY R.RECEBIMENTO_FATURAMENTO_DESPACHO;
-
-      -- 4) Quanto foi informado no acerto em cada forma de pagamento
-      SELECT
-        DT.RECEBIMENTO_FATURAMENTO_DESPACHO   AS acerto,
-        DT.MODALIDADE                         AS modalidade,
-        COUNT(DISTINCT DT.NF_NUMERO)          AS notas,
-        SUM(ISNULL(DT.VALOR_PAGAMENTO, 0))    AS informado
-      FROM ${D}_DETALHES DT WITH (NOLOCK)
-      JOIN ${D} R WITH (NOLOCK) ON R.RECEBIMENTO_FATURAMENTO_DESPACHO = DT.RECEBIMENTO_FATURAMENTO_DESPACHO
-      WHERE R.FATURAMENTO_DESPACHO_FILTRO = @carga AND ISNULL(DT.VALOR_PAGAMENTO, 0) <> 0
-      GROUP BY DT.RECEBIMENTO_FATURAMENTO_DESPACHO, DT.MODALIDADE;
-
-      -- 5) Títulos gerados pelo processamento, com a nota, a forma e a conta bancária
-      SELECT
-        RS.RECEBIMENTO_FATURAMENTO_DESPACHO     AS acerto,
-        LTRIM(RTRIM(RS.TITULO))                 AS titulo,
-        RS.PARCELA                              AS parcela,
-        DT.NF_NUMERO                            AS nota,
-        RS.ENTIDADE                             AS codigo_cliente,
-        LTRIM(RTRIM(RS.DESC_ENTIDADE))          AS cliente,
-        RS.MODALIDADE                           AS modalidade,
-        LTRIM(RTRIM(RS.DESC_MODALIDADE))        AS forma,
-        RS.CONTA_BANCARIA                       AS conta,
-        CONVERT(varchar(10), RS.VENCIMENTO, 23) AS vencimento,
-        RS.VALOR                                AS valor,
-        RS.TITULO_RECEBER                       AS titulo_receber,
-        ${CAMPOS_SITUACAO_TITULO}
-      FROM ${D}_RESULTADOS RS WITH (NOLOCK)
-      JOIN ${D} R WITH (NOLOCK) ON R.RECEBIMENTO_FATURAMENTO_DESPACHO = RS.RECEBIMENTO_FATURAMENTO_DESPACHO
-      LEFT JOIN ${D}_DETALHES DT WITH (NOLOCK)
-        ON DT.RECEBIMENTO_FATURAMENTO_DESPACHO_DETALHE = RS.RECEBIMENTO_FATURAMENTO_DESPACHO_DETALHE
-      ${SITUACAO_DO_TITULO('RS.TITULO_RECEBER')}
-      WHERE R.FATURAMENTO_DESPACHO_FILTRO = @carga
-      ORDER BY RS.RECEBIMENTO_FATURAMENTO_DESPACHO, DT.NF_NUMERO, RS.TITULO, RS.PARCELA;
     `);
 
   const acertos = recordsets[2];
@@ -564,8 +530,6 @@ async function notasDaCarga(carga) {
     carga: recordsets[0][0] ?? null,
     notas: recordsets[1],
     acertos,
-    formas: recordsets[3],
-    titulos: recordsets[4],
     bancos: proc.bancos,
   };
 }
