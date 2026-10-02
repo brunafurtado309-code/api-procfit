@@ -738,6 +738,7 @@ const SITUACOES_CARGA = {
 let cargas = [];
 let cargaSituacao = null;
 let cargaAberta = null;
+let soPagasFora = false;   // cartão "Pagas fora do acerto" (filtro feito na tela)
 let ordemCargas = { coluna: 'saida', direcao: 'desc' };
 
 async function carregarCargas() {
@@ -779,10 +780,19 @@ function mostrarCartoesCargas(r) {
     { id: 'PARCIAL', titulo: 'Acertadas em parte', valor: inteiro(r.parciais), nota: `${dinheiro(r.valor_parcial)} faltando`, alerta: true },
     { id: 'ACERTADA', titulo: 'Acertadas', valor: inteiro(r.acertadas), nota: 'nada pendente' },
   ];
+  // Despachos com notas pagas por fora do acerto (ex.: baixadas em Bancos por títulos)
+  const fora = cargas.filter((c) => Number(c.notas_pagas_fora) + Number(c.notas_parciais_fora) > 0);
+  if (soPagasFora || fora.length) {
+    itens.push({
+      id: 'FORA', titulo: 'Pagas fora do acerto', valor: inteiro(fora.length),
+      nota: `${dinheiro(fora.reduce((t, c) => t + (Number(c.valor_pago_fora) || 0), 0))} baixados em outras telas`,
+      alerta: true,
+    });
+  }
   el('carga-cartoes').replaceChildren(...itens.map((c) => {
     const botao = document.createElement('button');
     botao.type = 'button';
-    const ativo = cargaSituacao === c.id;
+    const ativo = c.id === 'FORA' ? soPagasFora : (!soPagasFora && cargaSituacao === c.id);
     botao.className = `cartao${ativo ? ' cartao--ativo' : ''}`;
     botao.setAttribute('aria-pressed', String(ativo));
     const titulo = document.createElement('h3');
@@ -795,7 +805,13 @@ function mostrarCartoesCargas(r) {
     nota.textContent = c.nota;
     botao.append(titulo, valor, nota);
     botao.addEventListener('click', () => {
-      cargaSituacao = ativo ? null : c.id;
+      if (c.id === 'FORA') {
+        soPagasFora = !ativo;
+        cargaSituacao = null;
+      } else {
+        soPagasFora = false;
+        cargaSituacao = ativo ? null : c.id;
+      }
       cargaAberta = null;
       carregarCargas();
     });
@@ -806,19 +822,22 @@ function mostrarCartoesCargas(r) {
 function mostrarCargas() {
   estado.salvar('despachos', { ...filtrosAtuais(), situacaoCarga: cargaSituacao, visao: 'saida' });
   const fator = ordemCargas.direcao === 'asc' ? 1 : -1;
-  const lista = [...cargas].sort((a, b) => {
+  const base = soPagasFora
+    ? cargas.filter((c) => Number(c.notas_pagas_fora) + Number(c.notas_parciais_fora) > 0)
+    : cargas;
+  const lista = [...base].sort((a, b) => {
     const x = a[ordemCargas.coluna];
     const y = b[ordemCargas.coluna];
     if (typeof x === 'number' || typeof y === 'number') return ((Number(x) || 0) - (Number(y) || 0)) * fator;
     return String(x ?? '').localeCompare(String(y ?? ''), 'pt-BR', { sensitivity: 'base' }) * fator;
   });
-  el('carga-titulo-lista').textContent = `Despachos (${inteiro(lista.length)})`;
+  el('carga-titulo-lista').textContent = `Despachos${soPagasFora ? ' · pagos fora do acerto' : ''} (${inteiro(lista.length)})`;
 
   const tabela = el('tabela-cargas');
   const cab = document.createElement('tr');
   for (const [texto, campo, esquerda] of [['Despacho', 'carga', true], ['Saída', 'saida', true], ['Rota', 'rota', true],
     ['Conferente', 'conferente', true], ['Notas', 'notas'], ['Valor que saiu', 'valor'],
-    ['Acertado', 'informado'], ['Situação', 'situacao', true], ['', null, true]]) {
+    ['Acertado', 'informado'], ['Pago fora do acerto', 'valor_pago_fora'], ['Situação', 'situacao', true], ['', null, true]]) {
     const th = document.createElement('th');
     th.scope = 'col';
     if (esquerda) th.className = 'esquerda';
@@ -849,7 +868,7 @@ function mostrarCargas() {
   if (!lista.length) {
     const linha = document.createElement('tr');
     const vazio = td('Nenhum despacho com esses filtros.', 'vazio');
-    vazio.colSpan = 9;
+    vazio.colSpan = 10;
     linha.append(vazio);
     linhas.push(linha);
   }
@@ -858,6 +877,11 @@ function mostrarCargas() {
     const linha = document.createElement('tr');
     linha.className = `linha-dia${aberta ? ' linha-dia--aberta' : ''}`;
     const info = SITUACOES_CARGA[c.situacao] ?? { texto: c.situacao, classe: '' };
+    // Todas as notas sem acerto já foram pagas por fora: não está mais "em rota" de verdade
+    const todasPagasFora = Number(c.notas_sem_acerto) > 0 && Number(c.notas_pagas_fora) === Number(c.notas_sem_acerto);
+    const infoTela = todasPagasFora && c.situacao !== 'ACERTADA'
+      ? { texto: c.situacao === 'EM_ROTA' ? 'Pago fora do acerto' : 'Resto pago fora', classe: 'situacao--devolucao' }
+      : info;
     const botao = document.createElement('button');
     botao.type = 'button';
     botao.className = 'botao-expandir';
@@ -876,7 +900,12 @@ function mostrarCargas() {
       comAuxiliar(inteiro(c.notas), Number(c.notas_acertadas) ? `${inteiro(c.notas_acertadas)} acertadas` : null),
       td(dinheiro(c.valor), 'coluna-final'),
       td(Number(c.informado) > 0.009 ? dinheiro(c.informado) : '—'),
-      td(span(info.texto, `situacao ${info.classe}`), 'esquerda'),
+      // Notas que não passaram pelo acerto, mas foram baixadas em outra tela (ex.: Bancos por títulos)
+      comAuxiliar(Number(c.valor_pago_fora) > 0.009 ? dinheiro(c.valor_pago_fora) : '—',
+        Number(c.notas_pagas_fora) + Number(c.notas_parciais_fora) > 0
+          ? `${inteiro(Number(c.notas_pagas_fora) + Number(c.notas_parciais_fora))} de ${inteiro(c.notas_sem_acerto)} notas sem acerto`
+          : null),
+      td(span(infoTela.texto, `situacao ${infoTela.classe}`), 'esquerda'),
       td(botao, 'esquerda'),
     );
     const alternar = async () => {
@@ -892,7 +921,7 @@ function mostrarCargas() {
       detalhe.className = 'linha-itens';
       detalhe.id = `carga-notas-${c.carga}`;
       const celula = document.createElement('td');
-      celula.colSpan = 9;
+      celula.colSpan = 10;
       celula.append(span('Carregando as notas da carga…', 'explica'));
       detalhe.append(celula);
       linhas.push(detalhe);
@@ -905,7 +934,7 @@ function mostrarCargas() {
   const rotulo = td(`Total (${plural(lista.length, 'despacho', 'despachos')})`, 'esquerda');
   rotulo.colSpan = 4;
   rodape.append(rotulo, td(inteiro(soma('notas'))), td(dinheiro(soma('valor'))), td(dinheiro(soma('informado'))),
-    td(''), td(''));
+    td(soma('valor_pago_fora') > 0.009 ? dinheiro(soma('valor_pago_fora')) : '—'), td(''), td(''));
   tabela.tFoot.replaceChildren(rodape);
 }
 

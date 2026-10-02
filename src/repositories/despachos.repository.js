@@ -458,7 +458,76 @@ async function cargas(filtros) {
         AND ${situacao}
       ORDER BY saida_data DESC, carga DESC;
     `);
-  return { resumo: recordsets[0][0] ?? {}, lista: recordsets[1] };
+  const lista = recordsets[1];
+  await pagasForaDoAcerto(pool, lista);
+  return { resumo: recordsets[0][0] ?? {}, lista };
+}
+
+// Notas que NÃO passaram pelo acerto do despacho, mas cujo título da nota já foi baixado
+// em outro formulário (Bancos por títulos, caixa, cofre...). Mostra os despachos que
+// parecem "em rota" mas já foram pagos por fora, sem lançar o retorno.
+//   nota fora do acerto = não tem valor informado em nenhum acerto do próprio despacho
+//   título da nota      = TAB_MASTER_ORIGEM 753289, mesmo cliente, TITULO "nota/parcela"
+//   pago fora           = recebimento (transação 12) gravado fora do retorno de despacho (455510)
+// Consulta opcional: se falhar, a lista aparece normalmente, só sem essas colunas.
+async function pagasForaDoAcerto(pool, lista) {
+  const numeros = [...new Set(lista.map((c) => Number(c.carga)).filter((n) => Number.isInteger(n) && n > 0))];
+  if (!numeros.length) return;
+  const linhas = await opcional(pool, 'pagas-fora-do-acerto', (r) => r.query(`
+    WITH N AS (
+      SELECT FDN.FATURAMENTO_DESPACHO AS carga, FDN.NF_NUMERO, FDN.ENTIDADE
+      FROM FATURAMENTO_DESPACHO_NOTAS FDN WITH (NOLOCK)
+      WHERE FDN.FATURAMENTO_DESPACHO IN (${numeros.join(',')})
+        AND NOT EXISTS (
+          SELECT 1
+          FROM ${D}_DETALHES DT WITH (NOLOCK)
+          JOIN ${D} R WITH (NOLOCK) ON R.RECEBIMENTO_FATURAMENTO_DESPACHO = DT.RECEBIMENTO_FATURAMENTO_DESPACHO
+          WHERE R.FATURAMENTO_DESPACHO_FILTRO = FDN.FATURAMENTO_DESPACHO
+            AND DT.NF_NUMERO = FDN.NF_NUMERO
+            AND ISNULL(DT.VALOR_PAGAMENTO, 0) > 0)
+    ),
+    T AS (
+      SELECT N.carga, N.NF_NUMERO,
+             SUM(ISNULL(S.pendente, 0))      AS pendente,
+             SUM(ISNULL(S.recebido_fora, 0)) AS recebido_fora
+      FROM N
+      JOIN TITULOS_RECEBER TR WITH (NOLOCK)
+        ON TR.TAB_MASTER_ORIGEM = 753289
+       AND TR.ENTIDADE = N.ENTIDADE
+       AND LTRIM(RTRIM(TR.TITULO)) LIKE CAST(CAST(N.NF_NUMERO AS bigint) AS varchar(20)) + '/%'
+      OUTER APPLY (
+        SELECT SUM(ISNULL(X.CREDITO, 0)) - SUM(ISNULL(X.DEBITO, 0)) AS pendente,
+               SUM(CASE WHEN X.TRANSACAO_FINANCEIRA = 12 AND ISNULL(X.TAB_MASTER_ORIGEM, 0) <> 455510
+                        THEN ISNULL(X.DEBITO, 0) ELSE 0 END)       AS recebido_fora
+        FROM TITULOS_RECEBER_TRANSACOES X WITH (NOLOCK)
+        WHERE X.TITULO_RECEBER = TR.TITULO_RECEBER
+      ) S
+      GROUP BY N.carga, N.NF_NUMERO
+    )
+    SELECT Q.carga,
+           Q.notas_sem_acerto,
+           ISNULL(A.notas_pagas_fora, 0)  AS notas_pagas_fora,
+           ISNULL(A.notas_parciais_fora, 0) AS notas_parciais_fora,
+           ISNULL(A.valor_pago_fora, 0)   AS valor_pago_fora,
+           ISNULL(A.valor_aberto, 0)      AS valor_aberto_sem_acerto
+    FROM (SELECT carga, COUNT(*) AS notas_sem_acerto FROM N GROUP BY carga) Q
+    LEFT JOIN (
+      SELECT carga,
+             SUM(CASE WHEN recebido_fora > 0.009 AND pendente <= 0.009 THEN 1 ELSE 0 END) AS notas_pagas_fora,
+             SUM(CASE WHEN recebido_fora > 0.009 AND pendente > 0.009 THEN 1 ELSE 0 END)  AS notas_parciais_fora,
+             SUM(recebido_fora)                                                          AS valor_pago_fora,
+             SUM(CASE WHEN pendente > 0.009 THEN pendente ELSE 0 END)                    AS valor_aberto
+      FROM T GROUP BY carga
+    ) A ON A.carga = Q.carga;`));
+  const porCarga = new Map(linhas.map((l) => [Number(l.carga), l]));
+  for (const c of lista) {
+    const l = porCarga.get(Number(c.carga));
+    c.notas_sem_acerto = l ? Number(l.notas_sem_acerto) : 0;
+    c.notas_pagas_fora = l ? Number(l.notas_pagas_fora) : 0;
+    c.notas_parciais_fora = l ? Number(l.notas_parciais_fora) : 0;
+    c.valor_pago_fora = l ? Number(l.valor_pago_fora) : 0;
+    c.valor_aberto_sem_acerto = l ? Number(l.valor_aberto_sem_acerto) : 0;
+  }
 }
 
 // As notas que saíram numa carga, marcando as que já voltaram acertadas
