@@ -8,7 +8,8 @@
 //   PEDIDOS_PREVENDAS_OBSERVACOES  observação digitada (ntext)
 // O que o pedido gerou:
 //   nota fiscal -> NF_FATURAMENTO.PEDIDO_CLIENTE = nº do pedido
-//   cupom       -> PDV_VENDAS.PREVENDA = nº do pedido
+//   cupom       -> PDV_PREVENDAS.PEDIDO_INTERNET = nº do pedido; o cupom (PDV_VENDAS) aponta para a
+//                  pré-venda do PDV, que tem numeração própria (validado em out/2026 com o Follow-up)
 
 const { sql, getPool } = require('../config/db');
 const { nomearTabelas } = require('./vendas.repository');
@@ -78,8 +79,10 @@ async function pedido(numero) {
         PV.CAIXA                              AS caixa,
         LTRIM(RTRIM(PV.ECF_CUPOM))            AS cupom,
         CONVERT(varchar(10), PV.MOVIMENTO, 23) AS data
-      FROM PDV_VENDAS PV WITH (NOLOCK)
-      WHERE PV.PREVENDA = @pedido;
+      FROM PDV_PREVENDAS PPV WITH (NOLOCK)
+      JOIN PDV_VENDAS PV WITH (NOLOCK) ON PV.PREVENDA = PPV.PREVENDA AND PV.LOJA = PPV.LOJA
+      WHERE PPV.PEDIDO_INTERNET = @pedido
+        AND ISNULL(PV.STATUS, '') NOT LIKE 'C';
     `);
 
   const [cabecalho] = recordsets[0];

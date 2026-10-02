@@ -1,7 +1,8 @@
 // Módulo FATURAMENTO: o ciclo da venda, do orçamento até o pagamento.
 //
 // Etapas no PROCFIT (validado em set/2026, últimos 3 meses):
-//   13.101 pedidos · 12.902 processados · 9.416 com checkout · 2.532 com cupom · 562 cancelados
+//   13.101 pedidos · 12.902 processados · 9.416 com checkout · 562 cancelados
+//   (a contagem "com cupom" de set/2026 usava a ligação errada; ver o comentário do CUP abaixo)
 //   PEDIDOS_PREVENDAS_TOTAIS.STATUS: "Orçamento", "Pendente Aprovação", "Pedido Processado", "Cancelado"
 //   CHECKOUT_PREVENDAS.NF_NUMERO quase nunca é preenchido (10 em 13 mil): a nota vem de
 //   NF_FATURAMENTO.PEDIDO_CLIENTE, e é assim que o painel liga pedido e nota.
@@ -67,7 +68,12 @@ const montarBase = (ondePedidos) => `
       FROM NF_FATURAMENTO N WITH (NOLOCK)
     ) C
     JOIN #P PP ON PP.PEDIDO_PREVENDA = C.pedido
-  ) X;
+  ) X
+  -- Nota cancelada (com protocolo na SEFAZ) não conta como faturada, como no Follow-up do PROCFIT
+  WHERE NOT EXISTS (
+    SELECT 1 FROM CANCELAMENTOS_NOTAS_FISCAIS NC WITH (NOLOCK)
+    WHERE NC.TIPO = 1 AND NC.CHAVE = X.NF_FATURAMENTO AND NC.PROTOCOLO IS NOT NULL
+  );
   CREATE CLUSTERED INDEX IX_NF ON #NF (pedido, ordem);
 
   -- 3. Devoluções desses pedidos (valor positivo = quanto voltou)
@@ -108,9 +114,10 @@ const montarBase = (ondePedidos) => `
   INSERT INTO #DEV (pedido, tipo, documento, dia, valor, usuario)
   SELECT D.pedido, 'caixa', CAST(D.DEVOLUCAO_PRODUTO AS varchar(30)), VAL.dia, -VAL.valor, NULL
   FROM (
-    SELECT DISTINCT PV.PREVENDA AS pedido, DP.DEVOLUCAO_PRODUTO
-    FROM PDV_VENDAS PV WITH (NOLOCK)
-    JOIN #P PP ON PP.PEDIDO_PREVENDA = PV.PREVENDA
+    SELECT DISTINCT PP.PEDIDO_PREVENDA AS pedido, DP.DEVOLUCAO_PRODUTO
+    FROM #P PP
+    JOIN PDV_PREVENDAS PPV WITH (NOLOCK) ON PPV.PEDIDO_INTERNET = PP.PEDIDO_PREVENDA
+    JOIN PDV_VENDAS PV WITH (NOLOCK) ON PV.PREVENDA = PPV.PREVENDA AND PV.LOJA = PPV.LOJA
     JOIN DEV_PRODUTOS DP WITH (NOLOCK)
       ON DP.REG_MASTER_ORIGEM_RELACIONADO = PV.REG_MASTER_ORIGEM
      AND DP.REG_MASTER_ORIGEM_RELACIONADO > 0
@@ -209,10 +216,17 @@ const montarBase = (ondePedidos) => `
     ORDER BY C.CHECKOUT_PREVENDA DESC
   ) CK
   LEFT JOIN #NF NF ON NF.pedido = P.PEDIDO_PREVENDA AND NF.ordem = 1
+  -- Cupom do caixa: o pedido vira uma PRÉ-VENDA do PDV (PDV_PREVENDAS.PEDIDO_INTERNET = pedido),
+  -- e o cupom aponta para essa pré-venda, que tem numeração PRÓPRIA. Cupom cancelado (STATUS 'C')
+  -- não conta. Mesma ligação da consulta Follow-up de pedidos do PROCFIT (validado em out/2026:
+  -- a ligação antiga "PDV_VENDAS.PREVENDA = nº do pedido" achava 636 pedidos em 30 dias,
+  -- TODOS errados, e deixava de achar os 825 certos).
   OUTER APPLY (
     SELECT TOP 1 PV.ECF_CUPOM, PV.CAIXA, PV.MOVIMENTO
-    FROM PDV_VENDAS PV WITH (NOLOCK)
-    WHERE PV.PREVENDA = P.PEDIDO_PREVENDA
+    FROM PDV_PREVENDAS PPV WITH (NOLOCK)
+    JOIN PDV_VENDAS PV WITH (NOLOCK) ON PV.PREVENDA = PPV.PREVENDA AND PV.LOJA = PPV.LOJA
+    WHERE PPV.PEDIDO_INTERNET = P.PEDIDO_PREVENDA
+      AND ISNULL(PV.STATUS, '') NOT LIKE 'C'
     ORDER BY PV.MOVIMENTO DESC
   ) CUP
   OUTER APPLY (

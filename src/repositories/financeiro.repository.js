@@ -497,10 +497,13 @@ async function fichaCliente(entidade, { meses = 12 } = {}) {
       ORDER BY N.NF_FATURAMENTO DESC
     ) NF
     -- Pago na hora no caixa: o pedido virou cupom no PDV
+    -- (ligação pela pré-venda do PDV, como no Follow-up do PROCFIT; ver faturamento.repository.js)
     OUTER APPLY (
       SELECT TOP 1 PV.ECF_CUPOM, PV.CAIXA, PV.MOVIMENTO
-      FROM PDV_VENDAS PV WITH (NOLOCK)
-      WHERE PV.PREVENDA = P.PEDIDO_PREVENDA
+      FROM PDV_PREVENDAS PPV WITH (NOLOCK)
+      JOIN PDV_VENDAS PV WITH (NOLOCK) ON PV.PREVENDA = PPV.PREVENDA AND PV.LOJA = PPV.LOJA
+      WHERE PPV.PEDIDO_INTERNET = P.PEDIDO_PREVENDA
+        AND ISNULL(PV.STATUS, '') NOT LIKE 'C'
       ORDER BY PV.MOVIMENTO DESC
     ) CUPOM
     -- Títulos gerados por este pedido (se não houver nenhum e a nota existir, é venda sem cobrança)
