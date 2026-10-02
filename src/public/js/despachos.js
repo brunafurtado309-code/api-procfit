@@ -748,7 +748,12 @@ async function carregarCargas() {
     cargas = dados.lista;
     mostrarResumoCargas(dados.resumo);
     mostrarCartoesCargas(dados.resumo);
+    // Pesquisou o número de um despacho: já abre o detalhe dele
+    const termo = el('pesquisa-termo').value.trim();
+    const achado = /^\d+$/.test(termo) ? cargas.find((c) => String(c.carga) === termo) : null;
+    if (achado) cargaAberta = achado.carga;
     mostrarCargas();
+    if (achado) abrirNotasDaCarga(achado.carga);
     el('painel').hidden = false;
     mostrarStatus(`atualizado às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`);
   } catch (erro) {
@@ -910,7 +915,7 @@ async function abrirNotasDaCarga(carga) {
   const linha = el(`carga-notas-${carga}`);
   if (!linha) return;
   try {
-    const { carga: c, notas, acertos = [] } = await buscar(`despachos/cargas/${carga}`);
+    const { carga: c, notas, acertos = [], titulosDasNotas = [] } = await buscar(`despachos/cargas/${carga}`);
     const detalhesAcertos = await Promise.all(acertos.map((a) => buscar(`despachos/${a.acerto}`)));
     const partes = [];
     const titulo = (texto) => {
@@ -971,6 +976,13 @@ async function abrirNotasDaCarga(carga) {
     });
 
     // ----- 3) Notas: as que não voltaram (ou todas, se ainda não há acerto) -----
+    // Para cada nota, os títulos dela no contas a receber: situação e onde foram baixados.
+    const titulosPorNota = new Map();
+    for (const t of titulosDasNotas) {
+      const chaveNota = Number(t.nota);
+      if (!titulosPorNota.has(chaveNota)) titulosPorNota.set(chaveNota, []);
+      titulosPorNota.get(chaveNota).push(t);
+    }
     const pendentes = acertos.length ? notas.filter((n) => !(Number(n.informado) > 0.009)) : notas;
     if (acertos.length && !pendentes.length) {
       partes.push(span('Todas as notas do despacho voltaram no acerto.', 'explica'));
@@ -978,20 +990,66 @@ async function abrirNotasDaCarga(carga) {
     if (pendentes.length) {
       partes.push(titulo(acertos.length
         ? `Notas que não voltaram no acerto (${pendentes.length})`
-        : `Notas da carga (${pendentes.length})`));
-      const soma = pendentes.reduce((t, n) => t + (Number(n.valor) || 0), 0);
-      const rotulo = td(`Total (${plural(pendentes.length, 'nota', 'notas')})`, 'esquerda');
-      rotulo.colSpan = 4;
-      partes.push(tabelaSimples(
-        [['Nota', true], ['Cliente', true], ['Pedido', true], ['Volume'], ['Valor da nota']],
-        pendentes.map((n) => linhaDe(
+        : `Notas do despacho (${pendentes.length})`));
+
+      // Notas que não passaram pelo acerto, mas cujo título já foi baixado em outro formulário
+      const baixadasFora = pendentes.filter((n) => (titulosPorNota.get(Number(n.nota)) ?? [])
+        .some((t) => lugaresDaBaixa(t).length > 0));
+      if (baixadasFora.length) {
+        partes.push(aviso(`${plural(baixadasFora.length, 'nota deste despacho foi baixada', 'notas deste despacho foram baixadas')} `
+          + 'fora do acerto do despacho (veja a coluna "Títulos da nota").'));
+      }
+
+      const celulaTitulos = (lista) => {
+        const celula = document.createElement('td');
+        celula.className = 'esquerda';
+        if (!lista.length) {
+          celula.textContent = titulosDasNotas.length ? 'sem título no contas a receber' : '—';
+          return celula;
+        }
+        for (const t of lista) {
+          const linhaTitulo = document.createElement('div');
+          const info = situacaoTitulo(t);
+          const lugares = lugaresDaBaixa(t);
+          const quando = t.ultima_baixa ? dataBR(t.ultima_baixa)
+            : (t.cancelado_no_acerto_em ? dataHoraBR(t.cancelado_no_acerto_em) : null);
+          linhaTitulo.append(
+            `${t.titulo} · ${nomeForma(t.modalidade)} · ${dinheiro(t.valor)} `,
+            span(info.texto, `situacao ${info.classe}`),
+          );
+          if (lugares.length) {
+            linhaTitulo.append(span(` ${[quando, lugares.join(' + ')].filter(Boolean).join(' · ')}`,
+              baixaSuspeita(t) ? 'negativo' : 'explica'));
+          }
+          celula.append(linhaTitulo);
+        }
+        return celula;
+      };
+
+      let somaValor = 0;
+      let somaAberto = 0;
+      const linhas = pendentes.map((n) => {
+        const lista = titulosPorNota.get(Number(n.nota)) ?? [];
+        const aberto = lista.reduce((t, x) => t + Math.max(0, Number(x.pendente) || 0), 0);
+        somaValor += Number(n.valor) || 0;
+        somaAberto += aberto;
+        return linhaDe(
           td(`NF ${n.nota}`, 'esquerda sem-quebra'),
           comAuxiliar(n.cliente ?? `Cliente ${n.cod_cliente}`, `código ${n.cod_cliente}`, 'esquerda'),
           td(pedidoJanela.link(n.pedido), 'esquerda'),
-          td(inteiro(n.volume)),
           td(dinheiro(n.valor)),
-        )),
-        linhaDe(rotulo, td(dinheiro(soma))),
+          celulaTitulos(lista),
+          td(lista.length ? (aberto > 0.009 ? dinheiro(aberto) : '—') : '—', aberto > 0.009 ? 'negativo' : null),
+        );
+      });
+      const rotulo = td(`Total (${plural(pendentes.length, 'nota', 'notas')})`, 'esquerda');
+      rotulo.colSpan = 3;
+      partes.push(tabelaSimples(
+        [['Nota', true], ['Cliente', true], ['Pedido', true], ['Valor da nota'], ['Títulos da nota (situação · onde baixou)', true],
+          ['Em aberto']],
+        linhas,
+        linhaDe(rotulo, td(dinheiro(somaValor)), td(''),
+          td(somaAberto > 0.009 ? dinheiro(somaAberto) : '—', somaAberto > 0.009 ? 'negativo' : null)),
       ));
     }
 
@@ -1049,6 +1107,52 @@ function mostrarVisao(qual) {
   else carregar();
 }
 
+// Recarrega a parte da tela que está aberta (Saída ou Retorno)
+function recarregar() {
+  if (el('visao-saida').hidden) carregar();
+  else {
+    cargaAberta = null;
+    carregarCargas();
+  }
+}
+
+// Pesquisa rápida pelo número do despacho, logo acima de cada lista.
+// Usa a mesma caixa de pesquisa do topo; número pesquisa em todas as datas.
+function filtroRapido(depoisDe) {
+  const form = document.createElement('form');
+  form.className = 'filtro-rapido';
+  form.style.cssText = 'display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin:0.5rem 0 0.75rem';
+  const campo = document.createElement('input');
+  campo.type = 'search';
+  campo.inputMode = 'numeric';
+  campo.placeholder = 'Nº do despacho';
+  campo.setAttribute('aria-label', 'Número do despacho');
+  campo.style.cssText = 'padding:0.5rem 0.75rem;border:1px solid #cfd8d3;border-radius:8px;font:inherit;width:11rem';
+  const buscarBotao = document.createElement('button');
+  buscarBotao.type = 'submit';
+  buscarBotao.className = 'botao-secundario';
+  buscarBotao.textContent = 'Buscar despacho';
+  const limpar = document.createElement('button');
+  limpar.type = 'button';
+  limpar.className = 'botao-secundario';
+  limpar.textContent = 'Mostrar todos';
+  form.append(campo, buscarBotao, limpar);
+  form.addEventListener('submit', (evento) => {
+    evento.preventDefault();
+    el('pesquisa-termo').value = campo.value.trim();
+    el('limpar-pesquisa').hidden = !campo.value.trim();
+    recarregar();
+  });
+  limpar.addEventListener('click', () => {
+    campo.value = '';
+    el('pesquisa-termo').value = '';
+    el('limpar-pesquisa').hidden = true;
+    recarregar();
+  });
+  depoisDe.after(form);
+  return campo;
+}
+
 // ===== Início =====
 document.addEventListener('DOMContentLoaded', async () => {
   if (!chave.ler()) {
@@ -1080,7 +1184,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   el('filtros').addEventListener('submit', (evento) => {
     evento.preventDefault();
-    carregar();
+    recarregar();
   });
   el('atalhos').addEventListener('click', (evento) => {
     const botao = evento.target.closest('[data-periodo]');
@@ -1089,7 +1193,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     el('inicio').value = periodo.inicio;
     el('fim').value = periodo.fim;
     marcarAtalho(botao);
-    carregar();
+    recarregar();
   });
   for (const id of ['inicio', 'fim']) {
     el(id).addEventListener('input', () => marcarAtalho(null));
@@ -1098,13 +1202,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   el('form-pesquisa').addEventListener('submit', (evento) => {
     evento.preventDefault();
     el('limpar-pesquisa').hidden = el('pesquisa-termo').value.trim() === '';
-    carregar();
+    recarregar();
   });
   el('limpar-pesquisa').addEventListener('click', () => {
     el('pesquisa-termo').value = '';
     el('limpar-pesquisa').hidden = true;
-    carregar();
+    recarregar();
   });
+
+  // Pesquisa rápida pelo número do despacho em cima das duas listas
+  filtroRapido(el('carga-titulo-lista').closest('.bloco-topo'));
+  filtroRapido(el('titulo-lista'));
   el('baixar-excel').addEventListener('click', baixarExcel);
 
   // Cargas: alternar entre as duas partes e baixar o Excel das cargas

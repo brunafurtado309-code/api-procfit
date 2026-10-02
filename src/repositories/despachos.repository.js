@@ -519,6 +519,30 @@ async function notasDaCarga(carga) {
       ORDER BY R.RECEBIMENTO_FATURAMENTO_DESPACHO;
     `);
 
+  // Títulos de cada nota da carga (nasceram da NF), com a situação e onde foram baixados.
+  // Serve para ver onde o título está sendo baixado mesmo quando o despacho não tem acerto.
+  // A nota se liga ao título pelo número: TITULO = "nota/parcela" e o título de nota fiscal
+  // tem TAB_MASTER_ORIGEM = 753289 (ver financeiro.repository.js). Consulta opcional.
+  const titulosDasNotas = await opcional(pool, 'titulos-das-notas', (r) => r
+    .input('carga', sql.Int, carga)
+    .query(`
+      SELECT
+        FDN.NF_NUMERO                           AS nota,
+        T.TITULO_RECEBER                        AS titulo_receber,
+        LTRIM(RTRIM(T.TITULO))                  AS titulo,
+        T.MODALIDADE                            AS modalidade,
+        T.VALOR                                 AS valor,
+        CONVERT(varchar(10), T.VENCIMENTO, 23)  AS vencimento,
+        ${CAMPOS_SITUACAO_TITULO}
+      FROM FATURAMENTO_DESPACHO_NOTAS FDN WITH (NOLOCK)
+      JOIN TITULOS_RECEBER T WITH (NOLOCK)
+        ON T.TAB_MASTER_ORIGEM = 753289
+       AND T.ENTIDADE = FDN.ENTIDADE
+       AND LTRIM(RTRIM(T.TITULO)) LIKE CAST(CAST(FDN.NF_NUMERO AS bigint) AS varchar(20)) + '/%'
+      ${SITUACAO_DO_TITULO('T.TITULO_RECEBER')}
+      WHERE FDN.FATURAMENTO_DESPACHO = @carga
+      ORDER BY FDN.NF_NUMERO, T.TITULO;`));
+
   const acertos = recordsets[2];
   const proc = await processamento(pool, acertos.map((a) => a.acerto));
   for (const a of acertos) {
@@ -531,6 +555,7 @@ async function notasDaCarga(carga) {
     notas: recordsets[1],
     acertos,
     bancos: proc.bancos,
+    titulosDasNotas,
   };
 }
 
