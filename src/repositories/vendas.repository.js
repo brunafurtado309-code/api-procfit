@@ -402,7 +402,8 @@ async function notasDoVendedor(filtros, vendedor, limite = LIMITE_NOTAS, termo =
 // ===== Caixa (PDV) por operador =====
 // - O operador de verdade está em PDV_VENDAS.OPERADOR (o VENDEDOR do cupom é quem atendeu).
 // - Ligação: VENDAS_ANALITICAS (EMPRESA, CAIXA, VENDA) = PDV_VENDAS (EMPRESA, CAIXA, VENDA).
-// - Nome do operador: OPERADORES.VENDEDOR -> VENDEDORES.NOME.
+// - Nome do operador: o código do cupom é o código do VENDEDOR da pessoa (VENDEDORES.NOME);
+//   se não houver, usa o vínculo antigo OPERADORES.VENDEDOR -> VENDEDORES.NOME.
 //   SEGURANÇA: da tabela OPERADORES só usamos OPERADOR e VENDEDOR (ela guarda senhas).
 // - Nº impresso do cupom = DOCUMENTO_NUMERO (= PDV_VENDAS.ECF_CUPOM).
 // - Pedido do cupom = PDV_VENDAS.PREVENDA (= PEDIDOS_PREVENDAS.PEDIDO_PREVENDA).
@@ -470,7 +471,9 @@ async function porOperador(filtros) {
     ${BASE_CAIXA}
     SELECT
       CO.OPERADOR                                              AS operador,
-      COALESCE(LTRIM(RTRIM(V.NOME)), 'Sem operador informado') AS nome,
+      COALESCE(NULLIF(LTRIM(RTRIM(VD.NOME)), ''), NULLIF(LTRIM(RTRIM(V.NOME)), ''),
+               CASE WHEN CO.OPERADOR > 0 THEN 'Operador ' + CAST(CO.OPERADOR AS varchar(10)) END,
+               'Sem operador informado')                     AS nome,
       SUM(CASE WHEN CO.CATEGORIA = 'CAIXA' THEN CO.LIQUIDA ELSE 0 END)                       AS caixa_valor,
       SUM(CASE WHEN CO.CATEGORIA = 'CAIXA' AND CO.LIQUIDA > 0 THEN 1 ELSE 0 END)             AS caixa_qtd,
       SUM(CASE WHEN CO.CATEGORIA = 'DEVOLUCAO_CAIXA' THEN CO.LIQUIDA ELSE 0 END)             AS devolucoes_caixa_valor,
@@ -479,7 +482,12 @@ async function porOperador(filtros) {
     FROM CUPONS_OPERADOR CO
     LEFT JOIN OPERADORES O WITH (NOLOCK) ON O.OPERADOR = CO.OPERADOR
     LEFT JOIN VENDEDORES V WITH (NOLOCK) ON V.VENDEDOR = O.VENDEDOR
-    GROUP BY CO.OPERADOR, V.NOME
+    -- O caixa grava o código do VENDEDOR da pessoa que está operando (validado em out/2026 pelo
+    -- PDV_LOG_OPERADOR: 41 e 45 operam os caixas 2 e 1; 7 = supervisora que autoriza cancelamentos).
+    -- O cadastro OPERADORES está desatualizado (ex.: 8 -> vendedor 7), por isso o nome vem
+    -- primeiro do vendedor com o mesmo código, e só depois do vínculo antigo.
+    LEFT JOIN VENDEDORES VD WITH (NOLOCK) ON VD.VENDEDOR = CO.OPERADOR
+    GROUP BY CO.OPERADOR, VD.NOME, V.NOME
     ORDER BY liquido DESC
   `);
   return recordset;
@@ -511,7 +519,7 @@ async function cuponsDoOperador(filtros, operador, limite = LIMITE_NOTAS, termo 
       LTRIM(RTRIM(CO.OBSERVACAO))             AS observacao,
       CO.NFCE_SERIE                           AS serie,
       CO.OPERADOR                             AS codigo_operador,
-      LTRIM(RTRIM(VO.NOME))                   AS operador,
+      COALESCE(NULLIF(LTRIM(RTRIM(VDO.NOME)), ''), NULLIF(LTRIM(RTRIM(VO.NOME)), '')) AS operador,
       CO.VENDEDOR                             AS codigo_vendedor,
       LTRIM(RTRIM(VV.NOME))                   AS vendedor,
       CO.CLIENTE                              AS codigo_cliente,
@@ -561,6 +569,7 @@ async function cuponsDoOperador(filtros, operador, limite = LIMITE_NOTAS, termo 
     LEFT JOIN ENTIDADES E WITH (NOLOCK)   ON E.ENTIDADE = CO.CLIENTE
     LEFT JOIN OPERADORES O WITH (NOLOCK)  ON O.OPERADOR = CO.OPERADOR
     LEFT JOIN VENDEDORES VO WITH (NOLOCK) ON VO.VENDEDOR = O.VENDEDOR
+    LEFT JOIN VENDEDORES VDO WITH (NOLOCK) ON VDO.VENDEDOR = CO.OPERADOR
     WHERE (@operador IS NULL OR CO.OPERADOR = @operador)
       AND (@categoria IS NULL OR CO.CATEGORIA = @categoria)
       AND (@comDesconto = 0 OR CO.DESCONTOS > 0)
@@ -627,10 +636,14 @@ async function nomeDoOperador(operador) {
     .request()
     .input('operador', sql.Int, operador)
     .query(`
-      SELECT LTRIM(RTRIM(V.NOME)) AS nome
-      FROM OPERADORES O WITH (NOLOCK)
-      JOIN VENDEDORES V WITH (NOLOCK) ON V.VENDEDOR = O.VENDEDOR
-      WHERE O.OPERADOR = @operador
+      SELECT COALESCE(
+        (SELECT TOP 1 NULLIF(LTRIM(RTRIM(VD.NOME)), '')
+           FROM VENDEDORES VD WITH (NOLOCK)
+          WHERE VD.VENDEDOR = @operador),
+        (SELECT TOP 1 NULLIF(LTRIM(RTRIM(V.NOME)), '')
+           FROM OPERADORES O WITH (NOLOCK)
+           JOIN VENDEDORES V WITH (NOLOCK) ON V.VENDEDOR = O.VENDEDOR
+          WHERE O.OPERADOR = @operador)) AS nome
     `);
   return recordset[0]?.nome ?? null;
 }
