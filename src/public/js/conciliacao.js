@@ -640,6 +640,7 @@
     const corte = n > LIMITE
       ? `<p class="aviso">Mostrando ${LIMITE} de ${n.toLocaleString('pt-BR')}. Use a busca para achar um cliente, pedido ou nota; o Excel leva a lista completa.</p>` : '';
     $('tabela').innerHTML = n ? corte + html : '<p class="vazio">Nada nesta lista para o mês e a busca escolhidos.</p>';
+    rotularTabelas($('tabela'));
   }
 
   function seletor(chave, destinos) {
@@ -674,6 +675,20 @@
       }).join('') + '</tbody></table>';
   }
 
+  // No celular cada linha vira um cartão: cada célula leva o nome da sua coluna (o CSS mostra ao lado)
+  function rotularTabelas(area) {
+    area.querySelectorAll('table').forEach(tabela => {
+      const nomes = [...tabela.querySelectorAll('thead th')].map(th => th.textContent.trim());
+      tabela.querySelectorAll('tbody tr').forEach(tr => {
+        let coluna = 0;
+        [...tr.children].forEach(td => {
+          td.setAttribute('data-label', td.colSpan > 1 ? '' : (nomes[coluna] || ''));
+          coluna += td.colSpan || 1;
+        });
+      });
+    });
+  }
+
   /* ---------------- ficha do cliente ---------------- */
   function abrirFicha(cod) {
     const ts = estado.titulos.filter(t => String(t.cod) === String(cod)).sort((a, b) => a.venc - b.venc);
@@ -690,6 +705,7 @@
       ${ts.map(t => { const [n, c] = STATUS[t.status] || ['', 's-neutro']; return `<tr><td>${esc(t.pedido)}</td><td>${esc(t.nf || '—')}</td><td>${esc(t.parcela)}</td><td>${dt(t.venc)}</td><td class="num">${brl(t.valor)}</td><td class="num">${t.pendente ? brl(t.pendente) : '—'}</td><td><span class="status ${c}">${n}</span></td></tr>`; }).join('')}
       ${peds.map(p => `<tr><td>${esc(p.pedido)}</td><td>—</td><td></td><td>${dt(p.data)}</td><td class="num">${brl(p.valor)}</td><td class="num">${brl(p.valor - p.pago)}</td><td><span class="status ${p.leitura[1]}">Pedido sem nota</span></td></tr>`).join('')}
       </tbody></table></div>`;
+    rotularTabelas(f);
     f.classList.add('aberta'); f.setAttribute('aria-hidden', 'false');
     $('fecharFicha').focus();
   }
