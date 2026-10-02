@@ -132,8 +132,10 @@ function lugaresDaBaixa(t) {
 // Sinal de baixa em duplicidade: baixado em mais de um formulário, ou recebido a mais que o valor.
 // (Duas baixas no MESMO lugar podem ser pagamentos parciais legítimos; se passarem do valor,
 // o título fica com saldo negativo e cai na segunda regra.)
+// Agora que cada baixa mostra o valor, baixar em dois lugares NÃO é suspeito por si só
+// (ex.: parte no PIX, parte em dinheiro no caixa). Suspeito é passar do valor do título.
 function baixaSuspeita(t) {
-  return lugaresDaBaixa(t).length > 1 || Number(t.pendente) < -0.009 || Boolean(situacaoTitulo(t).alerta);
+  return Number(t.pendente) < -0.009 || Boolean(situacaoTitulo(t).alerta);
 }
 
 // Quanto da linha do acerto já foi pago: o valor da linha menos o que o título ainda deve
@@ -167,14 +169,57 @@ function textoBaixa(t) {
   return partes.filter(Boolean).join(' · ');
 }
 
+// Lista de todas as baixas do título, uma por linha, com o VALOR de cada uma:
+// "R$ 500,00 · 01/10/2026 14:36 · Bancos por títulos nº 3479 · PIX · por FULANA"
+const LUGAR_POR_TELA = { 668401: 'Bancos por títulos', 356928: 'Caixa', 249008: 'Cofre da loja', 455510: 'Retorno de despacho' };
+function listaDeBaixas(t) {
+  const baixas = t.baixas ?? [];
+  if (!baixas.length) return null;
+  const caixa = document.createElement('div');
+  caixa.className = 'explica';
+  let soma = 0;
+  for (const b of baixas) {
+    const estorno = Number(b.transacao) !== 12;
+    const valor = estorno ? -(Number(b.estornado) || 0) : (Number(b.valor) || 0);
+    soma += valor;
+    const lugar = LUGAR_POR_TELA[Number(b.tab)] ?? `Outra tela (${b.tab})`;
+    const texto = [
+      `${estorno ? 'estorno ' : ''}${dinheiro(valor)}`,
+      b.hora ? dataHoraBR(b.hora) : dataBR(b.data),
+      Number(b.tab) === 455510 && b.acerto ? `${lugar} · Acerto ${b.acerto}` : `${lugar}${b.registro ? ` nº ${b.registro}` : ''}`,
+      b.modalidade != null ? nomeForma(b.modalidade) : null,
+      b.usuario ? `por ${b.usuario}` : null,
+    ].filter(Boolean).join(' · ');
+    const linha = document.createElement('div');
+    linha.textContent = texto;
+    if (estorno) linha.className = 'negativo';
+    caixa.append(linha);
+  }
+  if (baixas.length > 1) {
+    const total = document.createElement('div');
+    const passou = soma - (Number(t.valor) || 0);
+    total.textContent = `total recebido ${dinheiro(soma)} de ${dinheiro(t.valor)}`
+      + `${passou > 0.009 ? ` · ${dinheiro(passou)} a mais` : ''}`;
+    total.className = passou > 0.009 ? 'negativo' : '';
+    total.style.fontWeight = '600';
+    caixa.append(total);
+  }
+  return caixa;
+}
+
 // Colunas de situação usadas nas tabelas de títulos
 function celulasSituacaoTitulo(t) {
   const info = situacaoTitulo(t);
   const baixa = textoBaixa(t) || '—';
   const pendente = Number(t.pendente) || 0;
+  const detalheBaixas = listaDeBaixas(t);
+  const celulaBaixa = td(detalheBaixas ?? baixa, `esquerda${baixaSuspeita(t) ? ' negativo' : ''}`);
+  if (detalheBaixas && (Number(t.cancelado_no_acerto) > 0.009 || Number(t.renegociado) > 0.009)) {
+    celulaBaixa.prepend(span(`${baixa} `));
+  }
   return [
     td(span(info.texto, `situacao ${info.classe}`), 'esquerda'),
-    td(baixa, `esquerda${baixaSuspeita(t) ? ' negativo' : ''}`),
+    celulaBaixa,
     td(pendente > 0.009 ? dinheiro(pendente) : '—', pendente > 0.009 ? 'negativo' : null),
   ];
 }
@@ -744,8 +789,8 @@ function montarAcerto(numero, resposta, opcoes = {}) {
         )),
       ));
       if (rt.suspeitos.length) {
-        partes.push(aviso(`Atenção: ${plural(rt.suspeitos.length, 'título foi baixado', 'títulos foram baixados')} `
-          + 'em mais de um lugar, recebido a mais, cancelado manualmente ou não virou título. Confira na tabela abaixo (em vermelho).'));
+        partes.push(aviso(`Atenção: ${plural(rt.suspeitos.length, 'título com problema', 'títulos com problema')}: `
+          + 'recebido a mais, cancelado manualmente ou não virou título. Confira na tabela abaixo (em vermelho).'));
       }
       partes.push(detalhes);
     }
@@ -888,7 +933,10 @@ function mostrarCargas() {
     if (typeof x === 'number' || typeof y === 'number') return ((Number(x) || 0) - (Number(y) || 0)) * fator;
     return String(x ?? '').localeCompare(String(y ?? ''), 'pt-BR', { sensitivity: 'base' }) * fator;
   });
-  el('carga-titulo-lista').textContent = `Despachos${soPagasFora ? ' · pagos fora do acerto' : ''} (${inteiro(lista.length)})`;
+  const nomesFiltro = { EM_ROTA: 'pendentes de recebimento', PARCIAL: 'acertadas em parte', ACERTADA: 'acertadas',
+    NAO_PROC: 'acerto não processado' };
+  const filtroAtivo = soPagasFora ? 'pagos fora do acerto' : nomesFiltro[cargaSituacao];
+  el('carga-titulo-lista').textContent = `Despachos${filtroAtivo ? ` · só ${filtroAtivo}` : ''} (${inteiro(lista.length)})`;
 
   const tabela = el('tabela-cargas');
   const cab = document.createElement('tr');
@@ -1176,7 +1224,16 @@ async function montarDespacho(carga) {
             `${t.titulo} · ${nomeForma(t.modalidade)} · ${dinheiro(t.valor)} `,
             span(info.texto, `situacao ${info.classe}`),
           );
-          if (rastreio) linhaTitulo.append(span(` ${rastreio}`, baixaSuspeita(t) ? 'negativo' : 'explica'));
+          const detalheBaixas = listaDeBaixas(t);
+          if (detalheBaixas) {
+            if (Number(t.cancelado_no_acerto) > 0.009 || Number(t.renegociado) > 0.009) {
+              linhaTitulo.append(span(` ${rastreio}`, 'explica'));
+            }
+            if (baixaSuspeita(t)) detalheBaixas.classList.add('negativo');
+            linhaTitulo.append(detalheBaixas);
+          } else if (rastreio) {
+            linhaTitulo.append(span(` ${rastreio}`, baixaSuspeita(t) ? 'negativo' : 'explica'));
+          }
           if (Number(t.origem) === 650512) linhaTitulo.append(span(' · parcela da renegociação', 'explica'));
           destino.append(linhaTitulo);
         }
@@ -1298,10 +1355,14 @@ function filtroRapido(depoisDe) {
     el('limpar-pesquisa').hidden = !campo.value.trim();
     recarregar();
   });
+  // "Mostrar todos": limpa a pesquisa E o cartão escolhido (ex.: "Acertadas em parte")
   limpar.addEventListener('click', () => {
     campo.value = '';
     el('pesquisa-termo').value = '';
     el('limpar-pesquisa').hidden = true;
+    cargaSituacao = null;
+    soPagasFora = false;
+    situacaoAtual = null;
     recarregar();
   });
   depoisDe.after(form);

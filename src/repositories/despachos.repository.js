@@ -338,6 +338,7 @@ async function detalhe(acerto) {
   if (!cabecalho) return null;
   const proc = await processamento(pool, [acerto]);
   cabecalho.processado_em = proc.porAcerto[acerto]?.processado_em ?? null;
+  await baixasDosTitulos(pool, recordsets[2]);
   return {
     acerto: cabecalho, notas: recordsets[1], parcelas: recordsets[2], cartoes: recordsets[3],
     bancos: proc.bancos,
@@ -364,6 +365,51 @@ async function opcional(pool, nome, consulta) {
     console.warn(`[despachos] consulta opcional "${nome}" falhou: ${erro.message}`);
     return [];
   }
+}
+
+// Todas as baixas (recebimentos) e estornos de uma lista de títulos, uma linha por movimento:
+// valor, data, hora (Bancos), onde, nº do registro, forma e quem fez. Mesmas ligações já
+// validadas na aba Recebimentos (financeiro.repository.js). Consulta opcional.
+async function baixasDosTitulos(pool, titulos) {
+  const ids = [...new Set(titulos.map((t) => Number(t.titulo_receber)).filter((n) => Number.isInteger(n) && n > 0))];
+  for (const t of titulos) t.baixas = [];
+  if (!ids.length) return;
+  const linhas = await opcional(pool, 'baixas-dos-titulos', (r) => r.query(`
+    SELECT
+      TX.TITULO_RECEBER                              AS titulo_receber,
+      TX.TRANSACAO_FINANCEIRA                        AS transacao,
+      CONVERT(varchar(10), TX.DATA, 23)              AS data,
+      ISNULL(TX.DEBITO, 0)                           AS valor,
+      ISNULL(TX.CREDITO, 0)                          AS estornado,
+      TX.TAB_MASTER_ORIGEM                           AS tab,
+      TX.REG_MASTER_ORIGEM                           AS registro,
+      CONVERT(varchar(16), RB.DATA_HORA, 120)        AS hora,
+      COALESCE(RB.MODALIDADE, RC.MODALIDADE, DT.MODALIDADE) AS modalidade,
+      RD.RECEBIMENTO_FATURAMENTO_DESPACHO            AS acerto,
+      ${NOME_USUARIO('U')}                           AS usuario
+    FROM TITULOS_RECEBER_TRANSACOES TX WITH (NOLOCK)
+    LEFT JOIN RECEBIMENTOS_BANCOS RB WITH (NOLOCK)
+      ON TX.TAB_MASTER_ORIGEM = 668401 AND RB.RECEBIMENTO_BANCO = TX.REG_MASTER_ORIGEM
+    LEFT JOIN RECEBIMENTOS_CAIXA RC WITH (NOLOCK)
+      ON TX.TAB_MASTER_ORIGEM = 356928 AND RC.RECEBIMENTO_CAIXA = TX.REG_MASTER_ORIGEM
+    LEFT JOIN COFRES_LOJAS_LANCAMENTOS CF WITH (NOLOCK)
+      ON TX.TAB_MASTER_ORIGEM = 249008 AND CF.COFRE_LANCAMENTO = TX.REG_MASTER_ORIGEM
+    LEFT JOIN ${D}_DETALHES DT WITH (NOLOCK)
+      ON TX.TAB_MASTER_ORIGEM = 455510 AND DT.RECEBIMENTO_FATURAMENTO_DESPACHO_DETALHE = TX.REG_MASTER_ORIGEM
+    LEFT JOIN ${D} RD WITH (NOLOCK)
+      ON RD.RECEBIMENTO_FATURAMENTO_DESPACHO = DT.RECEBIMENTO_FATURAMENTO_DESPACHO
+    LEFT JOIN USUARIOS U WITH (NOLOCK)
+      ON U.USUARIO = COALESCE(RB.USUARIO_LOGADO, RC.USUARIO_LOGADO, CF.USUARIO_LOGADO, RD.USUARIO_LOGADO)
+    WHERE TX.TITULO_RECEBER IN (${ids.join(',')})
+      AND (TX.TRANSACAO_FINANCEIRA = 12 OR TX.TRANSACAO_FINANCEIRA BETWEEN 51 AND 55)
+    ORDER BY TX.TITULO_RECEBER, TX.DATA;`));
+  const porTitulo = new Map();
+  for (const l of linhas) {
+    const id = Number(l.titulo_receber);
+    if (!porTitulo.has(id)) porTitulo.set(id, []);
+    porTitulo.get(id).push(l);
+  }
+  for (const t of titulos) t.baixas = porTitulo.get(Number(t.titulo_receber)) ?? [];
 }
 
 async function processamento(pool, acertos) {
@@ -724,6 +770,8 @@ async function notasDaCarga(carga) {
       ${ULTIMA_BAIXA('T.TITULO_RECEBER')}
       WHERE FDN.FATURAMENTO_DESPACHO = @carga
       ORDER BY FDN.NF_NUMERO, CASE WHEN T.TAB_MASTER_ORIGEM = 753289 THEN 0 ELSE 1 END, T.VENCIMENTO, T.TITULO;`));
+
+  await baixasDosTitulos(pool, titulosDasNotas);
 
   const acertos = recordsets[2];
   const proc = await processamento(pool, acertos.map((a) => a.acerto));
