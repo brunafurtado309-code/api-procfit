@@ -82,6 +82,20 @@
         </p>
       </section>
 
+      <!-- Faturamento por vendedor: do orçamento à nota (dados do módulo faturamento) -->
+      <section class="bloco" aria-labelledby="titulo-fat-vendedores">
+        <h2 id="titulo-fat-vendedores">Faturamento por vendedor</h2>
+        <p class="bloco__descricao">Pedidos feitos no período, pelo vendedor do pedido: orçamentos, pedidos processados e o que já virou nota fiscal. Clique no nome para ver os pedidos.</p>
+        <p id="fat-vend-status" class="status" role="status" aria-live="polite"></p>
+        <div class="tabela-rolagem">
+          <table class="tabela">
+            <thead id="fat-vend-cab"></thead>
+            <tbody id="fat-vend"></tbody>
+            <tfoot id="fat-vend-total"></tfoot>
+          </table>
+        </div>
+      </section>
+
       <!-- Gráficos: evolução no período, lojas e produtos -->
       <section class="bloco" aria-labelledby="titulo-dia-a-dia">
         <h2 id="titulo-dia-a-dia">Venda dia a dia</h2>
@@ -224,6 +238,30 @@
         <tbody id="detalhe-linhas"></tbody>
         <tfoot id="detalhe-total"></tfoot>
       </table>
+    </div>
+  </dialog>
+
+  <!-- Pedidos de um vendedor, por etapa (abre ao clicar no nome em "Faturamento por vendedor") -->
+  <dialog id="fat-janela" class="detalhe" aria-labelledby="fat-janela-titulo">
+    <header class="detalhe__topo">
+      <div>
+        <h2 id="fat-janela-titulo">Vendedor</h2>
+        <p id="fat-janela-resumo" class="detalhe__resumo"></p>
+      </div>
+      <div class="detalhe__acoes">
+        <button id="fat-janela-fechar" type="button" class="botao-secundario">Fechar</button>
+      </div>
+    </header>
+    <div id="fat-janela-abas" class="atalhos" aria-label="Etapas dos pedidos"></div>
+    <p id="fat-janela-status" class="status" role="status" aria-live="polite"></p>
+    <div class="detalhe__corpo">
+      <div class="tabela-rolagem">
+        <table class="tabela">
+          <thead id="fat-janela-cab"></thead>
+          <tbody id="fat-janela-linhas"></tbody>
+          <tfoot id="fat-janela-total"></tfoot>
+        </table>
+      </div>
     </div>
   </dialog>
 </body>

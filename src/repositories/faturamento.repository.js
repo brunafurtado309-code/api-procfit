@@ -258,6 +258,11 @@ const FILTROS = {
   cancelado_com_nota: 'cancelado_com_nota = 1',
   parado_sem_faturar: 'parado_sem_faturar = 1',
   devolvido: 'devolucoes > 0',
+  // Agrupamentos usados no painel de Vendas (faturamento por vendedor)
+  orcamentos: "etapa IN ('ORCAMENTO', 'APROVACAO')",
+  processados: "etapa IN ('PEDIDO', 'CHECKOUT', 'FATURADO', 'PAGO')",
+  aguardando: "etapa IN ('PEDIDO', 'CHECKOUT')",
+  com_nota: "nota IS NOT NULL AND etapa <> 'CANCELADO'",
 };
 
 const ONDE = `
@@ -380,7 +385,20 @@ async function vendedores(filtros) {
     ${montarBase(PEDIDOS_DO_PERIODO)}
     SELECT cod_vendedor, MAX(vendedor) AS vendedor, COUNT(*) AS pedidos, SUM(valor) AS valor,
            SUM(CASE WHEN etapa = 'PAGO' THEN valor ELSE 0 END) AS pago,
-           SUM(CASE WHEN etapa = 'CANCELADO' THEN 1 ELSE 0 END) AS cancelados
+           SUM(CASE WHEN etapa = 'CANCELADO' THEN 1 ELSE 0 END) AS cancelados,
+           -- Para o painel de Vendas: cada etapa do pedido, em quantidade e valor
+           SUM(CASE WHEN etapa = 'CANCELADO' THEN valor ELSE 0 END)                         AS valor_cancelados,
+           SUM(CASE WHEN etapa IN ('ORCAMENTO', 'APROVACAO') THEN 1 ELSE 0 END)             AS orcamentos,
+           SUM(CASE WHEN etapa IN ('ORCAMENTO', 'APROVACAO') THEN valor ELSE 0 END)         AS valor_orcamentos,
+           SUM(CASE WHEN etapa IN ('PEDIDO', 'CHECKOUT', 'FATURADO', 'PAGO') THEN 1 ELSE 0 END)     AS processados,
+           SUM(CASE WHEN etapa IN ('PEDIDO', 'CHECKOUT', 'FATURADO', 'PAGO') THEN valor ELSE 0 END) AS valor_processados,
+           SUM(CASE WHEN etapa IN ('PEDIDO', 'CHECKOUT') THEN 1 ELSE 0 END)                 AS aguardando,
+           SUM(CASE WHEN etapa IN ('PEDIDO', 'CHECKOUT') THEN valor ELSE 0 END)             AS valor_aguardando,
+           SUM(CASE WHEN nota IS NOT NULL AND etapa <> 'CANCELADO' THEN 1 ELSE 0 END)       AS notas,
+           SUM(CASE WHEN nota IS NOT NULL AND etapa <> 'CANCELADO' THEN valor ELSE 0 END)   AS valor_notas,
+           SUM(CASE WHEN cupom IS NOT NULL AND nota IS NULL AND etapa <> 'CANCELADO' THEN 1 ELSE 0 END)     AS cupons,
+           SUM(CASE WHEN cupom IS NOT NULL AND nota IS NULL AND etapa <> 'CANCELADO' THEN valor ELSE 0 END) AS valor_cupons,
+           SUM(devolvido)                                                                   AS devolvido
     FROM #BASE
     ${ONDE}
     GROUP BY cod_vendedor

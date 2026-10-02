@@ -1000,8 +1000,219 @@ async function painelFoiAtualizado() {
   }
 }
 
+// ===== Faturamento por vendedor =====
+// Cada pedido do período, pelo vendedor do pedido, na etapa em que está hoje
+// (mesma regra da tela de Faturamento: faturamento.repository.js):
+//   Orçamentos   = "Orçamento" ou "Pendente aprovação"
+//   Processados  = pedido processado (aguardando faturar, faturado ou pago)
+//   Aguardando   = processado, mas ainda sem nota e sem cupom
+//   Em nota      = pedido que já tem nota fiscal
+//   No caixa     = pago com cupom, sem nota
+const ETAPAS_PEDIDO = {
+  ORCAMENTO: 'Orçamento', APROVACAO: 'Pendente de aprovação', PEDIDO: 'Processado (sem checkout)',
+  CHECKOUT: 'Checkout feito', FATURADO: 'Faturado (nota)', PAGO: 'Pago', CANCELADO: 'Cancelado',
+};
+const ABAS_VENDEDOR = [
+  { id: 'todos', texto: 'Todos', filtro: () => true },
+  { id: 'orcamentos', texto: 'Orçamentos', filtro: (p) => ['ORCAMENTO', 'APROVACAO'].includes(p.etapa) },
+  { id: 'processados', texto: 'Processados', filtro: (p) => ['PEDIDO', 'CHECKOUT', 'FATURADO', 'PAGO'].includes(p.etapa) },
+  { id: 'aguardando', texto: 'Aguardando faturar', filtro: (p) => ['PEDIDO', 'CHECKOUT'].includes(p.etapa) },
+  { id: 'notas', texto: 'Notas faturadas', filtro: (p) => p.nota != null && p.etapa !== 'CANCELADO' },
+  { id: 'cancelados', texto: 'Cancelados', filtro: (p) => p.etapa === 'CANCELADO' },
+];
+let fatVendedores = [];
+let fatPedidos = [];
+let fatAba = 'todos';
+
+async function carregarFatVendedores(filtros, minhaCarga) {
+  const status = el('fat-vend-status');
+  status.classList.remove('status--erro');
+  status.textContent = 'Carregando os pedidos por vendedor…';
+  try {
+    const lista = await buscar('faturamento-vendedores', filtros);
+    if (minhaCarga !== cargaAtual) return;
+    fatVendedores = lista;
+    mostrarFatVendedores();
+    status.textContent = '';
+  } catch (erro) {
+    if (minhaCarga !== cargaAtual || erro instanceof ChaveInvalida) return;
+    status.textContent = erro.message;
+    status.classList.add('status--erro');
+  }
+}
+
+// Célula com o valor em reais e a quantidade embaixo
+function celulaEtapa(valor, quantidade, rotulo, alerta = false) {
+  const td = document.createElement('td');
+  if (!Number(quantidade)) {
+    td.textContent = '—';
+    return td;
+  }
+  td.textContent = moeda.format(Number(valor) || 0);
+  if (alerta) td.className = 'negativo';
+  const qtd = document.createElement('span');
+  qtd.className = 'qtd';
+  qtd.textContent = contar(Number(quantidade), rotulo[0], rotulo[1]);
+  td.append(qtd);
+  return td;
+}
+
+function mostrarFatVendedores() {
+  const cab = document.createElement('tr');
+  for (const titulo of ['Vendedor', 'Orçamentos', 'Processados', 'Aguardando faturar', 'Faturado em nota',
+    'Vendido no caixa', 'Cancelados']) {
+    const th = document.createElement('th');
+    th.scope = 'col';
+    th.textContent = titulo;
+    cab.append(th);
+  }
+  el('fat-vend-cab').replaceChildren(cab);
+
+  const lista = [...fatVendedores].sort((a, b) => (Number(b.valor_processados) || 0) - (Number(a.valor_processados) || 0));
+  const PEDIDOS = ['pedido', 'pedidos'];
+  const linhas = lista.map((v) => {
+    const tr = document.createElement('tr');
+    const nome = document.createElement('td');
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    botao.className = 'link-pedido';
+    botao.textContent = v.vendedor || `Vendedor ${v.cod_vendedor ?? 'sem código'}`;
+    botao.title = 'Ver os pedidos deste vendedor';
+    botao.addEventListener('click', () => abrirFatVendedor(v));
+    nome.append(botao);
+    tr.append(
+      nome,
+      celulaEtapa(v.valor_orcamentos, v.orcamentos, PEDIDOS),
+      celulaEtapa(v.valor_processados, v.processados, PEDIDOS),
+      celulaEtapa(v.valor_aguardando, v.aguardando, PEDIDOS, true),
+      celulaEtapa(v.valor_notas, v.notas, ['nota', 'notas']),
+      celulaEtapa(v.valor_cupons, v.cupons, ['cupom', 'cupons']),
+      celulaEtapa(v.valor_cancelados, v.cancelados, PEDIDOS),
+    );
+    return tr;
+  });
+  if (!linhas.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 7;
+    td.className = 'vazio';
+    td.textContent = 'Nenhum pedido no período.';
+    tr.append(td);
+    linhas.push(tr);
+  }
+  el('fat-vend').replaceChildren(...linhas);
+
+  const soma = (campo) => lista.reduce((t, v) => t + (Number(v[campo]) || 0), 0);
+  const total = document.createElement('tr');
+  const rotulo = document.createElement('td');
+  rotulo.textContent = `Total (${contar(lista.length, 'vendedor', 'vendedores')})`;
+  total.append(
+    rotulo,
+    celulaEtapa(soma('valor_orcamentos'), soma('orcamentos'), ['pedido', 'pedidos']),
+    celulaEtapa(soma('valor_processados'), soma('processados'), ['pedido', 'pedidos']),
+    celulaEtapa(soma('valor_aguardando'), soma('aguardando'), ['pedido', 'pedidos'], true),
+    celulaEtapa(soma('valor_notas'), soma('notas'), ['nota', 'notas']),
+    celulaEtapa(soma('valor_cupons'), soma('cupons'), ['cupom', 'cupons']),
+    celulaEtapa(soma('valor_cancelados'), soma('cancelados'), ['pedido', 'pedidos']),
+  );
+  el('fat-vend-total').replaceChildren(total);
+}
+
+// Janela com os pedidos do vendedor, separados por etapa
+async function abrirFatVendedor(v) {
+  const janela = el('fat-janela');
+  el('fat-janela-titulo').textContent = v.vendedor || `Vendedor ${v.cod_vendedor}`;
+  const periodo = filtrosAtuais();
+  el('fat-janela-resumo').textContent = `pedidos de ${dataBR(periodo.inicio)} a ${dataBR(periodo.fim)}`;
+  el('fat-janela-status').textContent = 'Carregando os pedidos…';
+  el('fat-janela-status').classList.remove('status--erro');
+  el('fat-janela-linhas').replaceChildren();
+  el('fat-janela-total').replaceChildren();
+  fatPedidos = [];
+  fatAba = 'todos';
+  mostrarAbasVendedor();
+  if (!janela.open) janela.showModal();
+  try {
+    const { lista } = await buscar('faturamento-vendedores/pedidos', { ...periodo, vendedor: v.cod_vendedor });
+    fatPedidos = lista;
+    el('fat-janela-status').textContent = lista.length >= 3000
+      ? 'Mostrando os 3.000 pedidos mais recentes. Diminua o período para ver todos.' : '';
+    mostrarAbasVendedor();
+    mostrarPedidosVendedor();
+  } catch (erro) {
+    el('fat-janela-status').textContent = erro.message;
+    el('fat-janela-status').classList.add('status--erro');
+  }
+}
+
+function mostrarAbasVendedor() {
+  el('fat-janela-abas').replaceChildren(...ABAS_VENDEDOR.map((aba) => {
+    const lista = fatPedidos.filter(aba.filtro);
+    const valor = lista.reduce((t, p) => t + (Number(p.valor) || 0), 0);
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    botao.className = `atalho${fatAba === aba.id ? ' atalho--ativo' : ''}`;
+    botao.setAttribute('aria-pressed', String(fatAba === aba.id));
+    botao.textContent = fatPedidos.length ? `${aba.texto} · ${inteiro.format(lista.length)} · ${moeda.format(valor)}` : aba.texto;
+    botao.addEventListener('click', () => {
+      fatAba = aba.id;
+      mostrarAbasVendedor();
+      mostrarPedidosVendedor();
+    });
+    return botao;
+  }));
+}
+
+function mostrarPedidosVendedor() {
+  const aba = ABAS_VENDEDOR.find((a) => a.id === fatAba) ?? ABAS_VENDEDOR[0];
+  const lista = fatPedidos.filter(aba.filtro);
+  const cab = document.createElement('tr');
+  for (const titulo of ['Pedido', 'Data', 'Cliente', 'Valor', 'Etapa', 'Nota', 'Cupom', 'Processado em']) {
+    const th = document.createElement('th');
+    th.scope = 'col';
+    th.textContent = titulo;
+    cab.append(th);
+  }
+  el('fat-janela-cab').replaceChildren(cab);
+  const celula = (conteudo) => {
+    const td = document.createElement('td');
+    if (conteudo instanceof Node) td.append(conteudo); else td.textContent = conteudo ?? '—';
+    return td;
+  };
+  const linhas = lista.map((p) => {
+    const tr = document.createElement('tr');
+    const cliente = celula([p.cod_cliente, p.cliente].filter(Boolean).join(' · ') || '—');
+    tr.append(
+      celula(pedidoJanela.link(p.pedido)),
+      celula(dataBR(p.dia)),
+      cliente,
+      celula(moeda.format(Number(p.valor) || 0)),
+      celula(ETAPAS_PEDIDO[p.etapa] ?? p.etapa),
+      celula(p.nota != null ? `NF ${p.nota}${p.nota_dia ? ` · ${dataBR(p.nota_dia)}` : ''}` : '—'),
+      celula(p.cupom != null ? `${p.cupom}${p.cupom_dia ? ` · ${dataBR(p.cupom_dia)}` : ''}` : '—'),
+      celula(p.processado_em ? `${dataBR(p.processado_em.slice(0, 10))} ${p.processado_em.slice(11, 16)}` : '—'),
+    );
+    return tr;
+  });
+  if (!linhas.length && fatPedidos.length) {
+    const tr = document.createElement('tr');
+    const td = celula('Nenhum pedido nesta etapa.');
+    td.colSpan = 8;
+    td.className = 'vazio';
+    tr.append(td);
+    linhas.push(tr);
+  }
+  el('fat-janela-linhas').replaceChildren(...linhas);
+  const total = document.createElement('tr');
+  const rotulo = celula(`Total (${contar(lista.length, 'pedido', 'pedidos')})`);
+  rotulo.colSpan = 3;
+  total.append(rotulo, celula(moeda.format(lista.reduce((t, p) => t + (Number(p.valor) || 0), 0))), celula(''),
+    celula(''), celula(''), celula(''));
+  el('fat-janela-total').replaceChildren(total);
+}
+
 async function carregar({ automatico = false } = {}) {
-  if (automatico && await painelFoiAtualizado() && !el('detalhe').open) {
+  if (automatico && await painelFoiAtualizado() && !el('detalhe').open && !el('fat-janela').open) {
     mostrarStatus('Painel atualizado. Recarregando…');
     window.location.reload();
     return;
@@ -1030,6 +1241,8 @@ async function carregar({ automatico = false } = {}) {
     mostrarTabela(TABELA_CAIXA, porOperador.operadores, porOperador.total);
     // Gráficos carregam à parte: se falharem, o resto do painel continua
     carregarGraficos(filtros, minhaCarga);
+    // Faturamento por vendedor também carrega à parte (consulta mais pesada)
+    carregarFatVendedores(filtros, minhaCarga);
 
     filtrosCarregados = { ...filtros };
     diaDaUltimaCarga = hojeISO();
@@ -1139,6 +1352,7 @@ function marcarAtalho(ativo) {
 
 // ===== Início =====
 document.addEventListener('DOMContentLoaded', () => {
+  el('fat-janela-fechar').addEventListener('click', () => el('fat-janela').close());
   const hoje = new Date();
   el('inicio').value = formatarData(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
   el('fim').value = formatarData(hoje);
