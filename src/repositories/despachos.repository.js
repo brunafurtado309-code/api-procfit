@@ -126,15 +126,14 @@ async function detalhe(acerto) {
         FD.USUARIO_LOGADO                       AS carga_usuario,
         ${NOME_USUARIO('UC')}                   AS carga_usuario_nome,
         FD.VEICULO                              AS veiculo,
-        FD.CONFERENTE                           AS conferente,
-        LTRIM(RTRIM(VC.NOME))                   AS conferente_nome,
         FD.RESPONSAVEL                          AS responsavel,
         LTRIM(RTRIM(ER.NOME))                   AS responsavel_nome
       FROM ${D} R WITH (NOLOCK)
       ${JUNCOES}
-      -- Pessoas da carga: quem montou (usuário), conferente (vendedor) e responsável (cadastro)
+      -- Pessoas da carga: o conferente é quem criou o despacho (usuário) e o responsável (cadastro).
+      -- Atenção: FATURAMENTO_DESPACHO.CONFERENTE aponta para a tabela CONFERENTES, NÃO para VENDEDORES
+      -- (antes o painel cruzava com VENDEDORES e mostrava o nome errado, ex.: a vendedora nº 3).
       LEFT JOIN USUARIOS UC WITH (NOLOCK) ON UC.USUARIO = FD.USUARIO_LOGADO
-      LEFT JOIN VENDEDORES VC WITH (NOLOCK) ON VC.VENDEDOR = FD.CONFERENTE
       LEFT JOIN ENTIDADES ER WITH (NOLOCK) ON ER.ENTIDADE = FD.RESPONSAVEL
       ${TOTAIS_DO_ACERTO}
       WHERE R.RECEBIMENTO_FATURAMENTO_DESPACHO = @acerto;
@@ -200,7 +199,69 @@ async function detalhe(acerto) {
 
   const [cabecalho] = recordsets[0];
   if (!cabecalho) return null;
-  return { acerto: cabecalho, notas: recordsets[1], parcelas: recordsets[2], cartoes: recordsets[3] };
+  const proc = await processamento(pool, [acerto]);
+  cabecalho.processado_em = proc.porAcerto[acerto]?.processado_em ?? null;
+  return {
+    acerto: cabecalho, notas: recordsets[1], parcelas: recordsets[2], cartoes: recordsets[3],
+    bancos: proc.bancos,
+  };
+}
+
+// ===== Processamento do acerto (botão Processar do PROCFIT) =====
+// O PROCFIT não grava "fim da conferência". O momento do Processar é deduzido de:
+//   1) a hora em que os títulos gerados foram criados no contas a receber (TITULOS_RECEBER.DATA_HORA);
+//   2) se não houver, a hora em que o recebimento PIX caiu em RECEBIMENTOS_BANCOS.
+// Regra validada: só o PIX (modalidade 11) gera recebimento em RECEBIMENTOS_BANCOS,
+// com FORM_ORIGEM = 456558 (Conferência e Recebimento) e REG_ORIGEM = número do acerto.
+//
+// Estas consultas são "opcionais": se alguma falhar (ex.: nome de tabela diferente),
+// a tela continua funcionando sem essa informação, em vez de dar erro.
+async function opcional(pool, nome, consulta) {
+  try {
+    const { recordset } = await consulta(pool.request());
+    return recordset;
+  } catch (erro) {
+    console.warn(`[despachos] consulta opcional "${nome}" falhou: ${erro.message}`);
+    return [];
+  }
+}
+
+async function processamento(pool, acertos) {
+  const numeros = [...new Set(acertos.map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+  if (!numeros.length) return { porAcerto: {}, bancos: [] };
+  // Os números vêm do próprio banco e são validados como inteiros acima
+  const lista = numeros.join(',');
+
+  const titulos = await opcional(pool, 'titulos-processados', (r) => r.query(`
+    SELECT RS.RECEBIMENTO_FATURAMENTO_DESPACHO      AS acerto,
+           CONVERT(varchar(16), MIN(TR.DATA_HORA), 120) AS primeiro,
+           CONVERT(varchar(16), MAX(TR.DATA_HORA), 120) AS processado_em
+    FROM ${D}_RESULTADOS RS WITH (NOLOCK)
+    JOIN TITULOS_RECEBER TR WITH (NOLOCK) ON TR.TITULO_RECEBER = RS.TITULO_RECEBER
+    WHERE RS.RECEBIMENTO_FATURAMENTO_DESPACHO IN (${lista})
+    GROUP BY RS.RECEBIMENTO_FATURAMENTO_DESPACHO;`));
+
+  const bancos = await opcional(pool, 'recebimentos-bancos', (r) => r.query(`
+    SELECT RB.REG_ORIGEM                                   AS acerto,
+           RB.RECEBIMENTO_BANCO                            AS recebimento,
+           CONVERT(varchar(16), RB.DATA_HORA, 120)         AS gravado_em,
+           CONVERT(varchar(10), RB.DATA_RECEBIMENTO, 23)   AS data_recebimento,
+           RB.CONTA_BANCARIA                               AS conta,
+           RB.USUARIO_LOGADO                               AS usuario
+    FROM RECEBIMENTOS_BANCOS RB WITH (NOLOCK)
+    WHERE RB.FORM_ORIGEM = 456558 AND RB.REG_ORIGEM IN (${lista})
+    ORDER BY RB.REG_ORIGEM, RB.RECEBIMENTO_BANCO;`));
+
+  const porAcerto = {};
+  for (const n of numeros) {
+    const t = titulos.find((x) => Number(x.acerto) === n);
+    const horasBanco = bancos.filter((x) => Number(x.acerto) === n).map((x) => x.gravado_em).filter(Boolean).sort();
+    porAcerto[n] = {
+      processado_em: t?.processado_em ?? horasBanco[horasBanco.length - 1] ?? null,
+      fonte: t?.processado_em ? 'titulos' : (horasBanco.length ? 'banco' : null),
+    };
+  }
+  return { porAcerto, bancos };
 }
 
 // ===== Saída: as CARGAS que deixaram a empresa (FATURAMENTO_DESPACHO) =====
@@ -237,8 +298,10 @@ const CARGAS = `
       FD.DATA_HORA                                     AS saida_data,
       LTRIM(RTRIM(FD.ROTA))                            AS rota,
       FD.VEICULO                                       AS veiculo,
+      CONVERT(varchar(16), FD.DATA_HORA, 120)          AS criado_em,
       FD.CONFERENTE                                    AS cod_conferente,
-      LTRIM(RTRIM(VC.NOME))                            AS conferente,
+      -- Conferente = quem criou o despacho no PROCFIT (Despacho de Notas de Faturamento)
+      COALESCE(NULLIF(LTRIM(RTRIM(U.NOME)), ''), LTRIM(RTRIM(U.LOGIN))) AS conferente,
       FD.RESPONSAVEL                                   AS cod_responsavel,
       LTRIM(RTRIM(ER.NOME))                            AS responsavel,
       FD.USUARIO_LOGADO                                AS usuario,
@@ -259,7 +322,6 @@ const CARGAS = `
     FROM FATURAMENTO_DESPACHO FD WITH (NOLOCK)
     LEFT JOIN NOTAS N ON N.FATURAMENTO_DESPACHO = FD.FATURAMENTO_DESPACHO
     LEFT JOIN ACERTOS A ON A.carga = FD.FATURAMENTO_DESPACHO
-    LEFT JOIN VENDEDORES VC WITH (NOLOCK) ON VC.VENDEDOR = FD.CONFERENTE
     LEFT JOIN ENTIDADES ER WITH (NOLOCK) ON ER.ENTIDADE = FD.RESPONSAVEL
     LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = FD.USUARIO_LOGADO
   )`;
@@ -346,8 +408,80 @@ async function notasDaCarga(carga) {
       ) AC
       WHERE FDN.FATURAMENTO_DESPACHO = @carga
       ORDER BY FDN.NF_NUMERO;
+
+      -- 3) Recebimentos de despacho (acertos) desta carga: abertura, quem lançou e totais
+      SELECT
+        R.RECEBIMENTO_FATURAMENTO_DESPACHO              AS acerto,
+        CONVERT(varchar(16), R.DATA_HORA, 120)          AS aberto_em,
+        CONVERT(varchar(10), R.DATA_RECEBIMENTO, 23)    AS data_recebimento,
+        R.USUARIO_LOGADO                                AS usuario,
+        ${NOME_USUARIO('UL')}                           AS usuario_nome,
+        ISNULL(IT.informado, 0)                         AS informado,
+        ISNULL(PT.parcelas, 0)                          AS parcelas,
+        ISNULL(PT.total_parcelas, 0)                    AS total_parcelas
+      FROM ${D} R WITH (NOLOCK)
+      LEFT JOIN USUARIOS UL WITH (NOLOCK) ON UL.USUARIO = R.USUARIO_LOGADO
+      OUTER APPLY (
+        SELECT SUM(ISNULL(DT.VALOR_PAGAMENTO, 0)) AS informado
+        FROM ${D}_DETALHES DT WITH (NOLOCK)
+        WHERE DT.RECEBIMENTO_FATURAMENTO_DESPACHO = R.RECEBIMENTO_FATURAMENTO_DESPACHO
+      ) IT
+      OUTER APPLY (
+        SELECT COUNT(*) AS parcelas, SUM(RS.VALOR) AS total_parcelas
+        FROM ${D}_RESULTADOS RS WITH (NOLOCK)
+        WHERE RS.RECEBIMENTO_FATURAMENTO_DESPACHO = R.RECEBIMENTO_FATURAMENTO_DESPACHO
+      ) PT
+      WHERE R.FATURAMENTO_DESPACHO_FILTRO = @carga
+      ORDER BY R.RECEBIMENTO_FATURAMENTO_DESPACHO;
+
+      -- 4) Quanto foi informado no acerto em cada forma de pagamento
+      SELECT
+        DT.RECEBIMENTO_FATURAMENTO_DESPACHO   AS acerto,
+        DT.MODALIDADE                         AS modalidade,
+        COUNT(DISTINCT DT.NF_NUMERO)          AS notas,
+        SUM(ISNULL(DT.VALOR_PAGAMENTO, 0))    AS informado
+      FROM ${D}_DETALHES DT WITH (NOLOCK)
+      JOIN ${D} R WITH (NOLOCK) ON R.RECEBIMENTO_FATURAMENTO_DESPACHO = DT.RECEBIMENTO_FATURAMENTO_DESPACHO
+      WHERE R.FATURAMENTO_DESPACHO_FILTRO = @carga AND ISNULL(DT.VALOR_PAGAMENTO, 0) <> 0
+      GROUP BY DT.RECEBIMENTO_FATURAMENTO_DESPACHO, DT.MODALIDADE;
+
+      -- 5) Títulos gerados pelo processamento, com a nota, a forma e a conta bancária
+      SELECT
+        RS.RECEBIMENTO_FATURAMENTO_DESPACHO     AS acerto,
+        LTRIM(RTRIM(RS.TITULO))                 AS titulo,
+        RS.PARCELA                              AS parcela,
+        DT.NF_NUMERO                            AS nota,
+        RS.ENTIDADE                             AS codigo_cliente,
+        LTRIM(RTRIM(RS.DESC_ENTIDADE))          AS cliente,
+        RS.MODALIDADE                           AS modalidade,
+        LTRIM(RTRIM(RS.DESC_MODALIDADE))        AS forma,
+        RS.CONTA_BANCARIA                       AS conta,
+        CONVERT(varchar(10), RS.VENCIMENTO, 23) AS vencimento,
+        RS.VALOR                                AS valor,
+        RS.TITULO_RECEBER                       AS titulo_receber
+      FROM ${D}_RESULTADOS RS WITH (NOLOCK)
+      JOIN ${D} R WITH (NOLOCK) ON R.RECEBIMENTO_FATURAMENTO_DESPACHO = RS.RECEBIMENTO_FATURAMENTO_DESPACHO
+      LEFT JOIN ${D}_DETALHES DT WITH (NOLOCK)
+        ON DT.RECEBIMENTO_FATURAMENTO_DESPACHO_DETALHE = RS.RECEBIMENTO_FATURAMENTO_DESPACHO_DETALHE
+      WHERE R.FATURAMENTO_DESPACHO_FILTRO = @carga
+      ORDER BY RS.RECEBIMENTO_FATURAMENTO_DESPACHO, DT.NF_NUMERO, RS.TITULO, RS.PARCELA;
     `);
-  return { carga: recordsets[0][0] ?? null, notas: recordsets[1] };
+
+  const acertos = recordsets[2];
+  const proc = await processamento(pool, acertos.map((a) => a.acerto));
+  for (const a of acertos) {
+    const p = proc.porAcerto[Number(a.acerto)] ?? {};
+    a.processado_em = p.processado_em ?? null;
+    a.processado_fonte = p.fonte ?? null;
+  }
+  return {
+    carga: recordsets[0][0] ?? null,
+    notas: recordsets[1],
+    acertos,
+    formas: recordsets[3],
+    titulos: recordsets[4],
+    bancos: proc.bancos,
+  };
 }
 
 module.exports = { lista, detalhe, cargas, notasDaCarga, SITUACOES_CARGA };

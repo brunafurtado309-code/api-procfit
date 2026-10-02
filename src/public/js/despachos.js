@@ -53,6 +53,33 @@ const FORMAS = {
 const nomeForma = (codigo, descricao) =>
   (descricao && descricao.trim()) || FORMAS[codigo] || (codigo != null ? `Forma ${codigo}` : 'Não informada');
 
+// Contas bancárias do PROCFIT (CONTAS_BANCARIAS)
+const CONTAS = { 1: 'Itaú Matriz', 2: 'Itaú Itaperi' };
+const nomeConta = (codigo) =>
+  (codigo == null || Number(codigo) === 0 ? '—' : CONTAS[Number(codigo)] ?? `conta ${codigo}`);
+
+// Tempo entre dois momentos "AAAA-MM-DD HH:MM" (ex.: abertura e processamento do acerto)
+function duracao(inicio, fim) {
+  if (!inicio || !fim) return null;
+  const ler = (texto) => new Date(`${String(texto).replace(' ', 'T')}:00`);
+  const minutos = Math.round((ler(fim) - ler(inicio)) / 60000);
+  if (!Number.isFinite(minutos) || minutos < 0) return null;
+  if (minutos < 60) return `${minutos} min`;
+  if (minutos < 24 * 60) return `${Math.floor(minutos / 60)} h ${minutos % 60} min`;
+  return plural(Math.floor(minutos / (24 * 60)), 'dia', 'dias');
+}
+
+// Recebimentos no banco repetidos: mais de um na MESMA conta para o mesmo acerto
+function recebimentosRepetidos(bancos) {
+  const porConta = new Map();
+  for (const b of bancos) {
+    const conta = Number(b.conta) || 0;
+    if (!porConta.has(conta)) porConta.set(conta, []);
+    porConta.get(conta).push(b);
+  }
+  return [...porConta.values()].filter((lista) => lista.length > 1);
+}
+
 // ===== Estado da tela =====
 let acertos = [];          // lista do período (já filtrada pela situação na API)
 let situacaoAtual = null;  // cartão clicado
@@ -412,7 +439,7 @@ async function abrirAcerto(numero) {
   if (!dialogo.open) dialogo.showModal();
 
   try {
-    const { acerto: a, notas, parcelas, cartoes } = await buscar(`despachos/${numero}`);
+    const { acerto: a, notas, parcelas, cartoes, bancos = [] } = await buscar(`despachos/${numero}`);
     el('acerto-status').textContent = '';
     el('acerto-titulo').textContent = a.carga ? `Despacho ${a.carga}` : `Acerto ${numero}`;
     el('acerto-resumo').textContent = [
@@ -488,16 +515,27 @@ async function abrirAcerto(numero) {
     item('Valor das notas', dinheiro(totalNotas));
     item('Recebido', dinheiro(totalPago));
     item('Falta receber', totalFalta > 0.01 ? dinheiro(totalFalta) : 'nada', totalFalta > 0.01);
-    // Pessoas de cada etapa do despacho
-    item('Montou o despacho', pessoa(a.carga_usuario_nome, a.carga_usuario, 'usuário'));
-    item('Conferente', pessoa(a.conferente_nome, a.conferente, 'conferente'));
+    // Pessoas e momentos de cada etapa do despacho
+    item('Conferente (criou o despacho)', [pessoa(a.carga_usuario_nome, a.carga_usuario, 'usuário'),
+      a.carga_criada_em ? dataHoraBR(a.carga_criada_em) : null].filter(Boolean).join(' · '));
     item('Responsável', pessoa(a.responsavel_nome, a.responsavel, 'código'));
     item(a.situacao === 'SEM_PARCELAS' ? 'Lançou e não processou' : 'Lançou o retorno',
       pessoa(a.usuario_nome, a.usuario, 'usuário'));
+    item('Abertura (início das baixas)', dataHoraBR(a.digitado_em));
+    item('Processado em', a.processado_em ? dataHoraBR(a.processado_em) : 'ainda não processado', !a.processado_em);
+    const tempo = duracao(a.digitado_em, a.processado_em);
+    if (tempo) item('Tempo até processar', tempo);
     for (const [nome, valor] of [...porForma.entries()].sort((x, y) => y[1] - x[1])) {
       item(nome, dinheiro(valor));
     }
     partes.push(dados);
+
+    // Recebimentos repetidos no banco (ex.: conferência processada mais de uma vez)
+    for (const repetidos of recebimentosRepetidos(bancos)) {
+      partes.push(aviso(`Atenção: ${repetidos.length} recebimentos no banco para este acerto na conta `
+        + `${nomeConta(repetidos[0].conta)} (nº ${repetidos.map((b) => b.recebimento).join(', ')}). `
+        + 'O normal é um só: confira se houve duplicidade.'));
+    }
 
     // Aviso só quando o processamento não bate com o recebido
     const diferenca = Number(a.diferenca) || 0;
@@ -721,14 +759,13 @@ function mostrarCargas() {
     botao.textContent = aberta ? '▾' : '▸';
     linha.append(
       // Número do despacho (é o que o conferente usa), com o acerto e o conferente embaixo
-      comAuxiliar(`Despacho ${c.carga}`,
-        [c.acerto ? `acerto ${c.acerto}` : 'sem acerto',
-          c.cod_conferente ? `conferente ${c.cod_conferente}` : null].filter(Boolean).join(' · '),
-        'esquerda sem-quebra'),
+      comAuxiliar(`Despacho ${c.carga}`, c.acerto ? `acerto ${c.acerto}` : 'sem acerto', 'esquerda sem-quebra'),
       comAuxiliar(dataBR(c.saida), c.recebimento ? `voltou ${dataBR(c.recebimento)}` : null, 'esquerda sem-quebra'),
-      td(c.rota || '—', 'esquerda'),
-      comAuxiliar(c.conferente ?? (c.cod_conferente ? `conferente ${c.cod_conferente}` : '—'),
-        c.responsavel ?? null, 'esquerda'),
+      // Rota com o responsável (motorista) embaixo
+      comAuxiliar(c.rota || '—', c.responsavel ?? null, 'esquerda'),
+      // Conferente = quem criou o despacho, com o momento em que criou
+      comAuxiliar(pessoa(c.conferente, c.usuario, 'usuário'),
+        c.criado_em ? `criou ${dataHoraBR(c.criado_em)}` : null, 'esquerda'),
       comAuxiliar(inteiro(c.notas), Number(c.notas_acertadas) ? `${inteiro(c.notas_acertadas)} acertadas` : null),
       td(dinheiro(c.valor), 'coluna-final'),
       td(Number(c.informado) > 0.009 ? dinheiro(c.informado) : '—'),
@@ -765,12 +802,148 @@ function mostrarCargas() {
   tabela.tFoot.replaceChildren(rodape);
 }
 
-// Notas que foram na carga, marcando as que voltaram acertadas
+// Ao abrir um despacho: o recebimento (acerto), as formas, os títulos e as notas da carga
 async function abrirNotasDaCarga(carga) {
   const linha = el(`carga-notas-${carga}`);
   if (!linha) return;
   try {
-    const { notas } = await buscar(`despachos/cargas/${carga}`);
+    const {
+      notas, acertos = [], formas = [], titulos = [], bancos = [],
+    } = await buscar(`despachos/cargas/${carga}`);
+    const partes = [];
+    const titulo = (texto) => {
+      const h3 = document.createElement('h3');
+      h3.textContent = texto;
+      return h3;
+    };
+
+    // ----- 1) Recebimento do despacho (um bloco por acerto) -----
+    partes.push(titulo(acertos.length > 1 ? `Recebimentos do despacho (${acertos.length})` : 'Recebimento do despacho'));
+    if (!acertos.length) {
+      partes.push(aviso('Este despacho ainda não tem recebimento lançado: as notas continuam em rota.'));
+    }
+    for (const a of acertos) {
+      const dados = document.createElement('dl');
+      dados.className = 'pedido-dados';
+      const item = (rotulo, valor, alerta = false) => {
+        const bloco = document.createElement('div');
+        const dt = document.createElement('dt');
+        dt.textContent = rotulo;
+        const dd = document.createElement('dd');
+        if (valor instanceof Node) dd.append(valor); else dd.textContent = valor ?? '—';
+        if (alerta) dd.className = 'negativo';
+        bloco.append(dt, dd);
+        dados.append(bloco);
+      };
+      const abrir = document.createElement('button');
+      abrir.type = 'button';
+      abrir.className = 'botao-secundario';
+      abrir.textContent = `Acerto ${a.acerto} · ver completo`;
+      abrir.addEventListener('click', (evento) => {
+        evento.stopPropagation();
+        abrirAcerto(a.acerto);
+      });
+      const naoProcessado = !Number(a.parcelas);
+      item('Recebimento', abrir);
+      item('Lançado por', pessoa(a.usuario_nome, a.usuario, 'usuário'));
+      item('Abertura (início das baixas)', dataHoraBR(a.aberto_em));
+      item('Data do recebimento informada', dataBR(a.data_recebimento));
+      item('Processado em', a.processado_em ? dataHoraBR(a.processado_em)
+        : (naoProcessado ? 'ainda não processado' : 'sem registro de hora'), naoProcessado);
+      const tempo = duracao(a.aberto_em, a.processado_em);
+      if (tempo) item('Tempo até processar', tempo);
+      item('Recebido no acerto', dinheiro(a.informado));
+      item('Títulos gerados', `${plural(a.parcelas, 'título', 'títulos')} · ${dinheiro(a.total_parcelas)}`);
+      partes.push(dados);
+
+      // Recebimentos que caíram no banco (PIX) e alerta de repetição
+      const doAcerto = bancos.filter((b) => Number(b.acerto) === Number(a.acerto));
+      if (doAcerto.length) {
+        partes.push(span(`Recebimento no banco: ${doAcerto.map((b) =>
+          `nº ${b.recebimento} (${nomeConta(b.conta)}, gravado ${dataHoraBR(b.gravado_em)})`).join('; ')}`, 'explica'));
+      }
+      for (const repetidos of recebimentosRepetidos(doAcerto)) {
+        partes.push(aviso(`Atenção: ${repetidos.length} recebimentos no banco para o acerto ${a.acerto} na conta `
+          + `${nomeConta(repetidos[0].conta)} (nº ${repetidos.map((b) => b.recebimento).join(', ')}). `
+          + 'O normal é um só: confira se houve duplicidade.'));
+      }
+      if (naoProcessado && Number(a.informado) > 0.009) {
+        partes.push(aviso(`O acerto ${a.acerto} tem ${dinheiro(a.informado)} recebidos, mas ainda não foi processado: `
+          + 'nada virou título no contas a receber.'));
+      }
+    }
+
+    // ----- 2) Formas de recebimento: informado no acerto x títulos gerados -----
+    if (formas.length || titulos.length) {
+      const descricoes = new Map();
+      for (const t of titulos) if (t.forma) descricoes.set(Number(t.modalidade), t.forma);
+      const porForma = new Map();
+      const linhaForma = (codigo) => {
+        const chaveForma = Number(codigo);
+        if (!porForma.has(chaveForma)) porForma.set(chaveForma, { codigo, notas: 0, informado: 0, titulos: 0, gerado: 0 });
+        return porForma.get(chaveForma);
+      };
+      for (const f of formas) {
+        const l = linhaForma(f.modalidade);
+        l.notas += Number(f.notas) || 0;
+        l.informado += Number(f.informado) || 0;
+      }
+      for (const t of titulos) {
+        const l = linhaForma(t.modalidade);
+        l.titulos += 1;
+        l.gerado += Number(t.valor) || 0;
+      }
+      const lista = [...porForma.values()].sort((x, y) => y.informado - x.informado);
+      const soma = (campo) => lista.reduce((t, l) => t + l[campo], 0);
+      partes.push(titulo('Formas de recebimento'));
+      const difTotal = soma('informado') - soma('gerado');
+      partes.push(tabelaSimples(
+        [['Forma', true], ['Notas'], ['Recebido no acerto'], ['Títulos'], ['Títulos gerados'], ['Diferença']],
+        lista.map((l) => {
+          const dif = l.informado - l.gerado;
+          return linhaDe(
+            td(nomeForma(l.codigo, descricoes.get(Number(l.codigo))), 'esquerda'),
+            td(l.notas ? inteiro(l.notas) : '—'),
+            td(dinheiro(l.informado)),
+            td(l.titulos ? inteiro(l.titulos) : '—'),
+            td(dinheiro(l.gerado)),
+            td(Math.abs(dif) > 0.009 ? dinheiro(dif) : '—', Math.abs(dif) > 0.009 ? 'negativo' : null),
+          );
+        }),
+        linhaDe(td('Total', 'esquerda'), td(''), td(dinheiro(soma('informado'))), td(inteiro(soma('titulos'))),
+          td(dinheiro(soma('gerado'))),
+          td(Math.abs(difTotal) > 0.009 ? dinheiro(difTotal) : '—', Math.abs(difTotal) > 0.009 ? 'negativo' : null)),
+      ));
+    }
+
+    // ----- 3) Títulos do despacho -----
+    if (titulos.length) {
+      const variosAcertos = acertos.length > 1;
+      partes.push(titulo(`Títulos do despacho (${titulos.length})`));
+      const totalTitulos = titulos.reduce((t, x) => t + (Number(x.valor) || 0), 0);
+      const rotulo = td('Total', 'esquerda');
+      rotulo.colSpan = variosAcertos ? 7 : 6;
+      partes.push(tabelaSimples(
+        [...(variosAcertos ? [['Acerto', true]] : []), ['Título', true], ['Nota', true], ['Cliente', true],
+          ['Forma', true], ['Conta', true], ['Vencimento', true], ['Valor']],
+        titulos.map((t) => linhaDe(
+          ...(variosAcertos ? [td(String(t.acerto), 'esquerda')] : []),
+          td([t.titulo, t.parcela > 1 ? `parc. ${t.parcela}` : null].filter(Boolean).join(' · ') || '—', 'esquerda sem-quebra'),
+          td(t.nota ? `NF ${t.nota}` : '—', 'esquerda sem-quebra'),
+          td([t.codigo_cliente, t.cliente].filter(Boolean).join(' · ') || '—', 'esquerda'),
+          td(nomeForma(t.modalidade, t.forma), 'esquerda'),
+          td(nomeConta(t.conta), 'esquerda'),
+          td(dataBR(t.vencimento), 'esquerda'),
+          td(dinheiro(t.valor)),
+        )),
+        linhaDe(rotulo, td(dinheiro(totalTitulos))),
+      ));
+    } else if (acertos.length) {
+      partes.push(aviso('Nenhum título gerado ainda para este despacho.'));
+    }
+
+    // ----- 4) Notas que foram na carga -----
+    partes.push(titulo(`Notas da carga (${notas.length})`));
     const tabela = document.createElement('table');
     tabela.className = 'tabela tabela--itens';
     const cab = document.createElement('tr');
@@ -814,7 +987,19 @@ async function abrirNotasDaCarga(carga) {
     rotulo.colSpan = 4;
     rodape.append(rotulo, td(dinheiro(somaValor)), td(dinheiro(somaInformado)), td(''));
     tabela.createTFoot().append(rodape);
-    linha.firstChild.replaceChildren(tabela);
+    const rolagem = document.createElement('div');
+    rolagem.className = 'tabela-rolagem';
+    rolagem.append(tabela);
+    partes.push(rolagem);
+
+    const caixa = document.createElement('div');
+    caixa.style.display = 'grid';
+    caixa.style.gap = '0.75rem';
+    caixa.style.padding = '0.5rem 0.25rem 1rem';
+    // Cliques dentro do detalhe não fecham a linha
+    caixa.addEventListener('click', (evento) => evento.stopPropagation());
+    caixa.append(...partes);
+    linha.firstChild.replaceChildren(caixa);
   } catch (erro) {
     linha.firstChild.replaceChildren(span(erro.message, 'status--erro'));
   }
