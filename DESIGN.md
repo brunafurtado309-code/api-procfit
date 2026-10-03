@@ -95,6 +95,19 @@ Quando uma aba mostra outra coisa (ex.: Despachos no financeiro), ela vira uma p
 (`financeiro.html#boletos`) e a atual é um `<span class="aba aba--ativa">`. O financeiro lê o
 `#aba` do endereço ao abrir. A barra de filtros, os cartões-filtro e a lista seguem o mesmo padrão.
 
+## Telas com estilo próprio (seções 18 a 20 do style.css)
+
+Todas usam o mesmo `style.css` e as mesmas variáveis; o que muda fica preso à classe do `<body>`.
+
+- **Entrada (`body.tela-login`)**: a única tela com faixa verde-escura grande à esquerda (marca e
+  nome do painel). É o "momento de marca" do painel; nenhuma outra tela repete isso.
+- **Usuários (`body.tela-usuarios`)**: topo e menu iguais aos outros. Quem aguarda liberação tem a
+  faixa laranja à esquerda da linha; as telas liberadas são pílulas que acendem quando marcadas.
+- **Conciliação (`body.tela-conciliacao`)**: entra no financeiro como a aba "Conciliação com o banco"
+  (mesma divisão e mesmas abas). As listas ficam numa **trilha de 6 passos** (`.trilha` >
+  `.trilha__passo`), na ordem de trabalho. Situação na linha: bolinha cheia verde = certo,
+  cheia laranja = problema, vazada laranja = sugestão a conferir.
+
 ## Gráficos
 
 Todo gráfico usa `js/graficos.js` (SVG puro, sem biblioteca externa: o painel não carrega

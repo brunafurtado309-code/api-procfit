@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <script src="/painel/js/sessao.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Conciliação de títulos — Belo Norte</title>
@@ -42,7 +41,6 @@
   .nome-arquivo{font-size:14px;color:#A9CDB8;max-width:340px;line-height:1.35}
   .nome-arquivo summary{cursor:pointer;color:#fff;font-weight:600}
   .nome-arquivo details[open] summary{margin-bottom:6px}
-  .remover-arquivo{background:none;border:0;color:#FFD3C9;text-decoration:underline;cursor:pointer;font-size:13px;padding:0 0 0 6px}
 
   /* fechamento do mês: uma linha, sem caixas */
   .fechamento{display:flex;flex-wrap:wrap;background:var(--verde);color:#fff;padding:14px 28px;gap:0}
@@ -106,55 +104,6 @@
   @media (prefers-reduced-motion:reduce){.ficha{transition:none}}
   @media (max-width:700px){header,main,.fechamento{padding-left:16px;padding-right:16px}.barra input[type=search]{min-width:0;width:100%}}
 
-  /* ===== Celular: tudo em uma coluna, abas deslizando e cada linha da tabela vira um cartão ===== */
-  @media (max-width:700px){
-    header{padding-top:14px}
-    h1{font-size:22px}
-    .titulo{flex-direction:column;align-items:flex-start;gap:4px}
-    .controles{gap:12px;align-items:stretch;flex-direction:column}
-    .controles label{width:100%}
-    .controles input[type=month],.controles select{width:100%;min-width:0}
-    .arquivo,.arquivo .btn{width:100%}
-    .nome-arquivo{max-width:100%}
-    .btn{padding:11px 16px}
-    /* quadro de prova: uma tabela embaixo da outra */
-    .fechamento{padding-top:14px;padding-bottom:14px}
-    .prova{grid-template-columns:1fr;gap:14px}
-    .prova-topo{flex-direction:column;align-items:flex-start;gap:8px}
-    .prova-topo h2{font-size:17px}
-    .prova table{font-size:14px;width:100%}
-    .prova > *{min-width:0}
-    .prova th{white-space:normal}
-    .prova td.num,.prova th.num{white-space:nowrap;width:1%;padding-left:10px}
-    .prova td,.prova th{padding:6px 4px}
-    .prova tr.resultado td{font-size:15px}
-    /* abas: uma linha só, deslizando para o lado */
-    nav#abas{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:thin;padding-bottom:2px}
-    nav#abas button,.grupo-abas{flex:0 0 auto}
-    .grupo-abas{border-left:0;padding-left:10px}
-    .guia{grid-template-columns:1fr;font-size:14px}
-    /* barra de busca e Excel */
-    .barra{flex-direction:column;align-items:stretch;gap:10px}
-    .barra label{flex-wrap:wrap}
-    #exportar{width:100%}
-    .total-lista{margin-left:0}
-    /* tabelas viram cartões: o nome da coluna aparece à esquerda de cada valor */
-    #tabela table,#tabela tbody,#tabela tr,#tabela td,.ficha table,.ficha tbody,.ficha tr,.ficha td{display:block;width:100%}
-    #tabela thead,.ficha thead{display:none}
-    #tabela tr,.ficha tr{border:1px solid var(--verde-linha);border-radius:8px;margin:0 0 12px;padding:6px 12px;background:#fff}
-    #tabela tr:hover td,.ficha tr:hover td{background:transparent}
-    #tabela td,.ficha td{border:0;padding:6px 0 6px 42%;position:relative;min-height:30px;text-align:left;white-space:normal}
-    #tabela td::before,.ficha td::before{content:attr(data-label);position:absolute;left:0;top:6px;width:38%;font-size:13px;font-weight:600;color:var(--texto-suave);white-space:normal}
-    #tabela td[data-label=""],.ficha td[data-label=""]{padding-left:0}
-    #tabela td.num,.ficha td.num{text-align:left}
-    td:has(.status),td:has(.cliente){min-width:0}
-    .acoes{white-space:normal}
-    .acoes button{margin:4px 6px 4px 0;padding:9px 14px}
-    .decisao{width:100%;min-width:0;padding:9px 8px}
-    .ficha .numeros{flex-wrap:wrap;gap:12px 20px}
-    .ficha h2{font-size:20px}
-  }
-
   /* entrada com a chave */
   .entrada{max-width:420px;margin:48px auto;padding:0 20px}
   .entrada h2{font-size:22px;margin:0 0 6px}
@@ -167,37 +116,7 @@
   .decisao{border:1px solid var(--verde-linha);border-radius:6px;padding:6px 8px;background:#fff;min-width:150px}
   .decisao.marcada{border-color:var(--verde);background:var(--verde-claro);font-weight:600}
   .barra .dias{border:1px solid var(--verde-linha);border-radius:6px;padding:6px 8px;width:64px;background:#fff}
-  .grupo-abas{font-size:12px;color:var(--texto-suave);padding:10px 4px 10px 14px;align-self:center;text-transform:uppercase;letter-spacing:.04em;border-left:1px solid var(--verde-linha)}
-  .grupo-abas:first-child{border-left:0;padding-left:0}
-  nav button small{display:block;font-size:12px;font-weight:600;color:var(--texto-suave)}
-  nav button.vazia{opacity:.55}
-  /* quadro de prova */
-  .fechamento{display:block;padding:18px 28px}
-  .prova-topo{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-bottom:10px}
-  .prova-topo h2{margin:0;font-size:20px}
-  .prova{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px 36px;align-items:start}
-  .prova table{font-size:15px;color:#fff}
-  .prova th{background:transparent;color:#D2EBDD;border-bottom:1px solid rgba(255,255,255,.35);position:static}
-  .prova td{border-bottom:1px solid rgba(255,255,255,.15);padding:6px 8px}
-  .prova tr:hover td{background:rgba(255,255,255,.06)}
-  .prova tr.total td{font-weight:700}
-  .prova tr.resultado td{font-weight:700;font-size:17px;border-top:2px solid rgba(255,255,255,.5)}
-  .prova tr.alerta td{color:#FFE2A8}
-  .prova tr.ruim td{color:#FFD3C9}
-  .prova .ir{background:none;border:0;padding:0;color:inherit;font:inherit;cursor:pointer;text-align:left}
-  .prova .ir:hover{text-decoration:underline}
-  .prova-nota{margin:10px 0 0;font-size:14px;color:#D2EBDD}
-  .prova-vazia{font-size:16px;color:#D2EBDD}
-  .fechamento .selo{display:inline-block;border-radius:999px;padding:4px 12px;font-size:14px;font-weight:700}
-  .fechamento .selo-ok{background:#DDF3E5;color:var(--verde-noite)} .fechamento .selo-alerta{background:#FFE9C2;color:#6B4E16} .fechamento .selo-neutro{background:rgba(255,255,255,.15);color:#fff}
-  /* o quadro de prova não usa o estilo antigo de "uma linha de números" do fechamento */
-  .fechamento .prova,.fechamento .prova-topo{border-right:0;padding:0;margin-right:0}
-  /* guia da aba */
-  .guia{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px 24px;margin:14px 0 4px;padding:12px 16px;background:var(--verde-claro);border-radius:8px;font-size:15px}
-  .guia span{display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--verde)}
-  /* confiança */
-  .conf{display:inline-block;border-radius:4px;padding:1px 7px;font-size:12px;font-weight:700}
-  .conf-alta{background:#DDF3E5;color:var(--verde)} .conf-media{background:#FFF1D6;color:#6B4E16} .conf-baixa{background:#FBE3E3;color:var(--problema)}
+  .grupo-abas{font-size:13px;color:var(--texto-suave);padding:10px 6px 10px 12px;align-self:center}
 </style>
 </head>
 <body>
@@ -205,15 +124,13 @@
 <header>
   <div class="titulo">
     <h1>Conciliação de títulos</h1>
-    <a href="financeiro.html#cobranca" style="color:#A9CDB8;font-size:15px">← Voltar ao contas a receber</a>
     <span class="fonte" id="fonteTitulos">Títulos: banco do PROCFIT</span>
-    <span class="fonte">Títulos vêm sozinhos do PROCFIT · extratos ficam guardados no painel</span>
   </div>
   <div class="controles" id="controles" hidden>
     <label>Mês
       <input type="month" id="mes">
     </label>
-    <label hidden>Tipo do arquivo
+    <label>Tipo do arquivo
       <select id="tipo">
         <option value="auto">Detectar sozinho</option>
         <option value="banco">Extrato do banco</option>
@@ -221,13 +138,12 @@
       </select>
     </label>
     <div class="arquivo">
-      <button class="btn" type="button" tabindex="-1">Enviar extrato do banco ou da Rede</button>
+      <button class="btn" type="button" tabindex="-1">Adicionar arquivos do banco ou da Rede</button>
       <input type="file" id="arquivo" accept=".xlsx,.xls,.csv" multiple aria-label="Adicionar arquivos do banco ou da Rede">
     </div>
-    <span class="nome-arquivo" id="nomeArquivo">Nenhum extrato guardado para este mês</span>
+    <span class="nome-arquivo" id="nomeArquivo">Nenhum arquivo escolhido</span>
     <button class="btn claro" type="button" id="limparArquivos" hidden>Limpar arquivos</button>
-    <!-- Plano B (banco do PROCFIT fora do ar): títulos de uma planilha. Escondido: os títulos vêm sozinhos do PROCFIT -->
-    <div class="arquivo" style="margin-left:auto" hidden>
+    <div class="arquivo" style="margin-left:auto">
       <button class="btn claro" type="button" tabindex="-1">Usar títulos de uma planilha</button>
       <input type="file" id="arquivoTitulos" accept=".xlsx,.xls,.csv" aria-label="Usar títulos de uma planilha">
     </div>
@@ -249,7 +165,6 @@
   <main>
     <div id="aviso"></div>
     <nav id="abas" role="tablist"></nav>
-    <div id="guia"></div>
     <div class="barra">
       <input type="search" id="busca" placeholder="Buscar cliente, pedido, nota ou valor">
       <label id="rotuloDias">Pedido parado há mais de <input type="number" class="dias" id="dias" min="1" value="15"> dias é candidato a cancelar</label>

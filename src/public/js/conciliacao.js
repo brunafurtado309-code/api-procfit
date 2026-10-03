@@ -13,7 +13,7 @@
   const DIA = 86400000;
 
   // arquivos: [{ nome, origem, entradas }] — vários extratos (uma conta cada) e o arquivo da Rede
-  const estado = { titulos: [], entradas: [], arquivos: [], pedidosBanco: null, resultado: null, aba: 'faltaBaixar', fonte: 'api' };
+  const estado = { titulos: [], entradas: [], arquivos: [], pedidosBanco: null, resultado: null, aba: 'confirmar', fonte: 'api' };
 
   /* =====================================================================
      ACESSO — usa a mesma chave do painel.
@@ -79,19 +79,6 @@
     }
     const dados = await r.json().catch(() => ({}));
     if (!r.ok) { const e = new Error(dados.erro || dados.mensagem || 'Erro ' + r.status); e.status = r.status; throw e; }
-    return dados;
-  }
-
-  // POST ou DELETE com a mesma chave de acesso
-  async function apiEnviar(caminho, metodo, corpo) {
-    const { url, opcoes } = montar(caminho, MODOS[Acesso.modo], Acesso.chave);
-    const r = await fetch(url, {
-      ...opcoes, method: metodo,
-      headers: { ...opcoes.headers, ...(corpo ? { 'Content-Type': 'application/json' } : {}) },
-      body: corpo ? JSON.stringify(corpo) : undefined
-    });
-    const dados = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(dados.erro || dados.mensagem || 'Erro ' + r.status);
     return dados;
   }
 
@@ -307,13 +294,12 @@
     const mes = $('mes').value;
     try {
       estado.titulos = (await api('/conciliacao/titulos?mes=' + mes)).map(montarTitulo).filter(t => t.venc);
-      aviso('');
+      aviso(estado.entradas.length ? '' : 'Títulos carregados. Agora escolha o arquivo do banco ou da Rede para conciliar.');
     } catch (err) {
       if (err.message === 'acesso') return;
       estado.titulos = [];
       aviso(esc(err.message) + ' Enquanto isso, dá para usar "Usar títulos de uma planilha" com a exportação do SSMS.', true);
     }
-    await carregarExtratosGuardados();
     try {
       estado.pedidosBanco = (await api('/conciliacao/pedidos-sem-nota?mes=' + mes)).map(p => ({
         pedido: p.pedido, data: lerData(p.data_pedido), cod: p.cod_cliente ?? '', nome: p.nome_cliente ?? '',
@@ -324,30 +310,6 @@
       estado.pedidosBanco = null; // sem a consulta de pedidos, a lista sai dos títulos sem nota
     }
     processar();
-  }
-
-  // Extratos já enviados antes: a conciliação usa sozinha, sem escolher o arquivo de novo
-  estado.extratosNoServidor = null; // null = ainda não sabe; false = servidor sem banco de extratos
-  async function carregarExtratosGuardados() {
-    try {
-      const linhas = await api('/conciliacao/extratos?mes=' + $('mes').value);
-      const porArquivo = new Map();
-      linhas.forEach(r => {
-        const chave = r.arquivo || 'sem nome';
-        if (!porArquivo.has(chave)) porArquivo.set(chave, { nome: chave, origem: r.origem, conta: r.conta, entradas: [], salvo: true });
-        porArquivo.get(chave).entradas.push({
-          id: r.id, arquivo: chave, data: lerData(r.data), valor: Number(r.valor), desc: r.descricao || '',
-          doc: r.documento || '', nome: r.nome || '', chave: r.chave || '', origem: r.origem, pix: !!r.pix, agrupado: !!r.agrupado
-        });
-      });
-      estado.arquivos = [...porArquivo.values()];
-      estado.extratosNoServidor = true;
-      juntarEntradas();
-    } catch (err) {
-      if (err.message === 'acesso') return;
-      // Servidor ainda sem o banco de extratos: continua funcionando só com o arquivo da vez
-      estado.extratosNoServidor = false;
-    }
   }
 
   // Mostra "Conciliando…" antes de calcular, para a tela não parecer travada
@@ -403,8 +365,7 @@
     const aberto = t => t.pendente > 0 && doPeriodo(t) && !['sem_baixa', 'sugerido'].includes(t.status);
     return {
       confirmar: r.pares.filter(p => p.tipo === 'sugerido'),
-      conciliados: r.titulos.filter(t => t.status === 'conciliado' && !t.formaProblema),
-      diferenca: r.titulos.filter(t => t.status === 'diferenca' && !t.formaProblema),
+      conciliados: r.titulos.filter(t => (t.status === 'conciliado' || t.status === 'diferenca') && !t.formaProblema),
       faltaBaixar: r.titulos.filter(t => t.status === 'sem_baixa'),
       corrigirForma: r.titulos.filter(t => t.formaProblema),
       semDinheiro: r.titulos.filter(t => t.status === 'baixado_sem_entrada'),
@@ -417,164 +378,37 @@
       todos: r.titulos.filter(doPeriodo)
     };
   }
-  // [chave, nome, grupo] — na ordem em que o trabalho deve ser feito
+  // [chave, nome, grupo]
   const ABAS = [
-    ['faltaBaixar', 'Falta baixar', '1 · Acertar no PROCFIT'],
-    ['corrigirForma', 'Corrigir forma', '1 · Acertar no PROCFIT'],
-    ['confirmar', 'Para confirmar', '2 · Conferir'],
-    ['diferenca', 'Com diferença de valor', '2 · Conferir'],
-    ['semTitulo', 'Dinheiro sem título', '3 · Investigar'],
-    ['semDinheiro', 'Baixa sem dinheiro no banco', '3 · Investigar'],
-    ['vencidas', 'Vencidas: cobrar ou cancelar', '4 · Decidir'],
-    ['aVencer', 'A vencer', '4 · Decidir'],
-    ['pedidos', 'Pedidos sem nota', '4 · Decidir'],
-    ['somados', 'Somados no dia', '5 · Informativo'],
-    ['balcao', 'Balcão na Rede', '5 · Informativo'],
-    ['conciliados', 'Conciliados', '6 · Está certo'],
-    ['todos', 'Todos os títulos', '6 · Está certo']
+    ['confirmar', 'Para confirmar', 'Conferir'],
+    ['conciliados', 'Conciliados', 'Está certo'],
+    ['faltaBaixar', 'Falta baixar', 'Acertar no sistema'],
+    ['corrigirForma', 'Corrigir forma de pagamento', 'Acertar no sistema'],
+    ['semDinheiro', 'Baixado sem dinheiro no banco', 'Investigar'],
+    ['semTitulo', 'Entradas sem título', 'Investigar'],
+    ['vencidas', 'Notas vencidas: cobrar ou cancelar', 'Decidir'],
+    ['aVencer', 'Notas a vencer', 'Decidir'],
+    ['pedidos', 'Pedidos sem nota: cancelar?', 'Decidir'],
+    ['somados', 'Somados no dia (boletos, Rede, PIX QRS)', 'Informativo'],
+    ['balcao', 'Vendas de balcão na Rede', 'Informativo'],
+    ['todos', 'Todos os títulos', '']
   ];
-
-  // Guia de cada aba: o que é, por que acontece e o que fazer (para não restar dúvida)
-  const GUIA = {
-    faltaBaixar: ['O dinheiro já entrou no banco, mas o título continua em aberto no PROCFIT.',
-      'A baixa não foi feita, ou foi lançada em outro título.',
-      'Baixe no PROCFIT o título indicado, com a data e a conta do extrato. Recarregue: ele passa para Conciliados.'],
-    corrigirForma: ['Dinheiro e baixa conferem, mas a forma de pagamento no PROCFIT é diferente da que aparece no banco.',
-      'Baixa lançada com a forma errada (ex.: PIX registrado como dinheiro) ou forma em branco.',
-      'Corrija a forma de pagamento no PROCFIT. Isso afeta os relatórios por forma e a conciliação de dinheiro.'],
-    confirmar: ['O sistema achou um título provável, mas sem certeza: várias parcelas somando o valor, nome parecido ou só o valor igual.',
-      'O banco nem sempre informa o CPF/CNPJ de quem pagou, e alguns clientes pagam várias notas de uma vez.',
-      'Leia o motivo e a confiança. Confirmar: o par é aceito. Recusar: a entrada volta a procurar outro título.'],
-    diferenca: ['Mesmo cliente, mas o valor pago é diferente do título.',
-      'A mais: juros ou multa por atraso. A menos: desconto, taxa ou pagamento parcial.',
-      'Baixe com juros/desconto no PROCFIT, ou faça a baixa parcial e cobre o restante.'],
-    semTitulo: ['Entrou dinheiro no banco e nenhum título do mês corresponde a ele.',
-      'Pagamento antecipado, título com cliente ou valor errado, depósito de terceiro ou transferência entre contas.',
-      'Identifique quem pagou (comprovante, contato com o cliente) e marque a decisão. Enquanto houver valor aqui, o mês não fecha.'],
-    semDinheiro: ['Há baixa no PROCFIT neste mês, mas nenhum crédito correspondente nos arquivos carregados.',
-      'Data ou conta digitada errada na baixa, baixa feita sem o dinheiro, ou o crédito está em outra conta ou arquivo.',
-      'Confira data e conta da baixa (veja se o extrato da outra conta foi carregado). Sem dinheiro de fato: estorne a baixa.'],
-    vencidas: ['Títulos vencidos que não apareceram no banco.', 'O cliente não pagou, ou pagou e o dinheiro ainda não foi identificado.',
-      'Antes de cobrar, confira a aba Dinheiro sem título. Depois decida: cobrar ou cancelar.'],
-    aVencer: ['Títulos que ainda vão vencer.', 'Situação normal.', 'Nada a fazer agora; acompanhe.'],
-    pedidos: ['Pedidos sem nota fiscal.', 'Orçamentos esquecidos, vendas desistidas ou pagas sem faturar.',
-      'Pedido com pagamento: faturar. Parado há muitos dias sem pagamento: avaliar cancelamento.'],
-    somados: ['Lançamentos do extrato que juntam vários pagamentos num valor só (boletos do dia, repasses da Rede, PIX pela maquininha).',
-      'O banco credita esses recebimentos em lote.', 'Nada a fazer aqui: o detalhe vem do relatório de boletos e do arquivo da Rede.'],
-    balcao: ['Vendas aprovadas na maquininha da Rede que não têm título no sistema.', 'Normalmente são vendas de balcão pagas na hora.',
-      'Nada a fazer, a não ser que o valor seja de uma venda a prazo.'],
-    conciliados: ['Dinheiro no banco e baixa no PROCFIT conferem: mesmo valor, data compatível.', '', 'Nada a fazer.'],
-    todos: ['Todos os títulos do mês, com a situação de cada um.', '', 'Use a busca para achar um cliente, pedido ou nota.']
-  };
-
-  // Confiança do cruzamento, para ler cada sugestão sem dúvida
-  function confianca(par) {
-    if (!par) return '';
-    if (par.tipo === 'confirmado') return '<span class="conf conf-alta">confirmado por você</span>';
-    if (par.tipo === 'auto' || par.tipo === 'diferenca') return '<span class="conf conf-alta">confiança alta</span>';
-    if (par.nivel <= 3) return '<span class="conf conf-media">confiança média</span>';
-    return '<span class="conf conf-baixa">confiança baixa</span>';
-  }
-
-  // Em qual linha do quadro de prova cada crédito do arquivo entra
-  function classeEntrada(e) {
-    if (e.status === 'agrupado') return 'somados';
-    if (e.status === 'venda_sem_titulo') return 'balcao';
-    if (e.status === 'sem_titulo') return 'semTitulo';
-    if (e.status === 'sugerido') return 'confirmar';
-    const ts = e.par ? titulosDoPar(e.par) : [];
-    if (ts.some(t => t.status === 'sem_baixa')) return 'faltaBaixar';
-    if (e.par && e.par.tipo === 'diferenca') return 'diferenca';
-    return 'conciliados';
-  }
-
-  function chaveFechamento() { return 'conciliacao:fechamento:' + $('mes').value; }
-  function lerFechamento() { try { return JSON.parse(localStorage.getItem(chaveFechamento())); } catch (e) { return null; } }
-
-  // Quadro de prova: os créditos do arquivo e as baixas do PROCFIT precisam ficar 100% explicados
-  function quadroDeProva() {
-    const r = estado.resultado;
-    if (!r) return '<div class="prova-vazia">Escolha o mês para carregar os títulos do PROCFIT.</div>';
-    const soma = (lista, f) => lista.reduce((s, x) => s + (f(x) || 0), 0);
-    const [ano, mesN] = $('mes').value.split('-').map(Number);
-    const ini = new Date(ano, mesN - 1, 1), fim = new Date(ano, mesN, 1);
-    const noMes = d => d && d >= ini && d < fim;
-
-    const linhasBanco = { conciliados: 0, faltaBaixar: 0, diferenca: 0, confirmar: 0, somados: 0, balcao: 0, semTitulo: 0 };
-    r.entradas.forEach(e => { linhasBanco[classeEntrada(e)] += e.valor || 0; });
-    const totalBanco = soma(r.entradas, e => e.valor);
-
-    const baixasMes = r.titulos.filter(t => t.pago > 0 && noMes(t.dtPag) && !t.fora);
-    const conciliadas = soma(baixasMes.filter(t => t.par && t.par.tipo !== 'sugerido'), t => t.pago);
-    const semDinheiro = soma(baixasMes.filter(t => t.status === 'baixado_sem_entrada'), t => t.pago);
-    const outrasBaixas = soma(baixasMes, t => t.pago) - conciliadas - semDinheiro;
-
-    const pendenteBanco = linhasBanco.semTitulo + linhasBanco.confirmar + linhasBanco.diferenca + linhasBanco.faltaBaixar;
-    const fechado = lerFechamento();
-    const temArquivo = r.entradas.length > 0;
-    const linha = (rotulo, valor, aba, classe = '') =>
-      `<tr class="${classe}"><td>${aba ? `<button class="ir" data-ir="${aba}">${rotulo}</button>` : rotulo}</td><td class="num">${brl(valor)}</td></tr>`;
-
-    let situacao;
-    if (!temArquivo) situacao = '<span class="selo selo-neutro">Nenhum extrato guardado neste mês: envie o arquivo do Itaú uma vez</span>';
-    else if (fechado) situacao = `<span class="selo selo-ok">Mês fechado em ${esc(fechado.em)}${fechado.justificativa ? ' · com justificativa' : ''}</span>`;
-    else if (pendenteBanco < 0.01 && semDinheiro < 0.01) situacao = '<span class="selo selo-ok">Tudo explicado: o mês pode ser fechado</span>';
-    else situacao = `<span class="selo selo-alerta">Falta explicar ${brl(pendenteBanco + semDinheiro)}</span>`;
-
-    return `
-      <div class="prova-topo"><h2>Prova da conciliação · ${esc($('mes').value.split('-').reverse().join('/'))}</h2>${situacao}
-        ${temArquivo ? `<button class="btn claro" id="fecharMes" type="button">${fechado ? 'Reabrir o mês' : 'Fechar o mês'}</button>` : ''}</div>
-      <div class="prova">
-        <table aria-label="Créditos do banco">
-          <thead><tr><th>No banco (extratos guardados no painel)</th><th class="num">Valor</th></tr></thead>
-          <tbody>
-            ${linha('Créditos no extrato do mês', totalBanco, null, 'total')}
-            ${linha('(−) Conciliados com baixa no PROCFIT', linhasBanco.conciliados, 'conciliados')}
-            ${linha('(−) Falta baixar no PROCFIT', linhasBanco.faltaBaixar, 'faltaBaixar', linhasBanco.faltaBaixar > 0.01 ? 'alerta' : '')}
-            ${linha('(−) Com diferença de valor', linhasBanco.diferenca, 'diferenca', linhasBanco.diferenca > 0.01 ? 'alerta' : '')}
-            ${linha('(−) Para confirmar', linhasBanco.confirmar, 'confirmar', linhasBanco.confirmar > 0.01 ? 'alerta' : '')}
-            ${linha('(−) Somados no dia (detalhe em outro arquivo)', linhasBanco.somados, 'somados')}
-            ${linha('(−) Vendas de balcão na Rede', linhasBanco.balcao, 'balcao')}
-            ${linha('(=) Dinheiro sem título', linhasBanco.semTitulo, 'semTitulo', linhasBanco.semTitulo > 0.01 ? 'ruim resultado' : 'resultado')}
-          </tbody>
-        </table>
-        <table aria-label="Baixas do PROCFIT">
-          <thead><tr><th>No PROCFIT (baixas do mês)</th><th class="num">Valor</th></tr></thead>
-          <tbody>
-            ${linha('Baixas com data no mês', soma(baixasMes, t => t.pago), null, 'total')}
-            ${linha('(−) Conciliadas com o banco', conciliadas, 'conciliados')}
-            ${outrasBaixas > 0.01 ? linha('(−) Aguardando confirmação', outrasBaixas, 'confirmar') : ''}
-            ${linha('(=) Baixa sem dinheiro no banco', semDinheiro, 'semDinheiro', semDinheiro > 0.01 ? 'ruim resultado' : 'resultado')}
-          </tbody>
-        </table>
-      </div>
-      <p class="prova-nota">O mês está conciliado quando as duas linhas "(=)" ficam zeradas, ou quando o que sobrar tem justificativa. Clique numa linha para abrir a lista correspondente.</p>`;
-  }
   const ABAS_COM_DECISAO = ['semDinheiro', 'vencidas', 'aVencer', 'corrigirForma', 'faltaBaixar'];
 
   /* ---------------- desenho ---------------- */
   function renderizar() {
     const r = estado.resultado;
-    $('fechamento').innerHTML = quadroDeProva();
+    const res = r ? r.resumo : { esperado: 0, recebidoArquivo: 0, conciliado: 0, emAberto: 0, semExplicacao: 0 };
+    $('fechamento').innerHTML = `
+      <div><span>Esperado no mês</span><strong>${brl(res.esperado)}</strong></div>
+      <div><span>Recebido no arquivo</span><strong>${brl(res.recebidoArquivo)}</strong></div>
+      <div><span>Conciliado</span><strong>${brl(res.conciliado)}</strong></div>
+      <div><span>Em aberto no mês</span><strong>${brl(res.emAberto)}</strong></div>
+      <div class="${res.semExplicacao > 0 ? 'ruim' : ''}"><span>Sem explicação</span><strong>${brl(res.semExplicacao)}</strong></div>`;
 
     const L = listas();
-    const valorDaLista = (k) => {
-      const lista = L[k] || [];
-      if (k === 'confirmar') return lista.reduce((s, p) => s + ((estado.entradaPorId && estado.entradaPorId.get(p.entradaId)) || {}).valor || 0, 0);
-      if (['semTitulo', 'somados', 'balcao'].includes(k)) return lista.reduce((s, e) => s + (e.valor || 0), 0);
-      if (k === 'pedidos') return lista.reduce((s, p) => s + (p.valor || 0), 0);
-      const campo = ['semDinheiro', 'conciliados', 'corrigirForma', 'diferenca'].includes(k) ? 'pago' : 'pendente';
-      return lista.reduce((s, t) => s + (t[campo] || 0), 0);
-    };
-    let grupoAtual = '';
-    $('abas').innerHTML = ABAS.map(([k, n, g]) => {
-      const qtd = L[k] ? L[k].length : 0;
-      const cabeca = g !== grupoAtual ? `<span class="grupo-abas">${g}</span>` : '';
-      grupoAtual = g;
-      return `${cabeca}<button role="tab" aria-selected="${estado.aba === k}" data-aba="${k}"${qtd ? '' : ' class="vazia"'}>${n}<b>${qtd}</b>${qtd ? `<small>${brl(valorDaLista(k))}</small>` : ''}</button>`;
-    }).join('');
-    const guia = GUIA[estado.aba];
-    $('guia').innerHTML = guia ? `<div class="guia"><div><span>O que é</span>${guia[0]}</div>${guia[1] ? `<div><span>Por que acontece</span>${guia[1]}</div>` : ''}<div><span>O que fazer</span>${guia[2]}</div></div>` : '';
+    $('abas').innerHTML = ABAS.map(([k, n]) =>
+      `<button role="tab" aria-selected="${estado.aba === k}" data-aba="${k}">${n}<b>${L[k] ? L[k].length : 0}</b></button>`).join('');
     $('rotuloDias').hidden = estado.aba !== 'pedidos';
     $('rotuloAnteriores').hidden = !['vencidas', 'todos'].includes(estado.aba);
 
@@ -601,7 +435,7 @@
           const e = estado.entradaPorId.get(p.entradaId);
           return `<tr><td>${dt(e.data)}</td><td class="num">${brl(e.valor)}</td><td>${esc(e.nome || e.desc)}<div class="cod">${esc(e.doc)}</div></td><td class="motivo">${esc(e.arquivo)}</td>
             <td>${titulosDoPar(p).map(t => `<div>Pedido ${esc(t.pedido)}/${esc(t.parcela)} · NF ${esc(t.nf || '—')} · ${btnCliente(t)} · venc. ${dt(t.venc)} · ${brl(t.pendenteOuPago)}</div>`).join('')}</td>
-            <td class="motivo">${confianca(p)}<br>${esc(p.motivo)}${p.diferenca ? '<br>Diferença: ' + brl(p.diferenca) : ''}</td>
+            <td class="motivo">${esc(p.motivo)}${p.diferenca ? '<br>Diferença: ' + brl(p.diferenca) : ''}</td>
             <td class="acoes"><button class="confirmar" data-confirmar="${esc(p.entradaId)}">Confirmar</button><button class="recusar" data-recusar="${esc(p.entradaId)}">Recusar</button></td></tr>`;
         }).join('') + '</tbody></table>';
     } else if (estado.aba === 'semTitulo' || estado.aba === 'somados' || estado.aba === 'balcao') {
@@ -612,7 +446,7 @@
       const itens = L[estado.aba].filter(e => passa(e.nome + ' ' + e.desc + ' ' + e.doc + ' ' + e.valor + ' ' + e.arquivo + ' ' + e.chave));
       n = itens.length;
       itens.forEach(e => { total += e.valor; });
-      html = `<table><thead><tr><th>Data</th><th class="num">Valor</th><th>Quem pagou</th><th>CPF/CNPJ</th><th>Descrição</th><th>Arquivo</th>${estado.aba === 'semTitulo' ? '<th>Decisão</th>' : ''}</tr></thead><tbody>` +
+      html = (explica ? `<p class="aviso">${explica}</p>` : '') + `<table><thead><tr><th>Data</th><th class="num">Valor</th><th>Quem pagou</th><th>CPF/CNPJ</th><th>Descrição</th><th>Arquivo</th>${estado.aba === 'semTitulo' ? '<th>Decisão</th>' : ''}</tr></thead><tbody>` +
         itens.slice(0, LIMITE).map(e => {
           return `<tr><td>${dt(e.data)}</td><td class="num">${brl(e.valor)}</td><td>${esc(e.nome)}</td><td>${esc(e.doc)}</td><td>${esc(e.desc)}${e.chave ? ' · ' + esc(e.chave) : ''}</td><td class="motivo">${esc(e.arquivo)}</td>
             ${estado.aba === 'semTitulo' ? `<td>${seletor('E:' + e.id, destinos)}</td>` : ''}</tr>`;
@@ -640,7 +474,6 @@
     const corte = n > LIMITE
       ? `<p class="aviso">Mostrando ${LIMITE} de ${n.toLocaleString('pt-BR')}. Use a busca para achar um cliente, pedido ou nota; o Excel leva a lista completa.</p>` : '';
     $('tabela').innerHTML = n ? corte + html : '<p class="vazio">Nada nesta lista para o mês e a busca escolhidos.</p>';
-    rotularTabelas($('tabela'));
   }
 
   function seletor(chave, destinos) {
@@ -670,23 +503,9 @@
           <td class="num">${brl(t.valor)}</td><td class="num">${t.pago ? brl(t.pago) : '—'}</td><td class="num">${t.pendente ? brl(t.pendente) : '—'}</td>
           <td class="num">${diasAtraso(t)}</td>
           ${comForma ? `<td>${esc(t.forma || 'vazia')}</td><td>${esc(t.formaArquivo || 'não identificada')}</td>` : ''}
-          <td><span class="status ${cls}">${nome}</span>${t.par && t.par.motivo ? `<div class="motivo">${confianca(t.par)} · ${esc(t.par.motivo)}</div>` : ''}${detalheEntrada(t)}${t.origem && t.origem !== 'Nota fiscal' ? `<div class="motivo">${esc(t.origem)}</div>` : ''}</td>
+          <td><span class="status ${cls}">${nome}</span>${t.par && t.par.motivo ? `<div class="motivo">${esc(t.par.motivo)}</div>` : ''}${detalheEntrada(t)}${t.origem && t.origem !== 'Nota fiscal' ? `<div class="motivo">${esc(t.origem)}</div>` : ''}</td>
           ${comDecisao ? `<td>${seletor('T:' + t.id, destinos)}</td>` : ''}</tr>`;
       }).join('') + '</tbody></table>';
-  }
-
-  // No celular cada linha vira um cartão: cada célula leva o nome da sua coluna (o CSS mostra ao lado)
-  function rotularTabelas(area) {
-    area.querySelectorAll('table').forEach(tabela => {
-      const nomes = [...tabela.querySelectorAll('thead th')].map(th => th.textContent.trim());
-      tabela.querySelectorAll('tbody tr').forEach(tr => {
-        let coluna = 0;
-        [...tr.children].forEach(td => {
-          td.setAttribute('data-label', td.colSpan > 1 ? '' : (nomes[coluna] || ''));
-          coluna += td.colSpan || 1;
-        });
-      });
-    });
   }
 
   /* ---------------- ficha do cliente ---------------- */
@@ -705,7 +524,6 @@
       ${ts.map(t => { const [n, c] = STATUS[t.status] || ['', 's-neutro']; return `<tr><td>${esc(t.pedido)}</td><td>${esc(t.nf || '—')}</td><td>${esc(t.parcela)}</td><td>${dt(t.venc)}</td><td class="num">${brl(t.valor)}</td><td class="num">${t.pendente ? brl(t.pendente) : '—'}</td><td><span class="status ${c}">${n}</span></td></tr>`; }).join('')}
       ${peds.map(p => `<tr><td>${esc(p.pedido)}</td><td>—</td><td></td><td>${dt(p.data)}</td><td class="num">${brl(p.valor)}</td><td class="num">${brl(p.valor - p.pago)}</td><td><span class="status ${p.leitura[1]}">Pedido sem nota</span></td></tr>`).join('')}
       </tbody></table></div>`;
-    rotularTabelas(f);
     f.classList.add('aberta'); f.setAttribute('aria-hidden', 'false');
     $('fecharFicha').focus();
   }
@@ -736,18 +554,7 @@
     const todosT = r.titulos.map(linhaT), todosP = L.pedidos.map(linhaP);
     aba('Decisão - Cancelar', todosT.filter(l => l.Decisão === 'Cancelar').concat(todosP.filter(l => l.Decisão === 'Cancelar')));
     aba('Decisão - Cobrar', todosT.filter(l => l.Decisão === 'Cobrar'));
-    // Prova da conciliação em linhas (mesma conta da tela)
-    const prova = [];
-    const tmp = document.createElement('div'); tmp.innerHTML = quadroDeProva();
-    tmp.querySelectorAll('tr').forEach(tr => {
-      const c = [...tr.children].map(td => td.textContent.trim());
-      if (c.length === 2) prova.push({ Linha: c[0], Valor: c[1] });
-    });
-    const f = lerFechamento();
-    if (f) prova.push({ Linha: 'Mês fechado em ' + f.em, Valor: f.justificativa || '' });
-    aba('Prova da conciliação', prova);
     aba('Falta baixar', L.faltaBaixar.map(linhaT));
-    aba('Com diferença', L.diferenca.map(linhaT));
     aba('Corrigir forma', L.corrigirForma.map(linhaT));
     aba('Baixado sem dinheiro', L.semDinheiro.map(linhaT));
     aba('Notas vencidas', L.vencidas.map(linhaT));
@@ -767,7 +574,6 @@
 
   $('mes').addEventListener('change', () => {
     limparArquivos();
-    // carregarDoBanco busca os títulos E os extratos guardados do novo mês
     estado.fonte === 'api' ? carregarDoBanco() : processar();
   });
   // Vários arquivos de uma vez (Ctrl ou Shift na janela de escolha), e dá para ir adicionando mais.
@@ -779,13 +585,11 @@
       ? estado.arquivos.map(a => {
           const tipo = a.origem === 'rede' ? 'Rede' : a.origem === 'boletos' ? 'boletos' : 'extrato';
           const agrup = a.entradas.filter(e => e.agrupado).length;
-          const remover = a.salvo ? ` <button class="remover-arquivo" type="button" data-remover="${esc(a.nome)}" title="Tirar este arquivo do painel">remover</button>` : '';
-          return `${esc(a.nome)} <span style="opacity:.7">(${tipo}${a.conta ? ' conta ' + esc(a.conta) : ''}, ${a.entradas.length - agrup}${agrup ? ' + ' + agrup + ' somados no dia' : ''} no mês)</span>${remover}`;
+          return `${esc(a.nome)} <span style="opacity:.7">(${tipo}${a.conta ? ' conta ' + esc(a.conta) : ''}, ${a.entradas.length - agrup}${agrup ? ' + ' + agrup + ' somados no dia' : ''})</span>`;
         }).join('<br>')
-      : 'Nenhum extrato guardado para este mês';
-    if (n > 1) $('nomeArquivo').innerHTML = `<details><summary>${n} arquivos guardados · ${(estado.entradas.filter(e => !e.agrupado).length).toLocaleString('pt-BR')} pagamentos no mês</summary>${$('nomeArquivo').innerHTML}</details>`;
-    // Com os extratos guardados no painel, "limpar" não faz sentido: cada arquivo tem o seu "remover"
-    $('limparArquivos').hidden = !n || estado.extratosNoServidor === true;
+      : 'Nenhum arquivo escolhido';
+    if (n > 1) $('nomeArquivo').innerHTML = `<details><summary>${n} arquivos carregados · ${(estado.entradas.filter(e => !e.agrupado).length).toLocaleString('pt-BR')} pagamentos</summary>${$('nomeArquivo').innerHTML}</details>`;
+    $('limparArquivos').hidden = !n;
   }
   function limparArquivos() { estado.arquivos = []; juntarEntradas(); }
 
@@ -796,33 +600,12 @@
       try {
         const lido = lerArquivoPagamentos(await lerPlanilha(arq), $('tipo').value, arq.name);
         // Mesmo arquivo, ou a mesma conta no mesmo tipo de relatório: substitui em vez de somar duas vezes
-        // (os arquivos já guardados no painel não entram aqui: o próprio servidor ignora o que for repetido)
-        const repetido = a => !a.salvo && (a.nome === arq.name || (lido.conta && a.conta === lido.conta && a.origem === lido.origem));
+        const repetido = a => a.nome === arq.name || (lido.conta && a.conta === lido.conta && a.origem === lido.origem);
         estado.arquivos.filter(repetido).forEach(a => { if (a.nome !== arq.name) substituidos.push(`${esc(a.nome)} (mesma conta ${esc(a.conta)})`); });
         estado.arquivos = estado.arquivos.filter(a => !repetido(a));
         estado.arquivos.push({ nome: arq.name, origem: lido.origem, conta: lido.conta, entradas: lido.entradas, ignoradas: lido.ignoradas });
         lidos.push(arq.name);
       } catch (err) { erros.push(`${esc(arq.name)}: ${esc(err.message)}`); }
-    }
-    // Guarda no painel: da próxima vez, a conciliação já usa sem escolher o arquivo
-    const guardados = [];
-    if (estado.extratosNoServidor !== false && estado.fonte === 'api') {
-      for (const a of estado.arquivos.filter(x => !x.salvo && lidos.includes(x.nome))) {
-        try {
-          const r = await apiEnviar('/conciliacao/extratos', 'POST', {
-            arquivo: a.nome, conta: a.conta || '', origem: a.origem,
-            entradas: a.entradas.map(e => ({
-              data: `${e.data.getFullYear()}-${String(e.data.getMonth() + 1).padStart(2, '0')}-${String(e.data.getDate()).padStart(2, '0')}`,
-              valor: e.valor, desc: e.desc, nome: e.nome, doc: e.doc, chave: e.chave, agrupado: !!e.agrupado, pix: !!e.pix
-            }))
-          });
-          const novos = r.novos === 1 ? '1 lançamento novo guardado' : `${r.novos.toLocaleString('pt-BR')} lançamentos novos guardados`;
-          guardados.push(`${esc(a.nome)}: ${novos}${r.repetidos ? `, ${r.repetidos.toLocaleString('pt-BR')} já estavam no painel` : ''}`);
-        } catch (err) {
-          erros.push(`${esc(a.nome)}: não consegui guardar no painel (${esc(err.message)}); vale só nesta tela`);
-        }
-      }
-      if (guardados.length) await carregarExtratosGuardados(); // passa a usar o que está guardado (só o mês escolhido)
     }
     juntarEntradas();
     const temBanco = estado.arquivos.some(a => a.origem !== 'rede'), temRede = estado.arquivos.some(a => a.origem === 'rede');
@@ -834,23 +617,12 @@
     if (substituidos.length) msg += '<br>Substituí, para não contar em dobro: ' + substituidos.join('; ') + '.';
     if (temBanco && !temRede) msg += ' Títulos pagos em cartão ficam esperando o arquivo da Rede.';
     if (temRede && !temBanco) msg += ' Só os títulos de cartão entram até você adicionar o extrato do banco.';
-    if (guardados.length) msg = 'Guardado no painel: ' + guardados.join('; ') + '. Da próxima vez, é só abrir o mês.<br>' + msg;
-    if (erros.length) msg += '<br>Atenção: ' + erros.join('; ');
+    if (erros.length) msg += '<br>Não consegui ler: ' + erros.join('; ');
     aviso(msg, erros.length && !lidos.length);
     processar();
     ev.target.value = '';
   });
   $('limparArquivos').addEventListener('click', () => { limparArquivos(); aviso(''); processar(); });
-  $('nomeArquivo').addEventListener('click', async ev => {
-    const b = ev.target.closest('[data-remover]'); if (!b) return;
-    const nome = b.dataset.remover;
-    if (!confirm(`Tirar do painel todos os lançamentos do arquivo "${nome}" (de todos os meses)?`)) return;
-    try {
-      const r = await apiEnviar('/conciliacao/extratos?arquivo=' + encodeURIComponent(nome), 'DELETE');
-      aviso(`Arquivo ${esc(nome)} removido: ${r.removidos.toLocaleString('pt-BR')} lançamentos.`);
-      await carregarExtratosGuardados(); processar();
-    } catch (err) { aviso('Não consegui remover: ' + esc(err.message), true); }
-  });
   $('arquivoTitulos').addEventListener('change', async ev => {
     const arq = ev.target.files[0]; if (!arq) return;
     try {
@@ -861,31 +633,6 @@
     ev.target.value = '';
   });
   $('abas').addEventListener('click', ev => { const b = ev.target.closest('[data-aba]'); if (b) { estado.aba = b.dataset.aba; renderizar(); } });
-  // Quadro de prova: clicar numa linha abre a lista; botão fecha ou reabre o mês
-  $('fechamento').addEventListener('click', ev => {
-    const ir = ev.target.closest('[data-ir]');
-    if (ir) { estado.aba = ir.dataset.ir; renderizar(); $('abas').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
-    if (ev.target.closest('#fecharMes')) {
-      if (lerFechamento()) {
-        if (confirm('Reabrir o mês para continuar conciliando?')) { try { localStorage.removeItem(chaveFechamento()); } catch (e) {} renderizar(); }
-        return;
-      }
-      const texto = $('fechamento').querySelector('.selo-alerta');
-      let justificativa = '';
-      if (texto) {
-        justificativa = prompt('Ainda há valores sem explicação. Escreva a justificativa para fechar o mês assim (ou cancele):') || '';
-        if (!justificativa.trim()) return;
-      }
-      const agora = new Date();
-      try {
-        localStorage.setItem(chaveFechamento(), JSON.stringify({
-          em: agora.toLocaleDateString('pt-BR') + ' ' + agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-          justificativa: justificativa.trim()
-        }));
-      } catch (e) {}
-      renderizar();
-    }
-  });
   $('busca').addEventListener('input', renderizar);
   $('anteriores').addEventListener('change', renderizar);
   $('dias').addEventListener('change', () => { try { localStorage.setItem('conciliacao:dias', $('dias').value); } catch (e) {} renderizar(); });
