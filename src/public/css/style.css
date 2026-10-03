@@ -1358,3 +1358,713 @@ button.barra:hover { background: var(--verde-suave); color: inherit; }
 }
 .grafico-rosca__nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .grafico-rosca__lista strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+
+/* ===== Janela do operador: caixas por dia ===== */
+.detalhe__caixas { margin: 0.5rem 0 1.25rem; padding-bottom: 1rem; border-bottom: 2px solid #1E6B47; }
+.caixas__titulo { margin: 0.25rem 0; font-size: 1.15rem; }
+.caixas__subtitulo { margin: 1rem 0 0.4rem; font-size: 1rem; }
+.caixas__dica { margin: 0 0 0.6rem; color: #5B6B62; font-size: 0.92rem; }
+.caixas__topo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.caixas__tabela td.forte { font-weight: 700; }
+.caixas__linha { cursor: pointer; }
+.caixas__linha:hover td, .caixas__linha:focus td { background: #EEF6F1; }
+.caixas__linha:focus { outline: 2px solid #1E6B47; outline-offset: -2px; }
+.caixas__abrir { color: #1E6B47; font-weight: 600; font-size: 0.85rem; }
+.caixas__cartoes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.6rem; margin: 0.75rem 0; }
+.caixas__cartao { display: grid; gap: 0.15rem; padding: 0.6rem 0.8rem; border: 1px solid #D4E5DA; border-radius: 8px; background: #fff; }
+.caixas__cartao span { font-size: 0.85rem; color: #5B6B62; }
+.caixas__cartao strong { font-size: 1.1rem; }
+.caixas__cartao small { font-size: 0.8rem; color: #5B6B62; }
+.caixas__cartao--destaque { background: #EEF6F1; border-color: #1E6B47; }
+.coluna-pagamento { min-width: 12rem; font-size: 0.9rem; }
+
+
+/* ===== Tela de vendas: atalhos para cada parte ===== */
+.secoes { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0 0 1.25rem; }
+.secoes a {
+  padding: 0.45rem 0.95rem; border: 1px solid #CFE3D6; border-radius: 999px;
+  background: #fff; color: #14532D; font-weight: 600; text-decoration: none; font-size: 0.95rem;
+}
+.secoes a:hover, .secoes a:focus-visible { background: #EEF6F1; border-color: #1E6B47; }
+.parte { scroll-margin-top: 1rem; }
+.numeros--resumo { margin-top: 1rem; }
+
+
+/* ==========================================================
+   Tela de vendas (body.tela-vendas) — acabamento
+   Mesmo padrão do painel: só verdes, seções abertas com linha fina.
+   ========================================================== */
+.tela-vendas .valor-grande, .tela-vendas .numero dd, .tela-vendas .tabela td { font-variant-numeric: tabular-nums; }
+
+/* Atalhos das partes: abas que acompanham a rolagem */
+.tela-vendas .secoes {
+  position: sticky; top: 0; z-index: 20;
+  gap: 0; margin: 0 0 0.25rem; padding: 0;
+  background: var(--superficie);
+  border-bottom: 1px solid var(--linha);
+}
+.tela-vendas .secoes a {
+  padding: 0.85rem 1.1rem 0.75rem;
+  border: 0; border-bottom: 3px solid transparent; border-radius: 0;
+  background: none; color: var(--tinta-suave); font-weight: 600;
+}
+.tela-vendas .secoes a:hover { color: var(--tinta); background: var(--verde-suave); }
+.tela-vendas .secoes a:focus-visible { outline: 2px solid var(--verde); outline-offset: -2px; }
+.tela-vendas .secoes a[aria-current="true"] { color: var(--verde-escuro); border-bottom-color: var(--verde); }
+.tela-vendas .parte { scroll-margin-top: 3.5rem; }
+
+/* Resumo: a venda líquida à esquerda, os indicadores numa grade à direita */
+.tela-vendas .resumo {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 0 3rem;
+  align-items: start;
+  padding: var(--respiro-secao) 0;
+}
+.tela-vendas .resumo > .destaque { padding: 0; border-top: 0; }
+.tela-vendas .numeros--grade {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  margin: 0;
+  border-top: 1px solid var(--linha);
+}
+.tela-vendas .numeros--grade .numero {
+  padding: 1rem 1.25rem;
+  border-left: 0;
+  border-bottom: 1px solid var(--linha);
+}
+.tela-vendas .numeros--grade .numero:nth-child(odd) { border-right: 1px solid var(--linha); padding-left: 0; }
+
+/* Como a venda se forma: uma conta (notas + caixa − devoluções = líquida).
+   O sinal fica sobre a linha que separa cada parte. */
+.tela-vendas .conta .numero { position: relative; }
+.tela-vendas .conta .numero + .numero::before {
+  position: absolute; left: -0.8rem; top: 0.15rem;
+  width: 1.6rem; height: 1.6rem;
+  display: grid; place-items: center;
+  border: 1px solid var(--linha-forte); border-radius: 50%;
+  background: var(--superficie); color: var(--tinta-suave);
+  font-weight: 700; font-size: 0.95rem; line-height: 1;
+}
+.tela-vendas .conta .numero:nth-child(2)::before { content: "+"; }
+.tela-vendas .conta .numero:nth-child(3)::before { content: "−"; }
+.tela-vendas .conta .numero:nth-child(4)::before { content: "="; color: var(--verde); border-color: var(--verde); }
+.tela-vendas .conta .numero:last-child dd { color: var(--verde-escuro); }
+.tela-vendas .conta .numero:last-child dt { color: var(--verde); }
+
+/* Cabeçalhos de seção com o mesmo ritmo */
+.tela-vendas .bloco > h2 + .bloco__descricao { margin-bottom: 1rem; }
+.tela-vendas .tabela thead th { white-space: nowrap; }
+
+@media (max-width: 1100px) {
+  .tela-vendas .resumo { grid-template-columns: 1fr; gap: 1.5rem; }
+}
+@media (max-width: 720px) {
+  .tela-vendas .secoes { overflow-x: auto; flex-wrap: nowrap; }
+  .tela-vendas .secoes a { flex: 0 0 auto; padding: 0.75rem 0.9rem; }
+  .tela-vendas .conta { grid-template-columns: 1fr 1fr; }
+  .tela-vendas .conta .numero:nth-child(3)::before { left: -0.8rem; }
+  .tela-vendas .conta .numero:nth-child(odd) { border-left: 0; padding-left: 0; }
+  .tela-vendas .conta .numero:nth-child(3)::before { display: none; }
+}
+
+
+/* ==========================================================
+   18. Tela de entrada (login.html) — body.tela-login
+   A única tela com um momento de marca: faixa verde à esquerda
+   com o nome do painel; o formulário fica aberto, sem caixa.
+   ========================================================== */
+.tela-login { min-height: 100vh; }
+.login {
+  display: grid;
+  grid-template-columns: minmax(20rem, 5fr) 7fr;
+  min-height: 100vh;
+}
+.login__marca {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 2.5rem clamp(1.5rem, 4vw, 4rem);
+  background: var(--verde-escuro);
+  color: #fff;
+}
+.login__marca .marca {
+  margin: 0;
+  font-size: var(--texto-mini);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9FD8B6;
+}
+.login__titulo {
+  margin: 0;
+  font-family: var(--fonte-titulo);
+  font-size: clamp(2.5rem, 4.6vw, 4rem);
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+}
+.login__texto {
+  max-width: 26rem;
+  margin: 1.25rem 0 0;
+  font-size: 1.05rem;
+  line-height: 1.55;
+  color: var(--verde-claro);
+}
+/* Os módulos do painel, numa linha só, separados por traço */
+.login__modulos {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 1.25rem 0 0;
+  list-style: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: var(--texto-pequeno);
+  font-weight: 600;
+  color: #9FD8B6;
+}
+.login__modulos li { padding: 0 1rem; border-left: 1px solid rgba(255, 255, 255, 0.16); }
+.login__modulos li:first-child { padding-left: 0; border-left: 0; }
+
+.login__area {
+  display: grid;
+  align-content: center;
+  padding: 3rem clamp(1.5rem, 6vw, 6rem);
+}
+.login__form-area { width: 100%; max-width: 26rem; }
+.login__form-area h2 {
+  margin: 0;
+  font-family: var(--fonte-titulo);
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+.login__sub { margin: 0.35rem 0 1.75rem; color: var(--tinta-suave); }
+
+/* Entrar | Criar conta: mesmas abas sublinhadas do resto do painel */
+.tela-login .login__abas {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--linha);
+}
+.tela-login .aba {
+  padding: 0 0 0.7rem;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  margin-bottom: -1px;
+  background: none;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--tinta-suave);
+}
+.tela-login .aba:hover { background: none; color: var(--verde); }
+.tela-login .aba.ativa { color: var(--verde); border-bottom-color: var(--verde); }
+
+.login__form { display: grid; gap: 1.1rem; }
+.login__form label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: var(--texto-pequeno);
+  font-weight: 600;
+  color: var(--tinta);
+}
+.login__form input { height: 3rem; font-size: 1rem; }
+.login__form small { font-size: var(--texto-mini); font-weight: 400; color: var(--tinta-suave); }
+.login__form button[type="submit"] { height: 3rem; margin-top: 0.4rem; font-size: 1rem; }
+
+.tela-login .mensagem { min-height: 1.5rem; margin: 1.25rem 0 0; font-size: 0.95rem; font-weight: 600; }
+.tela-login .mensagem.erro { color: var(--alerta); }
+.tela-login .mensagem.ok {
+  padding: 0.75rem 1rem;
+  border-left: 4px solid var(--verde);
+  background: var(--verde-suave);
+  color: var(--verde-escuro);
+}
+
+@media (max-width: 860px) {
+  .login { grid-template-columns: minmax(0, 1fr); }
+  .login__marca { padding: 1.5rem var(--margem-lateral); gap: 1rem; }
+  .login__titulo { font-size: 2.25rem; }
+  .login__texto { margin-top: 0.6rem; font-size: 0.95rem; }
+  .login__modulos { display: none; }
+  .login__area { align-content: start; padding: 2rem var(--margem-lateral); }
+}
+
+
+/* ==========================================================
+   19. Usuários do painel (usuarios.html) — body.tela-usuarios
+   ========================================================== */
+.tela-usuarios .bloco:first-child { border-top: 0; }
+.tela-usuarios .resumo-usuarios { margin: 1rem 0 0; font-weight: 600; }
+.tela-usuarios .resumo-usuarios .pend { color: var(--alerta); }
+.tela-usuarios .mensagem { margin: 1rem 0 0; color: var(--tinta-suave); }
+.tela-usuarios .mensagem:empty { display: none; }
+.tela-usuarios .mensagem.erro {
+  padding: 0.75rem 1rem;
+  border-left: 4px solid var(--alerta);
+  background: var(--alerta-claro);
+  color: #5E2A0C;
+}
+
+.tela-usuarios .tabela { min-width: 52rem; }
+.tela-usuarios .tabela th,
+.tela-usuarios .tabela td { text-align: left; vertical-align: middle; padding-top: 0.9rem; padding-bottom: 0.9rem; }
+.tela-usuarios .tabela td:first-child strong { font-weight: 700; }
+.tela-usuarios .email { font-size: var(--texto-pequeno); color: var(--tinta-suave); }
+/* Quem está aguardando liberação: faixa laranja à esquerda, como título vencido */
+.tela-usuarios .tabela th:first-child,
+.tela-usuarios .tabela td:first-child { padding-left: 1rem; }
+.tela-usuarios tr.pendente > td:first-child { box-shadow: inset 3px 0 0 var(--alerta); }
+
+/* Telas liberadas: cada uma vira uma pílula que acende quando marcada */
+.tela-usuarios .telas { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.tela-usuarios .telas label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.8rem 0.35rem 0.55rem;
+  border: 1px solid var(--linha-forte);
+  border-radius: 999px;
+  font-size: var(--texto-pequeno);
+  font-weight: 600;
+  color: var(--tinta-suave);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tela-usuarios .telas label:hover { border-color: var(--verde-medio); }
+.tela-usuarios .telas label:has(input:checked) {
+  border-color: var(--verde);
+  background: var(--verde-suave);
+  color: var(--verde-escuro);
+}
+.tela-usuarios .telas input { width: 1rem; height: 1rem; margin: 0; padding: 0; accent-color: var(--verde); }
+
+.tela-usuarios .salvar { white-space: nowrap; }
+.tela-usuarios .status-linha { display: block; min-height: 1.1rem; margin-top: 0.35rem; font-size: var(--texto-mini); font-weight: 600; }
+.tela-usuarios .status-linha.ok { color: var(--verde); }
+.tela-usuarios .status-linha.erro { color: var(--alerta); }
+
+
+/* ==========================================================
+   20. Conciliação de títulos (conciliacao.html) — body.tela-conciliacao
+   Segue a estrutura do financeiro (divisão, abas, barra de filtros).
+   As listas são desenhadas por js/conciliacao.js; por isso as classes
+   daqui ficam presas a .tela-conciliacao, para não esbarrar nas de
+   outras telas (.status, .numeros, .entrada).
+   ========================================================== */
+.tela-conciliacao {
+  --verde-noite: var(--verde-escuro); /* usado no topo da ficha (js) */
+  font-variant-numeric: tabular-nums;
+}
+
+/* Barra de envio: mês, arquivos guardados e ações */
+.tela-conciliacao .conc-envio { align-items: flex-end; gap: 0.75rem 1.25rem; }
+.tela-conciliacao .conc-envio input[type="month"] { height: 2.5rem; min-width: 11rem; }
+.tela-conciliacao .arquivo { position: relative; }
+.tela-conciliacao .arquivo input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.tela-conciliacao .arquivo .btn { height: 2.5rem; }
+.tela-conciliacao .nome-arquivo {
+  align-self: center;
+  max-width: 34rem;
+  font-size: var(--texto-pequeno);
+  line-height: 1.4;
+  color: var(--tinta-suave);
+}
+.tela-conciliacao .nome-arquivo summary { cursor: pointer; font-weight: 600; color: var(--verde); }
+.tela-conciliacao .nome-arquivo details[open] summary { margin-bottom: 0.35rem; }
+.tela-conciliacao .remover-arquivo,
+.tela-conciliacao .remover-arquivo:hover {
+  padding: 0 0 0 0.35rem;
+  border: 0;
+  background: none;
+  color: var(--alerta);
+  font-size: var(--texto-mini);
+  text-decoration: underline;
+}
+.tela-conciliacao .conc-fonte { margin: 0; font-size: var(--texto-mini); color: var(--tinta-suave); }
+
+/* Botões gerados pelo js: .btn = principal, .btn.claro = secundário */
+.tela-conciliacao .btn.claro {
+  background: transparent;
+  color: var(--verde);
+  border-color: var(--linha-forte);
+}
+.tela-conciliacao .btn.claro:hover { background: var(--verde-suave); border-color: var(--verde-medio); color: var(--verde-escuro); }
+
+/* Avisos */
+.tela-conciliacao .aviso {
+  margin: 1rem 0 0;
+  padding: 0.75rem 1rem;
+  border-left: 4px solid var(--verde-medio);
+  background: var(--verde-suave);
+  font-size: 0.95rem;
+}
+.tela-conciliacao .aviso.erro { border-left-color: var(--alerta); background: var(--alerta-claro); color: #5E2A0C; }
+
+/* Prova da conciliação: a conta do mês, aberta, sem faixa colorida */
+.tela-conciliacao .fechamento { border-top: 0; padding-top: 1.25rem; }
+.tela-conciliacao .prova-topo { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1rem; }
+.tela-conciliacao .prova-topo h2 { margin: 0; font-family: var(--fonte-titulo); font-size: var(--texto-titulo); }
+.tela-conciliacao .prova-topo .btn { margin-left: auto; }
+.tela-conciliacao .prova {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr));
+  gap: 1.5rem 3rem;
+  align-items: start;
+  margin-top: 1rem;
+}
+.tela-conciliacao .prova table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+.tela-conciliacao .prova th {
+  padding: 0.55rem 0;
+  text-align: left;
+  font-size: var(--texto-mini);
+  font-weight: 700;
+  color: var(--tinta-suave);
+  border-bottom: 2px solid var(--verde-claro);
+}
+.tela-conciliacao .prova td { padding: 0.5rem 0; border-bottom: 1px solid var(--linha); }
+.tela-conciliacao .prova .num { text-align: right; white-space: nowrap; }
+.tela-conciliacao .prova tr.total td { font-weight: 700; }
+.tela-conciliacao .prova tr.alerta td { color: var(--alerta); }
+.tela-conciliacao .prova tr.resultado td {
+  padding-top: 0.7rem;
+  border-top: 2px solid var(--verde);
+  border-bottom: 0;
+  font-family: var(--fonte-titulo);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--verde-escuro);
+}
+.tela-conciliacao .prova tr.ruim td { color: var(--alerta); }
+.tela-conciliacao .prova .ir,
+.tela-conciliacao .prova .ir:hover {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.tela-conciliacao .prova .ir:hover { color: var(--verde); text-decoration: underline; text-underline-offset: 3px; }
+.tela-conciliacao .prova-nota { margin: 1rem 0 0; font-size: var(--texto-pequeno); color: var(--tinta-suave); }
+.tela-conciliacao .prova-vazia { color: var(--tinta-suave); }
+
+/* Selos de situação do mês */
+.tela-conciliacao .selo {
+  display: inline-block;
+  padding: 0.2rem 0.75rem;
+  border-radius: 999px;
+  font-size: var(--texto-pequeno);
+  font-weight: 700;
+}
+.tela-conciliacao .selo-ok { background: var(--verde-claro); color: #145634; }
+.tela-conciliacao .selo-alerta { background: var(--alerta-claro); color: #7F3A12; }
+.tela-conciliacao .selo-neutro { background: var(--fundo); color: var(--tinta-suave); box-shadow: inset 0 0 0 1px var(--linha); }
+
+/* Trilha de trabalho: as listas em 6 passos, um ao lado do outro.
+   Cada passo é uma coluna; cada lista, uma linha clicável com quantidade e valor. */
+.tela-conciliacao .trilha {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(10.5rem, 1fr));
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--linha);
+  border-bottom: 1px solid var(--linha);
+  overflow-x: auto;
+}
+.tela-conciliacao .trilha__passo {
+  display: flex;
+  flex-direction: column;
+  padding: 0.85rem 0.75rem 0.85rem;
+  border-left: 1px solid var(--linha);
+}
+.tela-conciliacao .trilha__passo:first-child { border-left: 0; padding-left: 0; }
+.tela-conciliacao .grupo-abas {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.4rem;
+  font-size: var(--texto-mini);
+  font-weight: 700;
+  color: var(--tinta-suave);
+}
+.tela-conciliacao .grupo-abas__num {
+  display: inline-grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  background: var(--verde-suave);
+  color: var(--verde);
+  font-size: 0.75rem;
+}
+.tela-conciliacao .trilha button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 0;
+  border-radius: var(--raio);
+  background: none;
+  color: var(--tinta);
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: left;
+}
+.tela-conciliacao .trilha button:hover { background: var(--verde-suave); color: var(--tinta); }
+.tela-conciliacao .trilha button b { font-weight: 700; color: var(--verde-escuro); }
+.tela-conciliacao .trilha button small {
+  grid-column: 1 / -1;
+  font-size: var(--texto-mini);
+  font-weight: 400;
+  color: var(--tinta-suave);
+}
+.tela-conciliacao .trilha button[aria-selected="true"] {
+  background: var(--verde);
+  color: #fff;
+}
+.tela-conciliacao .trilha button[aria-selected="true"] b,
+.tela-conciliacao .trilha button[aria-selected="true"] small { color: #fff; }
+.tela-conciliacao .trilha button.vazia { color: var(--tinta-suave); font-weight: 400; }
+.tela-conciliacao .trilha button.vazia b { color: var(--tinta-suave); font-weight: 400; }
+.tela-conciliacao .trilha button.vazia[aria-selected="true"] { color: #fff; }
+
+/* Guia da lista: o que é, por que acontece, o que fazer */
+.tela-conciliacao .guia {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.75rem 2rem;
+  margin: 1.25rem 0 0;
+  padding: 0.9rem 1.1rem;
+  border-left: 4px solid var(--verde);
+  background: var(--verde-suave);
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+.tela-conciliacao .guia span {
+  display: block;
+  margin-bottom: 0.15rem;
+  font-size: var(--texto-mini);
+  font-weight: 700;
+  color: var(--verde);
+}
+
+/* Ferramentas da lista: busca, opções, Excel e total */
+.tela-conciliacao .conc-ferramentas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  margin: 1.25rem 0 0.25rem;
+}
+.tela-conciliacao .conc-ferramentas input[type="search"] {
+  flex: 0 1 24rem;
+  height: 2.5rem;
+  padding-left: 2.4rem;
+  background: var(--superficie) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2356675C' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") no-repeat 0.8rem center / 1.05rem;
+}
+.tela-conciliacao .conc-ferramentas label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--texto-pequeno);
+  color: var(--tinta-suave);
+  cursor: pointer;
+}
+.tela-conciliacao .conc-ferramentas input[type="checkbox"] { width: 1.1rem; height: 1.1rem; accent-color: var(--verde); }
+.tela-conciliacao .conc-ferramentas .dias { width: 4.5rem; padding: 0.35rem 0.5rem; }
+.tela-conciliacao .total-lista { margin-left: auto; font-size: var(--texto-pequeno); color: var(--tinta-suave); }
+.tela-conciliacao .total-lista strong { font-family: var(--fonte-titulo); font-size: 1.15rem; color: var(--tinta); }
+
+/* Lista (desenhada pelo js como <table> simples) */
+.tela-conciliacao .rolagem { overflow-x: auto; }
+.tela-conciliacao #tabela table,
+.tela-conciliacao .ficha table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+.tela-conciliacao #tabela th,
+.tela-conciliacao .ficha th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.7rem 0.6rem;
+  text-align: left;
+  font-size: var(--texto-mini);
+  font-weight: 700;
+  color: var(--tinta-suave);
+  white-space: nowrap;
+  background: var(--superficie);
+  border-bottom: 2px solid var(--verde-claro);
+}
+.tela-conciliacao #tabela td,
+.tela-conciliacao .ficha td { padding: 0.65rem 0.6rem; vertical-align: top; border-bottom: 1px solid var(--linha); }
+.tela-conciliacao #tabela th:first-child,
+.tela-conciliacao #tabela td:first-child { padding-left: 0; }
+.tela-conciliacao #tabela tbody tr:hover td { background: var(--verde-suave); }
+.tela-conciliacao td.num,
+.tela-conciliacao th.num { text-align: right; white-space: nowrap; }
+.tela-conciliacao td:has(.cliente) { min-width: 12rem; }
+.tela-conciliacao td:has(.status) { min-width: 17rem; }
+
+.tela-conciliacao .cliente,
+.tela-conciliacao .cliente:hover {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--verde);
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: var(--verde-claro);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+.tela-conciliacao .cliente:hover { color: var(--verde-escuro); text-decoration-color: var(--verde); }
+.tela-conciliacao .cod,
+.tela-conciliacao .motivo { font-size: var(--texto-mini); color: var(--tinta-suave); }
+.tela-conciliacao .vazio { padding: 2.5rem 0; font-size: 1.05rem; color: var(--tinta-suave); }
+
+/* Situação de cada linha: bolinha cheia = certo ou problema; vazada = sugestão a conferir */
+.tela-conciliacao .status { min-height: 0; margin: 0; font-size: inherit; font-weight: 600; color: inherit; }
+.tela-conciliacao .status::before {
+  content: "";
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-right: 0.45rem;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: 0.06em;
+}
+.tela-conciliacao .s-ok { color: var(--verde); }
+.tela-conciliacao .s-ruim { color: var(--alerta); }
+.tela-conciliacao .s-sug { color: var(--alerta); }
+.tela-conciliacao .s-sug::before { background: transparent; box-shadow: inset 0 0 0 2px currentColor; }
+.tela-conciliacao .s-neutro { color: var(--tinta-suave); }
+
+/* Confiança da sugestão */
+.tela-conciliacao .conf {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  font-size: var(--texto-mini);
+  font-weight: 700;
+}
+.tela-conciliacao .conf-alta { background: var(--verde-claro); color: #145634; }
+.tela-conciliacao .conf-media { background: var(--alerta-claro); color: #7F3A12; }
+.tela-conciliacao .conf-baixa { background: var(--alerta); color: #fff; }
+
+/* Ações na linha */
+.tela-conciliacao .acoes { white-space: nowrap; }
+.tela-conciliacao .acoes button { padding: 0.4rem 0.8rem; margin-right: 0.3rem; font-size: var(--texto-mini); }
+.tela-conciliacao .acoes .recusar { background: transparent; color: var(--tinta-suave); border-color: var(--linha-forte); }
+.tela-conciliacao .acoes .recusar:hover { background: var(--alerta-claro); color: #7F3A12; border-color: var(--alerta); }
+.tela-conciliacao .decisao { min-width: 10rem; padding: 0.35rem 0.5rem; font-size: var(--texto-pequeno); }
+.tela-conciliacao .decisao.marcada { border-color: var(--verde); background: var(--verde-suave); font-weight: 600; }
+
+/* Entrada com chave (só aparece se o login falhar) */
+.tela-conciliacao .entrada form { display: flex; gap: 0.5rem; }
+.tela-conciliacao .entrada input { flex: 1; }
+
+/* Ficha do cliente: painel que entra pela direita, topo verde-escuro como as janelas */
+.tela-conciliacao .ficha {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 30;
+  width: min(36rem, 100%);
+  height: 100%;
+  overflow-y: auto;
+  background: var(--superficie);
+  box-shadow: -16px 0 50px rgba(15, 61, 39, 0.22);
+  transform: translateX(100%);
+  transition: transform 0.22s ease;
+}
+.tela-conciliacao .ficha:not(.aberta) { visibility: hidden; box-shadow: none; transition: transform 0.22s ease, visibility 0s 0.22s; }
+.tela-conciliacao .ficha.aberta { transform: none; }
+.tela-conciliacao .ficha header { padding: 1.25rem 1.5rem; }
+.tela-conciliacao .ficha h2 { margin: 0; font-family: var(--fonte-titulo); font-size: 1.35rem; line-height: 1.25; }
+.tela-conciliacao .ficha .fonte { margin-top: 0.25rem; font-size: 0.95rem; color: #B9DFC8; }
+.tela-conciliacao .ficha .fechar,
+.tela-conciliacao .ficha .fechar:hover {
+  float: right;
+  padding: 0 0 0 0.5rem;
+  border: 0;
+  background: none;
+  color: #fff;
+  font-size: 1.75rem;
+  line-height: 1;
+}
+.tela-conciliacao .ficha .numeros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 2rem;
+  margin: 0;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--linha);
+}
+.tela-conciliacao .ficha .numeros span { display: block; font-size: var(--texto-mini); font-weight: 600; color: var(--tinta-suave); }
+.tela-conciliacao .ficha .numeros strong { font-family: var(--fonte-titulo); font-size: 1.3rem; }
+.tela-conciliacao .ficha .rolagem { padding: 0.5rem 1.5rem 1.5rem; }
+.tela-conciliacao .ficha th { position: static; }
+
+@media (prefers-reduced-motion: reduce) { .tela-conciliacao .ficha { transition: none; } }
+
+@media (max-width: 1100px) {
+  .tela-conciliacao .trilha { grid-template-columns: repeat(6, minmax(11rem, 11rem)); }
+}
+
+/* Celular: a trilha desliza para o lado e cada linha da lista vira um cartão */
+@media (max-width: 700px) {
+  .tela-conciliacao .conc-envio { flex-direction: column; align-items: stretch; }
+  .tela-conciliacao .conc-envio > * { flex: 0 0 auto; }
+  .tela-conciliacao .conc-envio input[type="month"],
+  .tela-conciliacao .arquivo,
+  .tela-conciliacao .arquivo .btn { width: 100%; }
+  .tela-conciliacao .prova { grid-template-columns: minmax(0, 1fr); }
+  .tela-conciliacao .prova-topo .btn { margin-left: 0; }
+  .tela-conciliacao .guia { grid-template-columns: minmax(0, 1fr); }
+  .tela-conciliacao .conc-ferramentas { flex-direction: column; align-items: stretch; }
+  .tela-conciliacao .conc-ferramentas input[type="search"] { flex-basis: auto; width: 100%; }
+  .tela-conciliacao .total-lista { margin-left: 0; }
+
+  .tela-conciliacao #tabela table, .tela-conciliacao #tabela tbody, .tela-conciliacao #tabela tr, .tela-conciliacao #tabela td,
+  .tela-conciliacao .ficha table, .tela-conciliacao .ficha tbody, .tela-conciliacao .ficha tr, .tela-conciliacao .ficha td { display: block; width: 100%; }
+  .tela-conciliacao #tabela thead, .tela-conciliacao .ficha thead { display: none; }
+  .tela-conciliacao #tabela tr, .tela-conciliacao .ficha tr {
+    margin: 0 0 0.75rem;
+    padding: 0.4rem 0.9rem;
+    border: 1px solid var(--linha);
+    border-radius: var(--raio-cartao);
+  }
+  .tela-conciliacao #tabela tbody tr:hover td { background: transparent; }
+  .tela-conciliacao #tabela td, .tela-conciliacao .ficha td {
+    position: relative;
+    min-height: 1.9rem;
+    padding: 0.4rem 0 0.4rem 42%;
+    border: 0;
+    text-align: left;
+    white-space: normal;
+  }
+  .tela-conciliacao #tabela td:first-child { padding-left: 42%; }
+  .tela-conciliacao #tabela td::before, .tela-conciliacao .ficha td::before {
+    content: attr(data-label);
+    position: absolute;
+    left: 0;
+    top: 0.4rem;
+    width: 38%;
+    font-size: var(--texto-mini);
+    font-weight: 600;
+    color: var(--tinta-suave);
+  }
+  .tela-conciliacao #tabela td[data-label=""], .tela-conciliacao .ficha td[data-label=""] { padding-left: 0; }
+  .tela-conciliacao td:has(.status), .tela-conciliacao td:has(.cliente) { min-width: 0; }
+  .tela-conciliacao .acoes { white-space: normal; }
+  .tela-conciliacao .acoes button { margin: 0.25rem 0.4rem 0.25rem 0; padding: 0.55rem 0.9rem; }
+  .tela-conciliacao .decisao { width: 100%; }
+}

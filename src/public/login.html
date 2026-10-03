@@ -3,58 +3,53 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Entrar · Painel Belo Norte</title>
-  <style>
-    :root { --verde-escuro: #123d2a; --verde: #1d7a4c; --verde-claro: #e8f3ed; --texto: #1c2b24; --cinza: #5f6f67; --linha: #d4ddd8; --erro: #b3261e; }
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--texto); background: #fff; }
-    .topo { background: var(--verde-escuro); color: #fff; padding: 16px 32px; display: flex; align-items: baseline; gap: 14px; }
-    .marca { font-size: 13px; letter-spacing: .12em; font-weight: 700; color: #b9dcc8; }
-    .titulo { font-size: 20px; font-weight: 700; }
-    main { max-width: 420px; margin: 64px auto; padding: 0 24px; }
-    h1 { font-size: 28px; margin: 0 0 6px; }
-    .sub { color: var(--cinza); margin: 0 0 28px; }
-    .abas { display: flex; gap: 28px; border-bottom: 1px solid var(--linha); margin-bottom: 24px; }
-    .aba { background: none; border: 0; padding: 0 0 10px; font-size: 16px; font-weight: 600; color: var(--cinza); cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -1px; }
-    .aba.ativa { color: var(--verde); border-bottom-color: var(--verde); }
-    label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 18px; }
-    input { display: block; width: 100%; margin-top: 6px; padding: 12px 14px; font-size: 16px; border: 1px solid var(--linha); border-radius: 8px; }
-    input:focus { outline: 2px solid var(--verde); border-color: var(--verde); }
-    small { display: block; font-weight: 400; color: var(--cinza); margin-top: 4px; }
-    .principal { width: 100%; padding: 13px; font-size: 16px; font-weight: 700; color: #fff; background: var(--verde); border: 0; border-radius: 8px; cursor: pointer; }
-    .principal:disabled { opacity: .6; cursor: wait; }
-    .mensagem { min-height: 24px; margin-top: 18px; font-weight: 600; }
-    .mensagem.erro { color: var(--erro); }
-    .mensagem.ok { color: var(--verde); background: var(--verde-claro); padding: 12px 14px; border-radius: 8px; }
-  </style>
+  <title>Entrar | Painel | Belo Norte</title>
+  <link rel="stylesheet" href="css/style.css">
 </head>
-<body>
-  <header class="topo"><span class="marca">BELO NORTE</span><span class="titulo">Painel de gestão</span></header>
+<body class="tela-login">
+  <main class="login">
+    <!-- Faixa da marca (vira o topo no celular) -->
+    <section class="login__marca" aria-label="Belo Norte">
+      <p class="marca">Belo Norte</p>
+      <div>
+        <h1 class="login__titulo">Painel de gestão</h1>
+        <p class="login__texto">Vendas, faturamento e financeiro da Belo Norte num lugar só, com os dados direto do PROCFIT.</p>
+      </div>
+      <ul class="login__modulos" aria-label="Módulos do painel">
+        <li>Vendas</li>
+        <li>Faturamento</li>
+        <li>Financeiro</li>
+      </ul>
+    </section>
 
-  <main>
-    <h1>Bem-vinda(o)</h1>
-    <p class="sub">Entre com sua conta ou peça acesso ao painel.</p>
+    <!-- Entrar / criar conta -->
+    <section class="login__area">
+      <div class="login__form-area">
+        <h2>Bem-vinda(o)</h2>
+        <p class="login__sub">Entre com sua conta ou peça acesso ao painel.</p>
 
-    <nav class="abas">
-      <button type="button" id="aba-entrar" class="aba ativa">Entrar</button>
-      <button type="button" id="aba-criar" class="aba">Criar conta</button>
-    </nav>
+        <nav class="login__abas" aria-label="Entrar ou criar conta">
+          <button type="button" id="aba-entrar" class="aba ativa">Entrar</button>
+          <button type="button" id="aba-criar" class="aba">Criar conta</button>
+        </nav>
 
-    <form id="form-entrar">
-      <label>E-mail<input type="email" id="entrar-email" autocomplete="username" required></label>
-      <label>Senha<input type="password" id="entrar-senha" autocomplete="current-password" required></label>
-      <button type="submit" class="principal">Entrar</button>
-    </form>
+        <form id="form-entrar" class="login__form">
+          <label>E-mail <input type="email" id="entrar-email" autocomplete="username" required></label>
+          <label>Senha <input type="password" id="entrar-senha" autocomplete="current-password" required></label>
+          <button type="submit">Entrar</button>
+        </form>
 
-    <form id="form-criar" hidden>
-      <label>Nome<input id="criar-nome" autocomplete="name" required></label>
-      <label>E-mail<input type="email" id="criar-email" autocomplete="email" required></label>
-      <label>Senha<input type="password" id="criar-senha" minlength="8" autocomplete="new-password" required><small>Mínimo de 8 caracteres</small></label>
-      <label>Repita a senha<input type="password" id="criar-senha2" minlength="8" autocomplete="new-password" required></label>
-      <button type="submit" class="principal">Enviar cadastro</button>
-    </form>
+        <form id="form-criar" class="login__form" hidden>
+          <label>Nome <input id="criar-nome" autocomplete="name" required></label>
+          <label>E-mail <input type="email" id="criar-email" autocomplete="email" required></label>
+          <label>Senha <input type="password" id="criar-senha" minlength="8" autocomplete="new-password" required><small>Mínimo de 8 caracteres</small></label>
+          <label>Repita a senha <input type="password" id="criar-senha2" minlength="8" autocomplete="new-password" required></label>
+          <button type="submit">Enviar cadastro</button>
+        </form>
 
-    <p id="mensagem" class="mensagem" role="status"></p>
+        <p id="mensagem" class="mensagem" role="status"></p>
+      </div>
+    </section>
   </main>
 
   <script src="js/login.js"></script>

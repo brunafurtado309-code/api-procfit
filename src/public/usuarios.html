@@ -1,62 +1,67 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
+  <script src="/painel/js/sessao.js"></script>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Usuários · Painel Belo Norte</title>
-  <style>
-    :root { --verde-escuro: #123d2a; --verde: #1d7a4c; --verde-claro: #e8f3ed; --texto: #1c2b24; --cinza: #5f6f67; --linha: #e1e8e4; --erro: #b3261e; --alerta: #8a5a00; }
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--texto); background: #fff; }
-    .topo { background: var(--verde-escuro); color: #fff; padding: 16px 32px; display: flex; align-items: center; gap: 14px; }
-    .marca { font-size: 13px; letter-spacing: .12em; font-weight: 700; color: #b9dcc8; }
-    .titulo { font-size: 20px; font-weight: 700; }
-    .topo a { margin-left: auto; color: #fff; font-weight: 600; text-decoration: none; border: 1px solid #ffffff80; padding: 8px 14px; border-radius: 8px; }
-    main { max-width: 1200px; margin: 32px auto; padding: 0 32px; }
-    h1 { font-size: 26px; margin: 0 0 4px; }
-    .sub { color: var(--cinza); margin: 0 0 24px; }
-    .resumo { font-weight: 600; margin-bottom: 16px; }
-    .resumo .pend { color: var(--alerta); }
-    table { width: 100%; border-collapse: collapse; font-size: 15px; }
-    th { text-align: left; font-size: 13px; color: var(--cinza); font-weight: 600; padding: 10px 12px; border-bottom: 2px solid var(--linha); }
-    td { padding: 14px 12px; border-bottom: 1px solid var(--linha); vertical-align: middle; }
-    tr.pendente td { background: #fff8e6; }
-    .email { color: var(--cinza); }
-    select { padding: 8px 10px; font-size: 15px; border: 1px solid #cfd8d3; border-radius: 8px; background: #fff; }
-    .telas { display: flex; flex-wrap: wrap; gap: 6px 16px; }
-    .telas label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
-    .telas input { width: 17px; height: 17px; accent-color: var(--verde); }
-    .salvar { padding: 9px 16px; font-size: 15px; font-weight: 700; color: #fff; background: var(--verde); border: 0; border-radius: 8px; cursor: pointer; }
-    .salvar:disabled { opacity: .6; cursor: wait; }
-    .status-linha { display: block; font-size: 13px; margin-top: 6px; min-height: 16px; }
-    .status-linha.ok { color: var(--verde); }
-    .status-linha.erro { color: var(--erro); }
-    .mensagem { font-weight: 600; }
-    .mensagem.erro { color: var(--erro); }
-    .vazio { color: var(--cinza); padding: 24px 0; }
-  </style>
+  <title>Usuários | Painel | Belo Norte</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/modulos.js" defer></script>
 </head>
-<body>
+<body class="tela-usuarios">
   <header class="topo">
-    <span class="marca">BELO NORTE</span><span class="titulo">Usuários do painel</span>
-    <a href="./">Voltar ao painel</a>
+    <div>
+      <p class="marca">Belo Norte</p>
+      <h1>Usuários do painel</h1>
+    </div>
+    <div class="topo-acoes">
+      <nav id="modulos" class="modulos" aria-label="Módulos do painel" hidden></nav>
+      <button class="botao-texto" type="button">Sair</button>
+    </div>
   </header>
 
-  <main>
-    <h1>Liberação de acesso</h1>
-    <p class="sub">Aprove quem pediu acesso e marque as telas que cada pessoa pode ver. As mudanças valem na hora.</p>
+  <main class="conteudo">
+    <section class="bloco" aria-labelledby="titulo-acesso">
+      <h2 id="titulo-acesso">Liberação de acesso</h2>
+      <p class="bloco__descricao">Aprove quem pediu acesso e marque as telas que cada pessoa pode ver. As mudanças valem na hora.</p>
 
-    <p id="mensagem" class="mensagem" role="status">Carregando...</p>
-    <p id="resumo" class="resumo"></p>
+      <p id="mensagem" class="mensagem" role="status">Carregando...</p>
+      <p id="resumo" class="resumo-usuarios"></p>
 
-    <table id="tabela" hidden>
-      <thead>
-        <tr><th>Nome</th><th>Cadastro</th><th>Situação</th><th>Telas liberadas</th><th></th></tr>
-      </thead>
-      <tbody id="linhas"></tbody>
-    </table>
+      <div class="tabela-rolagem">
+        <table id="tabela" class="tabela" hidden>
+          <thead>
+            <tr>
+              <th scope="col">Nome</th>
+              <th scope="col">Cadastro</th>
+              <th scope="col">Situação</th>
+              <th scope="col">Telas liberadas</th>
+              <th scope="col"><span class="sr-only">Salvar</span></th>
+            </tr>
+          </thead>
+          <tbody id="linhas"></tbody>
+        </table>
+      </div>
+    </section>
   </main>
 
   <script src="js/usuarios.js"></script>
+  <script>
+    // Menu de módulos igual ao das outras telas, com "Usuários" marcado
+    window.addEventListener('DOMContentLoaded', async () => {
+      try {
+        modulos.desenharMenu(await modulos.setoresDaChave(), 'usuarios');
+        const menu = document.getElementById('modulos');
+        if (!document.getElementById('menu-usuarios')) {
+          const atual = document.createElement('span');
+          atual.id = 'menu-usuarios';
+          atual.className = 'modulo modulo--ativo';
+          atual.textContent = 'Usuários';
+          menu.append(atual);
+          menu.hidden = false;
+        }
+      } catch (_) { /* sem menu: a tela continua funcionando */ }
+    });
+  </script>
 </body>
 </html>

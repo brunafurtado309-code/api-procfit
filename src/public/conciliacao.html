@@ -1,185 +1,113 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Conciliação de títulos — Belo Norte</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
-<style>
-  :root{
-    --verde-noite:#0E3B2C;
-    --verde:#1B6B4A;
-    --verde-medio:#3E9468;
-    --verde-claro:#E6F2EA;
-    --verde-linha:#CFE2D5;
-    --texto:#14281F;
-    --texto-suave:#4F6B5D;
-    --alerta:#B7791F;
-    --problema:#B23B3B;
-    --fundo:#FAFCFA;
-  }
-  *{box-sizing:border-box}
-  html,body{margin:0}
-  body{font-family:"Source Sans 3",system-ui,sans-serif;font-size:16px;color:var(--texto);background:var(--fundo);font-variant-numeric:tabular-nums}
-  button,input,select{font:inherit}
-  :focus-visible{outline:3px solid var(--verde-medio);outline-offset:2px}
-
-  /* topo */
-  header{background:var(--verde-noite);color:#fff;padding:18px 28px 0}
-  .titulo{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px}
-  h1{margin:0;font-size:28px;font-weight:700;letter-spacing:-.01em}
-  .fonte{color:#A9CDB8;font-size:15px}
-  .controles{display:flex;flex-wrap:wrap;align-items:end;gap:20px;padding:16px 0 18px}
-  .controles label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:#C9E2D3}
-  .controles input[type=month],.controles select{background:#fff;color:var(--texto);border:0;border-radius:6px;padding:8px 10px;min-width:170px}
-  .arquivo{position:relative}
-  .arquivo input{position:absolute;inset:0;opacity:0;cursor:pointer}
-  .btn{background:var(--verde-medio);color:#fff;border:0;border-radius:6px;padding:9px 16px;font-weight:600;cursor:pointer;white-space:nowrap}
-  .btn:hover{background:#4AA676}
-  .btn.claro{background:transparent;color:#C9E2D3;border:1px solid #3F6B57}
-  .nome-arquivo{font-size:14px;color:#A9CDB8;max-width:340px;line-height:1.35}
-  .nome-arquivo summary{cursor:pointer;color:#fff;font-weight:600}
-  .nome-arquivo details[open] summary{margin-bottom:6px}
-
-  /* fechamento do mês: uma linha, sem caixas */
-  .fechamento{display:flex;flex-wrap:wrap;background:var(--verde);color:#fff;padding:14px 28px;gap:0}
-  .fechamento div{padding:4px 28px 4px 0;margin-right:28px;border-right:1px solid rgba(255,255,255,.25)}
-  .fechamento div:last-child{border-right:0}
-  .fechamento span{display:block;font-size:14px;color:#D2EBDD}
-  .fechamento strong{font-size:26px;font-weight:700}
-  .fechamento .ruim strong{color:#FFD3C9}
-
-  main{padding:0 28px 40px}
-  .aviso{margin:18px 0 0;padding:12px 16px;border-left:4px solid var(--verde-medio);background:var(--verde-claro);font-size:15px}
-  .aviso.erro{border-color:var(--problema);background:#FBECEC}
-
-  /* abas */
-  nav{display:flex;flex-wrap:wrap;gap:4px;border-bottom:2px solid var(--verde-linha);margin-top:18px}
-  nav button{background:none;border:0;border-bottom:3px solid transparent;margin-bottom:-2px;padding:10px 14px;color:var(--texto-suave);font-weight:600;cursor:pointer}
-  nav button[aria-selected=true]{color:var(--verde);border-bottom-color:var(--verde)}
-  nav button b{font-weight:700;margin-left:6px;color:inherit}
-  .barra{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:14px 0 8px}
-  .barra input[type=search]{border:1px solid var(--verde-linha);border-radius:6px;padding:8px 12px;min-width:280px;background:#fff}
-  .barra label{font-size:15px;color:var(--texto-suave);display:flex;gap:8px;align-items:center;cursor:pointer}
-  .barra input[type=checkbox]{width:18px;height:18px;accent-color:var(--verde)}
-  .total-lista{margin-left:auto;font-size:15px;color:var(--texto-suave)}
-  .total-lista strong{color:var(--texto);font-size:18px}
-
-  /* tabela */
-  .rolagem{overflow-x:auto}
-  table{width:100%;border-collapse:collapse;font-size:15px}
-  th{text-align:left;font-weight:600;color:var(--texto-suave);padding:10px 8px;border-bottom:2px solid var(--verde-linha);white-space:nowrap;position:sticky;top:0;background:var(--fundo)}
-  td{padding:10px 8px;border-bottom:1px solid var(--verde-linha);vertical-align:top}
-  tr:hover td{background:#F1F8F3}
-  td.num,th.num{text-align:right;white-space:nowrap}
-  .cliente{background:none;border:0;padding:0;color:var(--verde);font-weight:600;cursor:pointer;text-align:left}
-  .cliente:hover{text-decoration:underline}
-  .cod{color:var(--texto-suave);font-size:14px}
-  .status{font-weight:600}
-  td:has(.status){min-width:170px}
-  td:has(.cliente){min-width:170px}
-  .status::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;background:currentColor;vertical-align:1px}
-  .s-ok{color:var(--verde)} .s-sug{color:var(--alerta)} .s-ruim{color:var(--problema)} .s-neutro{color:var(--texto-suave)}
-  .motivo{font-size:14px;color:var(--texto-suave)}
-  .acoes{white-space:nowrap}
-  .acoes button{border:0;border-radius:5px;padding:6px 11px;font-weight:600;cursor:pointer;margin-right:4px}
-  .confirmar{background:var(--verde);color:#fff}
-  .recusar{background:#EFE7DA;color:#6B4E16}
-  .vazio{padding:40px 0;color:var(--texto-suave);font-size:17px}
-
-  /* ficha do cliente */
-  .ficha{position:fixed;top:0;right:0;height:100%;width:min(560px,100%);background:#fff;box-shadow:-8px 0 30px rgba(14,59,44,.18);transform:translateX(100%);transition:transform .22s ease;overflow-y:auto;z-index:10}
-  .ficha.aberta{transform:none}
-  .ficha header{padding:20px 24px}
-  .ficha h2{margin:0;font-size:24px}
-  .ficha .fechar{float:right;background:none;border:0;color:#fff;font-size:26px;cursor:pointer;line-height:1}
-  .ficha .numeros{display:flex;gap:28px;padding:16px 24px;background:var(--verde-claro)}
-  .ficha .numeros span{display:block;font-size:14px;color:var(--texto-suave)}
-  .ficha .numeros strong{font-size:22px}
-  .ficha table{font-size:15px}
-  .ficha .rolagem{padding:8px 16px 24px}
-  .ficha td,.ficha th{padding:8px 7px}
-  .ficha td:last-child{min-width:0}
-  @media (prefers-reduced-motion:reduce){.ficha{transition:none}}
-  @media (max-width:700px){header,main,.fechamento{padding-left:16px;padding-right:16px}.barra input[type=search]{min-width:0;width:100%}}
-
-  /* entrada com a chave */
-  .entrada{max-width:420px;margin:48px auto;padding:0 20px}
-  .entrada h2{font-size:22px;margin:0 0 6px}
-  .entrada p{color:var(--texto-suave);margin:0 0 16px}
-  .entrada form{display:flex;gap:10px}
-  .entrada input{flex:1;border:1px solid var(--verde-linha);border-radius:6px;padding:9px 12px}
-  .entrada .btn{background:var(--verde)}
-  [hidden]{display:none!important}
-  /* decisão */
-  .decisao{border:1px solid var(--verde-linha);border-radius:6px;padding:6px 8px;background:#fff;min-width:150px}
-  .decisao.marcada{border-color:var(--verde);background:var(--verde-claro);font-weight:600}
-  .barra .dias{border:1px solid var(--verde-linha);border-radius:6px;padding:6px 8px;width:64px;background:#fff}
-  .grupo-abas{font-size:13px;color:var(--texto-suave);padding:10px 6px 10px 12px;align-self:center}
-</style>
+  <script src="/painel/js/sessao.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Conciliação com o banco | Painel financeiro | Belo Norte</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/modulos.js" defer></script>
 </head>
-<body>
-
-<header>
-  <div class="titulo">
-    <h1>Conciliação de títulos</h1>
-    <span class="fonte" id="fonteTitulos">Títulos: banco do PROCFIT</span>
-  </div>
-  <div class="controles" id="controles" hidden>
-    <label>Mês
-      <input type="month" id="mes">
-    </label>
-    <label>Tipo do arquivo
-      <select id="tipo">
-        <option value="auto">Detectar sozinho</option>
-        <option value="banco">Extrato do banco</option>
-        <option value="rede">Arquivo da Rede (cartão)</option>
-      </select>
-    </label>
-    <div class="arquivo">
-      <button class="btn" type="button" tabindex="-1">Adicionar arquivos do banco ou da Rede</button>
-      <input type="file" id="arquivo" accept=".xlsx,.xls,.csv" multiple aria-label="Adicionar arquivos do banco ou da Rede">
+<body class="tela-conciliacao">
+  <header class="topo">
+    <div>
+      <p class="marca">Belo Norte</p>
+      <h1>Painel financeiro</h1>
     </div>
-    <span class="nome-arquivo" id="nomeArquivo">Nenhum arquivo escolhido</span>
-    <button class="btn claro" type="button" id="limparArquivos" hidden>Limpar arquivos</button>
-    <div class="arquivo" style="margin-left:auto">
-      <button class="btn claro" type="button" tabindex="-1">Usar títulos de uma planilha</button>
-      <input type="file" id="arquivoTitulos" accept=".xlsx,.xls,.csv" aria-label="Usar títulos de uma planilha">
+    <div class="topo-acoes">
+      <nav id="modulos" class="modulos" aria-label="Módulos do painel" hidden></nav>
+      <button class="botao-texto" type="button">Sair</button>
     </div>
-  </div>
-</header>
+  </header>
 
-<section class="entrada" id="entrada" hidden>
-  <h2>Entrar na conciliação</h2>
-  <p>Use a chave de acesso do setor financeiro, a mesma do painel.</p>
-  <form id="formChave">
-    <input type="password" id="chave" placeholder="Chave de acesso" autocomplete="current-password" required>
-    <button class="btn" type="submit">Entrar</button>
-  </form>
-  <div id="avisoEntrada"></div>
-</section>
+  <main class="conteudo conteudo--largo">
+    <!-- Mesmas divisão e abas do financeiro (ver DESIGN.md: "Aba que é outra página") -->
+    <nav class="divisao" aria-label="Parte do financeiro">
+      <a class="divisao__item divisao__item--ativa" href="financeiro.html" aria-current="page">Contas a receber</a>
+      <a class="divisao__item" href="pagar.html">Contas a pagar</a>
+    </nav>
 
-<div id="conteudo" hidden>
-  <section class="fechamento" id="fechamento" aria-label="Fechamento do mês"></section>
-  <main>
-    <div id="aviso"></div>
-    <nav id="abas" role="tablist"></nav>
-    <div class="barra">
-      <input type="search" id="busca" placeholder="Buscar cliente, pedido, nota ou valor">
-      <label id="rotuloDias">Pedido parado há mais de <input type="number" class="dias" id="dias" min="1" value="15"> dias é candidato a cancelar</label>
-      <label id="rotuloAnteriores"><input type="checkbox" id="anteriores"> Incluir vencidos de meses anteriores</label>
-      <button class="btn" id="exportar" type="button">Baixar resultado em Excel</button>
-      <span class="total-lista" id="totalLista"></span>
+    <nav class="abas" aria-label="Visões do contas a receber">
+      <a class="aba" href="financeiro.html#titulos">Títulos em aberto</a>
+      <a class="aba" href="financeiro.html#parciais">Baixa parcial</a>
+      <a class="aba" href="financeiro.html#boletos">Boletos e prazos</a>
+      <a class="aba" href="financeiro.html#cobranca">Cobrança</a>
+      <a class="aba" href="despachos.html">Despachos</a>
+      <a class="aba" href="clientes.html">Clientes e crédito</a>
+      <a class="aba" href="recebimentos.html">Recebimentos</a>
+      <span class="aba aba--ativa" aria-current="page">Conciliação com o banco</span>
+    </nav>
+
+    <!-- Entrada com a chave: só aparece se o login não passar a chave -->
+    <section class="entrada" id="entrada" hidden>
+      <h2>Entrar na conciliação</h2>
+      <p>Use a chave de acesso do setor financeiro, a mesma do painel.</p>
+      <form id="formChave">
+        <input type="password" id="chave" placeholder="Chave de acesso" autocomplete="current-password" required>
+        <button class="btn" type="submit">Entrar</button>
+      </form>
+      <div id="avisoEntrada"></div>
+    </section>
+
+    <!-- Barra de envio: mês e extratos do banco ou da Rede -->
+    <section class="barra-filtros" id="controles" aria-label="Mês e extratos" hidden>
+      <div class="filtros conc-envio">
+        <label>Mês
+          <input type="month" id="mes">
+        </label>
+        <label hidden>Tipo do arquivo
+          <select id="tipo">
+            <option value="auto">Detectar sozinho</option>
+            <option value="banco">Extrato do banco</option>
+            <option value="rede">Arquivo da Rede (cartão)</option>
+          </select>
+        </label>
+        <div class="arquivo">
+          <button class="btn" type="button" tabindex="-1">Enviar extrato do banco ou da Rede</button>
+          <input type="file" id="arquivo" accept=".xlsx,.xls,.csv" multiple aria-label="Adicionar arquivos do banco ou da Rede">
+        </div>
+        <span class="nome-arquivo" id="nomeArquivo">Nenhum extrato guardado para este mês</span>
+        <button class="btn claro" type="button" id="limparArquivos" hidden>Limpar arquivos</button>
+        <!-- Plano B (banco do PROCFIT fora do ar): títulos de uma planilha. Escondido: os títulos vêm sozinhos do PROCFIT -->
+        <div class="arquivo" hidden>
+          <button class="btn claro" type="button" tabindex="-1">Usar títulos de uma planilha</button>
+          <input type="file" id="arquivoTitulos" accept=".xlsx,.xls,.csv" aria-label="Usar títulos de uma planilha">
+        </div>
+      </div>
+      <p class="conc-fonte"><span id="fonteTitulos">Títulos: banco do PROCFIT</span>. Os extratos enviados ficam guardados no painel.</p>
+    </section>
+
+    <div id="conteudo" hidden>
+      <!-- Prova da conciliação: a conta do mês -->
+      <section class="bloco fechamento" id="fechamento" aria-label="Prova da conciliação do mês"></section>
+
+      <div id="aviso"></div>
+
+      <!-- Trilha de trabalho: as listas em 6 passos (desenhada por js/conciliacao.js) -->
+      <nav id="abas" class="trilha" role="tablist" aria-label="Listas da conciliação"></nav>
+      <div id="guia"></div>
+
+      <div class="conc-ferramentas">
+        <input type="search" id="busca" placeholder="Buscar cliente, pedido, nota ou valor" aria-label="Buscar na lista">
+        <label id="rotuloDias">Pedido parado há mais de <input type="number" class="dias" id="dias" min="1" value="15"> dias é candidato a cancelar</label>
+        <label id="rotuloAnteriores"><input type="checkbox" id="anteriores"> Incluir vencidos de meses anteriores</label>
+        <span class="total-lista" id="totalLista"></span>
+        <button class="botao-secundario" id="exportar" type="button">Baixar Excel</button>
+      </div>
+      <div class="rolagem" id="tabela"></div>
     </div>
-    <div class="rolagem" id="tabela"></div>
   </main>
-</div>
 
-<aside class="ficha" id="ficha" aria-hidden="true"></aside>
+  <aside class="ficha" id="ficha" aria-hidden="true"></aside>
 
-<script src="/painel/vendor/xlsx.full.min.js"></script>
-<script src="js/conciliacao-motor.js"></script>
-<script src="js/conciliacao.js"></script>
+  <script src="/painel/vendor/xlsx.full.min.js"></script>
+  <script src="js/conciliacao-motor.js"></script>
+  <script src="js/conciliacao.js"></script>
+  <script>
+    // Menu de módulos igual ao das outras telas do financeiro
+    window.addEventListener('DOMContentLoaded', async () => {
+      try { modulos.desenharMenu(await modulos.setoresDaChave(), 'financeiro'); } catch (_) { /* sem menu */ }
+    });
+  </script>
 </body>
 </html>
