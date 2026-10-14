@@ -22,9 +22,14 @@
 //                 O log começa em mai/2026 (carga inicial do sistema); antes disso não há histórico.
 //                 APP_NAME começando com "PROCFIT" = alterado pelo sistema; qualquer outro
 //                 (ex.: SQL Server Management Studio) = alterado direto no banco.
-//                 USER_NAME pelo sistema é sempre "PROCFIT"; HOST_NAME (o computador) ajuda a
-//                 saber quem foi. Em PRODUTOS_VENDAS, USUARIO_ALTERACAO é quem salvou por último,
-//                 mas a rotina da madrugada regrava a linha com o nome do servidor (SQL-...).
+//                 Quem alterou (validado em out/2026, produto 186 em 30/06/2026 21:12):
+//                   pelo PROCFIT, USER_NAME é sempre "PROCFIT" e HOST_NAME é o LOGIN de quem
+//                   salvou (ex.: andreza.costa), ligado a USUARIOS.LOGIN para mostrar o nome;
+//                   direto no banco, USER_NAME é o login do banco (ex.: usr_felipe) e HOST_NAME
+//                   é o computador (ex.: SQL-ACAIBELONOR). Só NOME e LOGIN de USUARIOS: ela
+//                   guarda senhas, nunca usar SELECT * nela.
+//                 Em PRODUTOS_VENDAS, USUARIO_ALTERACAO é quem salvou por último, mas a rotina
+//                 da madrugada regrava a linha com o nome do servidor (SQL-...).
 //                 A margem do PROCFIT (MARGEM_BRUTA_PERCENTUAL) desconta encargos que variam por
 //                 tabela; o painel mostra a conta simples: (preço - custo médio) / preço.
 //
@@ -38,6 +43,7 @@ const { sql, getPool } = require('../config/db');
 const TABELA_VAREJO = 1;
 const TABELA_ATACADO = 4;
 const LIMITE_LISTA = 2000;
+const MUDANCAS_NA_LISTA = 3;
 
 // Empresa do lançamento de estoque, a partir do centro (ver acima)
 const EMPRESA_DO_CENTRO = `
@@ -55,8 +61,14 @@ const MUDANCAS_DE_PRECO = `
     A.PRECO_VENDA                               AS depois,
     LTRIM(RTRIM(A.USER_NAME))                   AS usuario,
     LTRIM(RTRIM(A.HOST_NAME))                   AS computador,
-    CASE WHEN A.APP_NAME LIKE 'PROCFIT%' THEN 0 ELSE 1 END AS fora_do_sistema
+    CASE WHEN A.APP_NAME LIKE 'PROCFIT%' THEN 0 ELSE 1 END AS fora_do_sistema,
+    CASE WHEN A.APP_NAME LIKE 'PROCFIT%'
+         THEN COALESCE(NULLIF(LTRIM(RTRIM(U.NOME)), ''), LTRIM(RTRIM(A.HOST_NAME)))
+         ELSE LTRIM(RTRIM(A.USER_NAME)) END    AS quem,
+    CASE WHEN A.APP_NAME LIKE 'PROCFIT%' THEN LTRIM(RTRIM(A.HOST_NAME)) END AS login
   FROM LOG_PRODUTOS_VENDAS A WITH (NOLOCK)
+  LEFT JOIN USUARIOS U WITH (NOLOCK)
+    ON A.APP_NAME LIKE 'PROCFIT%' AND LTRIM(RTRIM(U.LOGIN)) = LTRIM(RTRIM(A.HOST_NAME))
   JOIN LOG_PRODUTOS_VENDAS D WITH (NOLOCK)
     ON D.PRODUTO_VENDA = A.PRODUTO_VENDA
    AND D.DATA_HORA_GRAVACAO_LOG = A.DATA_HORA_GRAVACAO_LOG
@@ -225,8 +237,26 @@ async function painel(filtros) {
     FROM #LINHAS
     WHERE ${alerta}
     ORDER BY valor_vendido DESC, comprado DESC, produto;
+
+    -- As 3 últimas mudanças de preço de cada produto da lista (de qualquer data)
+    SELECT X.produto, X.tabela, CONVERT(varchar(19), X.quando, 120) AS quando,
+           X.antes, X.depois, X.quem, X.fora_do_sistema
+    FROM (
+      SELECT M.*, ROW_NUMBER() OVER (PARTITION BY M.produto ORDER BY M.quando DESC, M.tabela) AS ordem
+      FROM (${MUDANCAS_DE_PRECO}) M
+      WHERE M.produto IN (SELECT produto FROM #LINHAS WHERE ${alerta})
+    ) X
+    WHERE X.ordem <= ${MUDANCAS_NA_LISTA}
+    ORDER BY X.produto, X.ordem;
   `);
-  const [resumo, lista] = recordsets;
+  const [resumo, lista, mudancas] = recordsets;
+  // Junta as mudanças de preço na linha de cada produto
+  const porProduto = new Map();
+  for (const m of mudancas) {
+    if (!porProduto.has(m.produto)) porProduto.set(m.produto, []);
+    porProduto.get(m.produto).push(m);
+  }
+  for (const linha of lista) linha.ultimas_mudancas = porProduto.get(linha.produto) ?? [];
   return { resumo: resumo[0] ?? {}, lista };
 }
 
@@ -260,7 +290,7 @@ async function produto(codigo, filtros) {
       SELECT TOP 200
         M.tabela,
         CONVERT(varchar(19), M.quando, 120) AS quando,
-        M.antes, M.depois, M.usuario, M.computador, M.fora_do_sistema
+        M.antes, M.depois, M.quem, M.login, M.computador, M.fora_do_sistema
       FROM (${MUDANCAS_DE_PRECO}) M
       WHERE M.produto = @produto
       ORDER BY M.quando DESC;

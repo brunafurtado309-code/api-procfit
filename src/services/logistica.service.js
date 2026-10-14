@@ -57,7 +57,8 @@ const moedaBR = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency
 
 // Mudança de preço em uma linha de texto (usada no Excel)
 const mudancaEmTexto = (m) => `${String(m.quando).slice(0, 10).split('-').reverse().join('/')} ${m.nome_tabela}: `
-  + `${moedaBR(m.antes)} → ${moedaBR(m.depois)}${m.fora_do_sistema ? ' (fora do sistema)' : ''}`;
+  + `${moedaBR(m.antes)} → ${moedaBR(m.depois)}${m.quem ? ` por ${m.quem}` : ''}`
+  + `${m.fora_do_sistema ? ' (fora do sistema)' : ''}`;
 
 async function painel(query) {
   const dados = await repo.painel(montarFiltros(query));
@@ -84,18 +85,8 @@ async function produto(query, params) {
     margem_pct: margem(p.preco, p.custo_medio),
     atualizado_por: pessoa(p.atualizado_por),
   }));
-  // Quem alterou: fora do sistema, o login do banco; pelo sistema o log só diz "PROCFIT",
-  // então usa quem salvou a tabela de preço por último, se foi no mesmo minuto
-  const segundos = (texto) => (texto ? new Date(String(texto).replace(' ', 'T')).getTime() / 1000 : null);
-  ficha.historico = ficha.historico.map((h) => {
-    const salvo = ficha.precos.find((p) => p.tabela === h.tabela && p.atualizado_por
-      && Math.abs(segundos(p.atualizado_em) - segundos(h.quando)) <= 60);
-    return {
-      ...h,
-      nome_tabela: nomeTabela(h.tabela),
-      quem: h.fora_do_sistema ? h.usuario : (salvo?.atualizado_por ?? null),
-    };
-  });
+  // Quem alterou vem do próprio log (ver logistica.repository.js)
+  ficha.historico = ficha.historico.map((h) => ({ ...h, nome_tabela: nomeTabela(h.tabela) }));
   return ficha;
 }
 

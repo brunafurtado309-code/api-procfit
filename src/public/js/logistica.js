@@ -271,7 +271,13 @@ function cabecalhoOrdenavel(tabela, colunas, aoOrdenar) {
   tabela.tHead.replaceChildren(cab);
 }
 
-// As últimas mudanças de preço do produto, uma por linha: data, tabela, de → para
+// Primeiro nome de quem alterou ("ANDREZA NARA COSTA" ou "andreza.costa" viram "Andreza")
+function primeiroNome(nome) {
+  const primeiro = String(nome).trim().split(/[\s.]+/)[0].toLowerCase();
+  return primeiro.charAt(0).toUpperCase() + primeiro.slice(1);
+}
+
+// As últimas mudanças de preço do produto, uma por linha: data, tabela, de → para e quem
 function mudancasDePreco(mudancas = []) {
   if (!mudancas.length) return span('sem mudança desde mai/2026', 'qtd');
   const lista = document.createElement('div');
@@ -279,13 +285,15 @@ function mudancasDePreco(mudancas = []) {
     const linha = document.createElement('div');
     const valor = (v) => Number(v ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     linha.title = `${dataHoraBR(m.quando)} · ${m.nome_tabela}: ${dinheiro(m.antes)} → ${dinheiro(m.depois)}`
-      + `${m.fora_do_sistema ? ' · alterado fora do sistema' : ''}`;
+      + `${m.quem ? ` · por ${m.quem}` : ''}${m.fora_do_sistema ? ' · alterado fora do sistema' : ''}`;
     linha.append(
       `${dataBR(m.quando).slice(0, 6)}${dataBR(m.quando).slice(8)} `,
       span(m.nome_tabela, m.tabela === 4 ? 'tabela-preco tabela-preco--atacado' : 'tabela-preco tabela-preco--varejo'),
       ` ${valor(m.antes)} → ${valor(m.depois)}`,
     );
-    if (m.fora_do_sistema) linha.append(span(' · fora', 'negativo'));
+    const autor = [m.quem ? `por ${m.fora_do_sistema ? m.quem : primeiroNome(m.quem)}` : null, m.fora_do_sistema ? 'fora do sistema' : null]
+      .filter(Boolean).join(' · ');
+    if (autor) linha.append(span(autor, m.fora_do_sistema ? 'qtd negativo' : 'qtd'));
     lista.append(linha);
   }
   return lista;
@@ -442,7 +450,8 @@ async function abrirFicha(codigo) {
         const quem = h.fora_do_sistema
           ? comAuxiliar(h.quem ?? 'direto no banco', `fora do sistema${h.computador ? ` · ${h.computador}` : ''}`,
             'esquerda', 'qtd negativo')
-          : td(h.quem ?? 'pelo sistema', 'esquerda');
+          : comAuxiliar(h.quem ?? 'não registrado', h.login && h.login !== h.quem ? `login ${h.login}` : 'pelo PROCFIT',
+            'esquerda');
         return [
           td(dataHoraBR(h.quando), 'esquerda sem-quebra'),
           td(etiquetaTabela(h.tabela, h.nome_tabela), 'esquerda'),
