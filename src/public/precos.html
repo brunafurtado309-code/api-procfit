@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <script src="/painel/js/sessao.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tabela de preços | Painel | Belo Norte</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/modulos.js" defer></script>
+  <script src="js/precos.js" defer></script>
+</head>
+<body>
+  <header class="topo">
+    <div>
+      <p class="marca">Belo Norte</p>
+      <h1>Tabela de preços</h1>
+    </div>
+    <div class="topo-acoes">
+      <nav id="modulos" class="modulos" aria-label="Módulos do painel" hidden></nav>
+      <button id="trocar-chave" class="botao-texto" type="button">Trocar chave</button>
+    </div>
+  </header>
+
+  <main class="conteudo">
+    <section class="barra-filtros" aria-label="Pesquisa">
+      <div class="barra-filtros__linha">
+        <form id="form-pesquisa" class="pesquisa" role="search">
+          <label class="campo campo--busca">
+            <span class="sr-only">Encontrar produto</span>
+            <input id="pesquisa-termo" type="search" maxlength="60" autocomplete="off"
+                   placeholder="Encontrar por código ou nome do produto">
+          </label>
+          <button id="limpar-pesquisa" type="button" class="botao-secundario" hidden>Limpar</button>
+        </form>
+        <div class="barra-filtros__acoes">
+          <button id="atualizar" type="button" class="botao-secundario">Atualizar preços</button>
+          <button id="baixar-excel" type="button" class="botao-secundario">Baixar Excel</button>
+        </div>
+      </div>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="bloco" id="painel" hidden>
+      <h2 id="titulo-lista">Produtos</h2>
+      <p class="bloco__descricao">Preço de venda no varejo, como está cadastrado agora no PROCFIT.</p>
+      <div class="tabela-rolagem">
+        <table class="tabela" id="tabela-precos">
+          <thead>
+            <tr>
+              <th scope="col" class="esquerda">Código</th>
+              <th scope="col" class="esquerda">Produto</th>
+              <th scope="col">Valor varejo</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
