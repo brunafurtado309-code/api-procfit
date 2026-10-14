@@ -13,11 +13,16 @@
 // Quem lançou a nota de compra: NF_COMPRA.USUARIO_LOGADO e DATA_HORA; o lançamento de estoque
 // aponta a nota em REG_MASTER_ORIGEM (TAB_MASTER_ORIGEM 41). Se não achar por aí, procura pelo
 // número da nota (DOCUMENTO) e o fornecedor (ENTIDADE).
+// Devolução de venda por nota: a entrada é devolução quando existe a nota em
+// NF_FATURAMENTO_DEVOLUCOES (a mesma que o painel de Vendas usa). O lançamento de estoque aponta a
+// devolução em REG_MASTER_ORIGEM, ou traz em DOCUMENTO o nº da nota de venda ORIGINAL
+// (NF_FATURAMENTO_ORIGEM), igual à VENDAS_ANALITICAS. Devolução no caixa = origem 601979.
 
 const { sql, getPool } = require('../config/db');
 const { EMPRESA_DO_CENTRO } = require('./logistica.repository');
 
 const TAB_NOTA_COMPRA = 41;
+const TAB_CAIXA = 601979;
 const LIMITE_LISTA = 3000;
 const LIMITE_MOVIMENTOS = 500;
 
@@ -107,7 +112,10 @@ async function movimentos(codigo, filtros) {
         NC.NF_NUMERO                                     AS nota_compra,
         CONVERT(varchar(19), NC.DATA_HORA, 120)          AS nota_lancada_em,
         CONVERT(varchar(19), NC.DATA_PROCESSAMENTO, 120) AS nota_processada_em,
-        COALESCE(NULLIF(LTRIM(RTRIM(U.NOME)), ''), LTRIM(RTRIM(U.LOGIN))) AS nota_lancada_por
+        COALESCE(NULLIF(LTRIM(RTRIM(U.NOME)), ''), LTRIM(RTRIM(U.LOGIN))) AS nota_lancada_por,
+        DEV.NF_NUMERO                                    AS devolucao_nota,
+        CONVERT(varchar(19), DEV.DATA_HORA, 120)         AS devolucao_lancada_em,
+        COALESCE(NULLIF(LTRIM(RTRIM(UD.NOME)), ''), LTRIM(RTRIM(UD.LOGIN))) AS devolucao_lancada_por
       FROM ESTOQUE_LANCAMENTOS EL WITH (NOLOCK)
       LEFT JOIN EMPRESAS_USUARIAS EU WITH (NOLOCK) ON EU.EMPRESA_USUARIA = ${EMPRESA_DO_CENTRO}
       LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = EL.ENTIDADE
@@ -120,6 +128,16 @@ async function movimentos(codigo, filtros) {
         ORDER BY CASE WHEN N.NF_COMPRA = EL.REG_MASTER_ORIGEM THEN 0 ELSE 1 END, N.NF_COMPRA DESC
       ) NC
       LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = NC.USUARIO_LOGADO
+      OUTER APPLY (
+        SELECT TOP 1 DV.NF_NUMERO, DV.DATA_HORA, DV.USUARIO_LOGADO
+        FROM NF_FATURAMENTO_DEVOLUCOES DV WITH (NOLOCK)
+        LEFT JOIN NF_FATURAMENTO NFO WITH (NOLOCK) ON NFO.NF_FATURAMENTO = DV.NF_FATURAMENTO_ORIGEM
+        WHERE EL.TAB_MASTER_ORIGEM NOT IN (${TAB_NOTA_COMPRA}, ${TAB_CAIXA})
+          AND (DV.NF_FATURAMENTO_DEVOLUCAO = EL.REG_MASTER_ORIGEM OR NFO.NF_NUMERO = EL.DOCUMENTO)
+        ORDER BY CASE WHEN DV.NF_FATURAMENTO_DEVOLUCAO = EL.REG_MASTER_ORIGEM THEN 0 ELSE 1 END,
+                 DV.NF_FATURAMENTO_DEVOLUCAO DESC
+      ) DEV
+      LEFT JOIN USUARIOS UD WITH (NOLOCK) ON UD.USUARIO = DEV.USUARIO_LOGADO
       WHERE EL.PRODUTO = @produto
         AND EL.DATA >= @de AND EL.DATA < @ate
         AND ISNULL(EL.ESTOQUE_ENTRADA, 0) > 0
@@ -163,4 +181,4 @@ async function movimentos(codigo, filtros) {
   return { produto: cadastro[0] ?? null, entradas, saida: saidas[0]?.saida ?? 0, estoque, clientes };
 }
 
-module.exports = { TAB_NOTA_COMPRA, produtos, movimentos };
+module.exports = { TAB_NOTA_COMPRA, TAB_CAIXA, produtos, movimentos };

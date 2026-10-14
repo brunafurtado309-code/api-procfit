@@ -18,7 +18,7 @@ const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0
 const NOMES_POR_ORIGEM = {
   [repo.TAB_NOTA_COMPRA]: { 2: 'Compra (nota de entrada)', entrada: 'Entrada por nota de compra' },
   753289: { 1: 'Venda por nota', saida: 'Saída por nota fiscal' },
-  601979: { saida: 'Venda no caixa', entrada: 'Devolução no caixa' },
+  [repo.TAB_CAIXA]: { saida: 'Venda no caixa', entrada: 'Devolução no caixa' },
   339822: { 4: 'Transferência recebida' },
   561384: { 20: 'Entrada por nota' },
   773844: { 19: 'Entrada por nota' },
@@ -65,8 +65,18 @@ async function movimentos(query, params) {
   if (!Number.isInteger(codigo) || codigo <= 0) throw new AppError('Código do produto inválido');
   const dados = await repo.movimentos(codigo, montarFiltros(query));
   if (!dados.produto) throw new AppError(`Produto ${codigo} não encontrado`, 404);
-  // Fornecedor = quem mandou a mercadoria (o lançamento de estoque guarda quem está na nota)
-  dados.entradas = dados.entradas.map(({ entidade, ...m }) => ({ ...m, nome: nomeDoMovimento(m), fornecedor: entidade }));
+  // Separa o que chegou (nota de fornecedor, transferência) do que voltou (devolução de venda).
+  // Na nota que chegou, quem está no lançamento é o fornecedor; na devolução, é o cliente.
+  const entradas = dados.entradas.map((m) => {
+    const devolucao = m.devolucao_nota != null || m.origem === repo.TAB_CAIXA;
+    return {
+      ...m,
+      devolucao,
+      nome: m.devolucao_nota != null ? 'Devolução de venda' : nomeDoMovimento(m),
+    };
+  });
+  dados.entradas = entradas.filter((m) => !m.devolucao).map(({ entidade, ...m }) => ({ ...m, fornecedor: entidade }));
+  dados.devolucoes = entradas.filter((m) => m.devolucao).map(({ entidade, ...m }) => ({ ...m, cliente: entidade }));
   return dados;
 }
 

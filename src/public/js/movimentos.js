@@ -313,6 +313,25 @@ async function abrirFicha(codigo) {
       'Nenhuma entrada no período.',
     );
 
+    // Devoluções: o que voltou para o estoque, separado do que chegou
+    const totalDevolvido = f.devolucoes.reduce((t, m) => t + (Number(m.entrada) || 0), 0);
+    const devolucoes = tabelaSimples(
+      [['Data da entrada', true], ['Empresa', true], ['Cliente', true], ['Nota original', true],
+        ['Nota de devolução', true], ['Quantidade no estoque'], ['Devolução lançada por', true]],
+      f.devolucoes.map((m) => [
+        td(dataHoraBR(m.quando), 'esquerda sem-quebra'),
+        td(m.nome_empresa || `Empresa ${m.empresa}`, 'esquerda'),
+        comAuxiliar(m.cliente || '—', m.nome, 'esquerda'),
+        td(m.documento ? String(m.documento) : '—', 'esquerda'),
+        td(m.devolucao_nota ? String(m.devolucao_nota) : '—', 'esquerda'),
+        td(inteiro(m.entrada), 'coluna-final'),
+        m.devolucao_lancada_por
+          ? td(`${m.devolucao_lancada_por} em ${dataHoraBR(m.devolucao_lancada_em)}`, 'esquerda')
+          : td('—', 'esquerda'),
+      ]),
+      'Nenhuma devolução no período.',
+    );
+
     // Saídas: só o total, e os 3 clientes que mais compraram
     const saida = document.createElement('dl');
     saida.className = 'numeros';
@@ -336,12 +355,19 @@ async function abrirFicha(codigo) {
     el('ficha-corpo').replaceChildren(
       Object.assign(document.createElement('h3'), { textContent: 'Saldo hoje por empresa' }),
       saldos,
-      Object.assign(document.createElement('h3'), { textContent: `Entradas do período (${inteiro(totalEntradas)})` }),
+      Object.assign(document.createElement('h3'), { textContent: `Notas que chegaram (${inteiro(totalEntradas)})` }),
       Object.assign(document.createElement('p'), {
         className: 'explica',
-        textContent: 'Todas as entradas no estoque. Nas notas de compra, quem lançou no PROCFIT e quando foi processada.',
+        textContent: 'Mercadoria que entrou no estoque por nota: compras, transferências e outras notas. '
+          + 'Nas compras, quem lançou no PROCFIT e quando foi processada.',
       }),
       entradas,
+      Object.assign(document.createElement('h3'), { textContent: `Devoluções (${inteiro(totalDevolvido)})` }),
+      Object.assign(document.createElement('p'), {
+        className: 'explica',
+        textContent: 'O que o cliente devolveu e voltou para o estoque, por nota de devolução ou no caixa.',
+      }),
+      devolucoes,
       Object.assign(document.createElement('h3'), { textContent: 'Saídas do período' }),
       saida,
       Object.assign(document.createElement('h3'), { textContent: 'Clientes que mais compraram' }),
