@@ -59,7 +59,8 @@ async function movimentos(query, params) {
   if (!Number.isInteger(codigo) || codigo <= 0) throw new AppError('Código do produto inválido');
   const dados = await repo.movimentos(codigo, montarFiltros(query));
   if (!dados.produto) throw new AppError(`Produto ${codigo} não encontrado`, 404);
-  dados.movimentos = dados.movimentos.map((m) => ({ ...m, nome: nomeDoMovimento(m) }));
+  dados.entradas = dados.entradas.map((m) => ({ ...m, nome: nomeDoMovimento(m) }));
+  dados.saidas = dados.saidas.map((m) => ({ ...m, nome: nomeDoMovimento({ ...m, entrada: 0 }) }));
   return dados;
 }
 

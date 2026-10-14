@@ -79,7 +79,8 @@ async function produtos(filtros) {
   return { resumo: resumo[0] ?? {}, lista };
 }
 
-// Movimento a movimento de um produto no período, com quem lançou a nota de compra
+// Ficha de um produto no período: cada ENTRADA em detalhe (com quem lançou a nota de compra)
+// e as SAÍDAS só somadas por tipo, porque as vendas viram centenas de linhas.
 async function movimentos(codigo, filtros) {
   const pool = await getPool();
   const { recordsets } = await criarRequest(pool, filtros)
@@ -99,7 +100,6 @@ async function movimentos(codigo, filtros) {
         EL.TIPO_MOVIMENTO                                AS tipo,
         EL.TAB_MASTER_ORIGEM                             AS origem,
         ISNULL(EL.ESTOQUE_ENTRADA, 0)                    AS entrada,
-        ISNULL(EL.ESTOQUE_SAIDA, 0)                      AS saida,
         NULLIF(EL.DOCUMENTO, 0)                          AS documento,
         LTRIM(RTRIM(E.NOME))                             AS entidade,
         NC.NF_NUMERO                                     AS nota_compra,
@@ -120,8 +120,23 @@ async function movimentos(codigo, filtros) {
       LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = NC.USUARIO_LOGADO
       WHERE EL.PRODUTO = @produto
         AND EL.DATA >= @de AND EL.DATA < @ate
+        AND ISNULL(EL.ESTOQUE_ENTRADA, 0) > 0
         AND (@empresa IS NULL OR ${EMPRESA_DO_CENTRO} = @empresa)
       ORDER BY EL.DATA_HORA DESC, EL.ESTOQUE DESC;
+
+      SELECT
+        EL.TIPO_MOVIMENTO                AS tipo,
+        EL.TAB_MASTER_ORIGEM             AS origem,
+        SUM(ISNULL(EL.ESTOQUE_SAIDA, 0)) AS saida,
+        COUNT(*)                         AS lancamentos,
+        CONVERT(varchar(19), MAX(EL.DATA_HORA), 120) AS ultima
+      FROM ESTOQUE_LANCAMENTOS EL WITH (NOLOCK)
+      WHERE EL.PRODUTO = @produto
+        AND EL.DATA >= @de AND EL.DATA < @ate
+        AND ISNULL(EL.ESTOQUE_SAIDA, 0) > 0
+        AND (@empresa IS NULL OR ${EMPRESA_DO_CENTRO} = @empresa)
+      GROUP BY EL.TIPO_MOVIMENTO, EL.TAB_MASTER_ORIGEM
+      ORDER BY SUM(ISNULL(EL.ESTOQUE_SAIDA, 0)) DESC;
 
       SELECT X.empresa, LTRIM(RTRIM(EU.NOME_FANTASIA)) AS nome, X.saldo
       FROM (
@@ -135,8 +150,8 @@ async function movimentos(codigo, filtros) {
       WHERE @empresa IS NULL OR X.empresa = @empresa
       ORDER BY X.empresa;
     `);
-  const [cadastro, lista, estoque] = recordsets;
-  return { produto: cadastro[0] ?? null, movimentos: lista, estoque };
+  const [cadastro, entradas, estoque, saidas] = recordsets;
+  return { produto: cadastro[0] ?? null, entradas, saidas, estoque };
 }
 
 module.exports = { TAB_NOTA_COMPRA, produtos, movimentos };

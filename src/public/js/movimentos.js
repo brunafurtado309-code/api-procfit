@@ -281,7 +281,7 @@ async function abrirFicha(codigo) {
     el('ficha-titulo').textContent = f.produto.descricao;
     el('ficha-resumo').textContent = `código ${f.produto.produto} · saldo hoje ${inteiro(saldo)}`
       + ` · ${dataBR(el('inicio').value)} a ${dataBR(el('fim').value)}`;
-    mostrarStatus(f.movimentos.length >= 500 ? 'Mostrando os 500 movimentos mais recentes do período.' : '',
+    mostrarStatus(f.entradas.length >= 500 ? 'Mostrando as 500 entradas mais recentes do período.' : '',
       false, 'ficha-status');
 
     // Saldo por empresa
@@ -296,32 +296,49 @@ async function abrirFicha(codigo) {
       saldos.append(bloco);
     }
 
-    // Movimentos
-    const movimentos = tabelaSimples(
-      [['Quando', true], ['Empresa', true], ['Movimento', true], ['Entrada'], ['Saída'], ['Documento', true],
-        ['Cliente / fornecedor', true], ['Nota lançada por', true]],
-      f.movimentos.map((m) => [
+    // Entradas: uma linha por entrada, com a nota e quem lançou
+    const entradas = tabelaSimples(
+      [['Quando', true], ['Empresa', true], ['Entrada', true], ['Quantidade'], ['Nota / documento', true],
+        ['Fornecedor', true], ['Nota lançada por', true]],
+      f.entradas.map((m) => [
         td(dataHoraBR(m.quando), 'esquerda sem-quebra'),
         td(m.nome_empresa || `Empresa ${m.empresa}`, 'esquerda'),
         td(m.nome, 'esquerda'),
-        td(Number(m.entrada) ? inteiro(m.entrada) : '', Number(m.entrada) ? 'coluna-final' : null),
-        td(Number(m.saida) ? inteiro(m.saida) : ''),
+        td(inteiro(m.entrada), 'coluna-final'),
         td(m.documento ? String(m.documento) : '—', 'esquerda'),
         td(m.entidade || '—', 'esquerda'),
         quemLancou(m),
       ]),
-      'Nenhum movimento no período.',
+      'Nenhuma entrada no período.',
+    );
+
+    // Saídas: só o total de cada tipo
+    const totalSaidas = f.saidas.reduce((t, s) => t + (Number(s.saida) || 0), 0);
+    const saidas = tabelaSimples(
+      [['Saída', true], ['Quantidade'], ['Lançamentos'], ['Última', true]],
+      f.saidas.map((s) => [
+        td(s.nome, 'esquerda'),
+        td(inteiro(s.saida), 'coluna-final'),
+        td(inteiro(s.lancamentos)),
+        td(dataHoraBR(s.ultima), 'esquerda sem-quebra'),
+      ]),
+      'Nenhuma saída no período.',
     );
 
     el('ficha-corpo').replaceChildren(
       Object.assign(document.createElement('h3'), { textContent: 'Saldo hoje por empresa' }),
       saldos,
-      Object.assign(document.createElement('h3'), { textContent: 'Movimentos do período' }),
+      Object.assign(document.createElement('h3'), {
+        textContent: `Entradas do período (${inteiro(f.entradas.reduce((t, m) => t + (Number(m.entrada) || 0), 0))})`,
+      }),
       Object.assign(document.createElement('p'), {
         className: 'explica',
-        textContent: 'Cada entrada e saída do estoque. Nas compras, quem lançou a nota no PROCFIT e quando ela foi processada.',
+        textContent: 'Cada entrada no estoque. Nas notas de compra, quem lançou no PROCFIT e quando foi processada.',
       }),
-      movimentos,
+      entradas,
+      Object.assign(document.createElement('h3'), { textContent: `Saídas do período (${inteiro(totalSaidas)})` }),
+      Object.assign(document.createElement('p'), { className: 'explica', textContent: 'Total que saiu, por tipo.' }),
+      saidas,
     );
   } catch (erro) {
     mostrarStatus(erro.message, true, 'ficha-status');
