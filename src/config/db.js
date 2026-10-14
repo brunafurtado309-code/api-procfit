@@ -10,6 +10,10 @@ const config = {
   database: process.env.DB_DATABASE,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
+  // Tempo máximo que uma consulta pode levar. Sem isto, o pacote mssql usa 15 s,
+  // e as consultas pesadas (ex.: faturamento por vendedor no mês inteiro) passavam disso.
+  // Dá para mudar sem mexer no código: DB_REQUEST_TIMEOUT_MS no .env / no Render.
+  requestTimeout: Number(process.env.DB_REQUEST_TIMEOUT_MS) || 90000,
   options: {
     encrypt: true,
     trustServerCertificate: true,

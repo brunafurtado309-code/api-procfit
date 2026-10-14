@@ -13,6 +13,9 @@
 //   2. a ligação pedido x nota usava "OR TRY_CAST(PEDIDO_CLIENTE)", que lia a tabela de notas
 //      inteira uma vez PARA CADA pedido;
 //   3. a mesma montagem rodava 3 vezes seguidas (resumo, lista e gráfico).
+// Out/2026: o cupom do caixa era procurado nas tabelas do PDV uma vez PARA CADA pedido,
+// e o mês inteiro voltou a passar de 15 s. Agora os cupons dos pedidos são lidos uma vez só
+// (#CUPS), e as notas pelo PEDIDO_CLIENTE só a partir do pedido mais antigo do período.
 // Agora a montagem é feita uma vez só, em tabelas temporárias: primeiro os pedidos do período
 // (#P), depois as notas ligadas a eles numa leitura única (#NF), e por fim a linha completa
 // de cada pedido (#BASE). Resumo, lista e gráfico leem de #BASE. O resultado é o mesmo de antes.
@@ -40,6 +43,7 @@ const montarBase = (ondePedidos) => `
   IF OBJECT_ID('tempdb..#VADEV') IS NOT NULL DROP TABLE #VADEV;
   IF OBJECT_ID('tempdb..#DEV') IS NOT NULL DROP TABLE #DEV;
   IF OBJECT_ID('tempdb..#DEVP') IS NOT NULL DROP TABLE #DEVP;
+  IF OBJECT_ID('tempdb..#CUPS') IS NOT NULL DROP TABLE #CUPS;
 
   -- 1. Só os pedidos que interessam (período, vendedor ou um pedido específico)
   SELECT P.PEDIDO_PREVENDA, P.EMPRESA, P.DATA_HORA, P.DATA_HORA_PROCESSAR,
@@ -49,6 +53,9 @@ const montarBase = (ondePedidos) => `
   WHERE ${ondePedidos}
   OPTION (RECOMPILE);
   CREATE CLUSTERED INDEX IX_P ON #P (PEDIDO_PREVENDA);
+
+  -- Dia do pedido mais antigo: nota e devolução de um pedido nunca são anteriores a ele
+  DECLARE @desde date = (SELECT CAST(MIN(DATA_HORA) AS date) FROM #P);
 
   -- 2. As notas desses pedidos, numa leitura só da NF_FATURAMENTO.
   --    A nota se liga ao pedido por PEDIDO_VENDA ou pelo texto de PEDIDO_CLIENTE (ver acima);
@@ -66,6 +73,8 @@ const montarBase = (ondePedidos) => `
       SELECT TRY_CAST(LTRIM(RTRIM(N.PEDIDO_CLIENTE)) AS numeric(18, 0)) AS pedido,
              N.NF_NUMERO, N.NF_FATURAMENTO, N.MOVIMENTO
       FROM NF_FATURAMENTO N WITH (NOLOCK)
+      WHERE N.MOVIMENTO >= @desde
+        AND N.PEDIDO_CLIENTE IS NOT NULL
     ) C
     JOIN #P PP ON PP.PEDIDO_PREVENDA = C.pedido
   ) X
@@ -76,10 +85,20 @@ const montarBase = (ondePedidos) => `
   );
   CREATE CLUSTERED INDEX IX_NF ON #NF (pedido, ordem);
 
+  -- 2b. Os cupons do caixa desses pedidos, numa leitura só.
+  --     O pedido vira uma PRÉ-VENDA do PDV (PDV_PREVENDAS.PEDIDO_INTERNET = pedido),
+  --     e o cupom aponta para essa pré-venda, que tem numeração PRÓPRIA.
+  SELECT PP.PEDIDO_PREVENDA AS pedido, PV.ECF_CUPOM, PV.CAIXA, PV.MOVIMENTO,
+         PV.REG_MASTER_ORIGEM, ISNULL(PV.STATUS, '') AS STATUS
+  INTO #CUPS
+  FROM #P PP
+  JOIN PDV_PREVENDAS PPV WITH (NOLOCK) ON PPV.PEDIDO_INTERNET = PP.PEDIDO_PREVENDA
+  JOIN PDV_VENDAS PV WITH (NOLOCK) ON PV.PREVENDA = PPV.PREVENDA AND PV.LOJA = PPV.LOJA;
+  CREATE CLUSTERED INDEX IX_CUPS ON #CUPS (pedido, MOVIMENTO);
+
   -- 3. Devoluções desses pedidos (valor positivo = quanto voltou)
   --    Primeiro, só as linhas de devolução da VENDAS_ANALITICAS desde o pedido mais antigo:
   --    uma leitura só, em vez de procurar nota por nota.
-  DECLARE @desde date = (SELECT CAST(MIN(DATA_HORA) AS date) FROM #P);
   SELECT VA.DOCUMENTO_TIPO, VA.DOCUMENTO_NUMERO, VA.CLIENTE, VA.REG_MASTER_ORIGEM,
          VA.MOVIMENTO, VA.VENDA_LIQUIDA
   INTO #VADEV
@@ -114,12 +133,10 @@ const montarBase = (ondePedidos) => `
   INSERT INTO #DEV (pedido, tipo, documento, dia, valor, usuario)
   SELECT D.pedido, 'caixa', CAST(D.DEVOLUCAO_PRODUTO AS varchar(30)), VAL.dia, -VAL.valor, NULL
   FROM (
-    SELECT DISTINCT PP.PEDIDO_PREVENDA AS pedido, DP.DEVOLUCAO_PRODUTO
-    FROM #P PP
-    JOIN PDV_PREVENDAS PPV WITH (NOLOCK) ON PPV.PEDIDO_INTERNET = PP.PEDIDO_PREVENDA
-    JOIN PDV_VENDAS PV WITH (NOLOCK) ON PV.PREVENDA = PPV.PREVENDA AND PV.LOJA = PPV.LOJA
+    SELECT DISTINCT CS.pedido, DP.DEVOLUCAO_PRODUTO
+    FROM #CUPS CS
     JOIN DEV_PRODUTOS DP WITH (NOLOCK)
-      ON DP.REG_MASTER_ORIGEM_RELACIONADO = PV.REG_MASTER_ORIGEM
+      ON DP.REG_MASTER_ORIGEM_RELACIONADO = CS.REG_MASTER_ORIGEM
      AND DP.REG_MASTER_ORIGEM_RELACIONADO > 0
   ) D
   OUTER APPLY (
@@ -216,18 +233,15 @@ const montarBase = (ondePedidos) => `
     ORDER BY C.CHECKOUT_PREVENDA DESC
   ) CK
   LEFT JOIN #NF NF ON NF.pedido = P.PEDIDO_PREVENDA AND NF.ordem = 1
-  -- Cupom do caixa: o pedido vira uma PRÉ-VENDA do PDV (PDV_PREVENDAS.PEDIDO_INTERNET = pedido),
-  -- e o cupom aponta para essa pré-venda, que tem numeração PRÓPRIA. Cupom cancelado (STATUS 'C')
-  -- não conta. Mesma ligação da consulta Follow-up de pedidos do PROCFIT (validado em out/2026:
+  -- Cupom do caixa (lido em #CUPS, passo 2b). Cupom cancelado (STATUS 'C') não conta. Mesma ligação da consulta Follow-up de pedidos do PROCFIT (validado em out/2026:
   -- a ligação antiga "PDV_VENDAS.PREVENDA = nº do pedido" achava 636 pedidos em 30 dias,
   -- TODOS errados, e deixava de achar os 825 certos).
   OUTER APPLY (
-    SELECT TOP 1 PV.ECF_CUPOM, PV.CAIXA, PV.MOVIMENTO
-    FROM PDV_PREVENDAS PPV WITH (NOLOCK)
-    JOIN PDV_VENDAS PV WITH (NOLOCK) ON PV.PREVENDA = PPV.PREVENDA AND PV.LOJA = PPV.LOJA
-    WHERE PPV.PEDIDO_INTERNET = P.PEDIDO_PREVENDA
-      AND ISNULL(PV.STATUS, '') NOT LIKE 'C'
-    ORDER BY PV.MOVIMENTO DESC
+    SELECT TOP 1 CS.ECF_CUPOM, CS.CAIXA, CS.MOVIMENTO
+    FROM #CUPS CS
+    WHERE CS.pedido = P.PEDIDO_PREVENDA
+      AND CS.STATUS NOT LIKE 'C'
+    ORDER BY CS.MOVIMENTO DESC
   ) CUP
   OUTER APPLY (
     SELECT COUNT(*) AS titulos, SUM(ISNULL(TR.VALOR, 0)) AS valor_titulos,
