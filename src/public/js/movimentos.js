@@ -268,7 +268,7 @@ function quemLancou(m) {
   return comAuxiliar(texto, auxiliar, 'esquerda');
 }
 
-// Os três grupos de entrada da ficha, cada um com as colunas do seu detalhe
+// Os grupos de entrada da ficha, cada um com as colunas do seu detalhe
 const GRUPOS_DE_ENTRADA = [
   {
     id: 'nota',
@@ -313,6 +313,19 @@ const GRUPOS_DE_ENTRADA = [
       td(m.devolucao_lancada_por ? `${m.devolucao_lancada_por} em ${dataHoraBR(m.devolucao_lancada_em)}` : '—', 'esquerda'),
     ],
   },
+  {
+    id: 'cancelada',
+    titulo: 'Notas de venda canceladas',
+    colunas: [['Data e hora', true], ['Empresa', true], ['Cliente', true], ['Nota cancelada', true],
+      ['Quantidade que voltou']],
+    linha: (m) => [
+      td(dataHoraBR(m.quando), 'esquerda sem-quebra'),
+      td(m.nome_empresa || `Empresa ${m.empresa}`, 'esquerda'),
+      td(m.cliente || '—', 'esquerda'),
+      td(m.documento ? String(m.documento) : '—', 'esquerda'),
+      td(inteiro(m.entrada), 'coluna-final'),
+    ],
+  },
 ];
 
 async function abrirFicha(codigo) {
@@ -343,7 +356,8 @@ async function abrirFicha(codigo) {
       saldos.append(bloco);
     }
 
-    // Entradas em cards: notas fiscais, transferências e devoluções (só os que tiverem movimento).
+    // Entradas em cards: notas fiscais, transferências, devoluções e notas canceladas (só os que
+    // tiverem movimento).
     // Clicar no card abre o detalhe embaixo.
     const detalhe = document.createElement('div');
     const cartoes = document.createElement('div');

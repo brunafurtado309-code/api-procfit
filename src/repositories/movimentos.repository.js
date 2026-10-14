@@ -17,12 +17,16 @@
 // NF_FATURAMENTO_DEVOLUCOES (a mesma que o painel de Vendas usa). O lançamento de estoque aponta a
 // devolução em REG_MASTER_ORIGEM, ou traz em DOCUMENTO o nº da nota de venda ORIGINAL
 // (NF_FATURAMENTO_ORIGEM), igual à VENDAS_ANALITICAS. Devolução no caixa = origem 601979.
+// Nota de venda cancelada = origem 561384 (CANCELAMENTOS_NOTAS_FISCAIS, conferido em out/2026 na
+// nota 10579): o cancelamento devolve ao estoque todos os itens da nota; DOCUMENTO é o nº da nota
+// cancelada e ENTIDADE é o cliente dela.
 
 const { sql, getPool } = require('../config/db');
 const { EMPRESA_DO_CENTRO } = require('./logistica.repository');
 
 const TAB_NOTA_COMPRA = 41;
 const TAB_CAIXA = 601979;
+const TAB_CANCELAMENTO_NOTA = 561384;
 const LIMITE_LISTA = 3000;
 const LIMITE_MOVIMENTOS = 500;
 
@@ -132,7 +136,7 @@ async function movimentos(codigo, filtros) {
         SELECT TOP 1 DV.NF_NUMERO, DV.DATA_HORA, DV.USUARIO_LOGADO
         FROM NF_FATURAMENTO_DEVOLUCOES DV WITH (NOLOCK)
         LEFT JOIN NF_FATURAMENTO NFO WITH (NOLOCK) ON NFO.NF_FATURAMENTO = DV.NF_FATURAMENTO_ORIGEM
-        WHERE EL.TAB_MASTER_ORIGEM NOT IN (${TAB_NOTA_COMPRA}, ${TAB_CAIXA})
+        WHERE EL.TAB_MASTER_ORIGEM NOT IN (${TAB_NOTA_COMPRA}, ${TAB_CAIXA}, ${TAB_CANCELAMENTO_NOTA})
           AND (DV.NF_FATURAMENTO_DEVOLUCAO = EL.REG_MASTER_ORIGEM OR NFO.NF_NUMERO = EL.DOCUMENTO)
         ORDER BY CASE WHEN DV.NF_FATURAMENTO_DEVOLUCAO = EL.REG_MASTER_ORIGEM THEN 0 ELSE 1 END,
                  DV.NF_FATURAMENTO_DEVOLUCAO DESC
@@ -181,4 +185,4 @@ async function movimentos(codigo, filtros) {
   return { produto: cadastro[0] ?? null, entradas, saida: saidas[0]?.saida ?? 0, estoque, clientes };
 }
 
-module.exports = { TAB_NOTA_COMPRA, TAB_CAIXA, produtos, movimentos };
+module.exports = { TAB_NOTA_COMPRA, TAB_CAIXA, TAB_CANCELAMENTO_NOTA, produtos, movimentos };
