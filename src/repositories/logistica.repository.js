@@ -387,4 +387,4 @@ async function empresas() {
   return recordset;
 }
 
-module.exports = { ALERTAS, TABELA_VAREJO, TABELA_ATACADO, painel, produto, empresas };
+module.exports = { ALERTAS, TABELA_VAREJO, TABELA_ATACADO, EMPRESA_DO_CENTRO, painel, produto, empresas };

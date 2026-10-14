@@ -12,7 +12,7 @@
 
   const NOMES_TELAS = {
     vendas: 'Vendas', financeiro: 'Financeiro', faturamento: 'Faturamento', logistica: 'Logística',
-    precos: 'Tabela de preços', admin: 'Administrativo',
+    precos: 'Tabela de preços', movimentos: 'Entradas e saídas', admin: 'Administrativo',
   };
   const NOMES_STATUS = { pendente: 'Aguardando', aprovado: 'Liberado', bloqueado: 'Bloqueado' };
 
@@ -93,7 +93,7 @@
   async function carregar() {
     try {
       const { setores, usuarios } = await chamar('/usuarios');
-      const ordem = ['vendas', 'financeiro', 'faturamento', 'logistica', 'precos', 'admin'].filter((s) => setores.includes(s));
+      const ordem = ['vendas', 'financeiro', 'faturamento', 'logistica', 'precos', 'movimentos', 'admin'].filter((s) => setores.includes(s));
       const linhas = $('linhas');
       linhas.replaceChildren();
 

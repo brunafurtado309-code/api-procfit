@@ -13,6 +13,7 @@ const modulos = (() => {
     faturamento: { titulo: 'Faturamento', pagina: 'faturamento.html' },
     logistica: { titulo: 'Logística', pagina: 'logistica.html' },
     precos: { titulo: 'Tabela de preços', pagina: 'precos.html' },
+    movimentos: { titulo: 'Entradas e saídas', pagina: 'movimentos.html' },
     admin: { titulo: 'Administrativo', pagina: 'admin.html' },
   };
 
