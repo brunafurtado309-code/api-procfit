@@ -12,6 +12,8 @@ const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0
 
 // Nome do movimento pela tela de origem (TAB_MASTER_ORIGEM) e o tipo (ver movimentos.repository.js).
 // Para dar nome a um tipo novo, é só acrescentar aqui.
+const TAB_TRANSFERENCIA = 339822;
+
 // Os de out/2026 (tipos 4, 19 e 20) foram nomeados pelo que os lançamentos mostram: o tipo 4 traz a
 // indústria do grupo e grandes quantidades; o tipo 20 traz ora clientes (devolução), ora empresas do
 // grupo (transferência), sempre com o nº da nota, por isso fica só "Entrada por nota".
@@ -19,7 +21,7 @@ const NOMES_POR_ORIGEM = {
   [repo.TAB_NOTA_COMPRA]: { 2: 'Compra (nota de entrada)', entrada: 'Entrada por nota de compra' },
   753289: { 1: 'Venda por nota', saida: 'Saída por nota fiscal' },
   [repo.TAB_CAIXA]: { saida: 'Venda no caixa', entrada: 'Devolução no caixa' },
-  339822: { 4: 'Transferência recebida' },
+  [TAB_TRANSFERENCIA]: { 4: 'Transferência recebida' },
   561384: { 20: 'Entrada por nota' },
   773844: { 19: 'Entrada por nota' },
 };
@@ -65,18 +67,20 @@ async function movimentos(query, params) {
   if (!Number.isInteger(codigo) || codigo <= 0) throw new AppError('Código do produto inválido');
   const dados = await repo.movimentos(codigo, montarFiltros(query));
   if (!dados.produto) throw new AppError(`Produto ${codigo} não encontrado`, 404);
-  // Separa o que chegou (nota de fornecedor, transferência) do que voltou (devolução de venda).
-  // Na nota que chegou, quem está no lançamento é o fornecedor; na devolução, é o cliente.
-  const entradas = dados.entradas.map((m) => {
-    const devolucao = m.devolucao_nota != null || m.origem === repo.TAB_CAIXA;
+  // Cada entrada num grupo: nota fiscal que chegou, transferência entre empresas ou devolução.
+  // Quem está no lançamento é quem mandou a mercadoria (fornecedor ou empresa do grupo) ou, na
+  // devolução, o cliente que devolveu.
+  dados.entradas = dados.entradas.map(({ entidade, ...m }) => {
+    let grupo = 'nota';
+    if (m.devolucao_nota != null || m.origem === repo.TAB_CAIXA) grupo = 'devolucao';
+    else if (m.origem === TAB_TRANSFERENCIA) grupo = 'transferencia';
     return {
       ...m,
-      devolucao,
+      grupo,
       nome: m.devolucao_nota != null ? 'Devolução de venda' : nomeDoMovimento(m),
+      [grupo === 'devolucao' ? 'cliente' : 'fornecedor']: entidade,
     };
   });
-  dados.entradas = entradas.filter((m) => !m.devolucao).map(({ entidade, ...m }) => ({ ...m, fornecedor: entidade }));
-  dados.devolucoes = entradas.filter((m) => m.devolucao).map(({ entidade, ...m }) => ({ ...m, cliente: entidade }));
   return dados;
 }
 

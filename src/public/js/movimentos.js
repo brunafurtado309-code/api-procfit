@@ -268,6 +268,53 @@ function quemLancou(m) {
   return comAuxiliar(texto, auxiliar, 'esquerda');
 }
 
+// Os três grupos de entrada da ficha, cada um com as colunas do seu detalhe
+const GRUPOS_DE_ENTRADA = [
+  {
+    id: 'nota',
+    titulo: 'Notas fiscais de entrada',
+    colunas: [['Data e hora', true], ['Empresa', true], ['Fornecedor', true], ['Nota', true],
+      ['Quantidade no estoque'], ['Tipo', true], ['Nota lançada por', true]],
+    linha: (m) => [
+      td(dataHoraBR(m.quando), 'esquerda sem-quebra'),
+      td(m.nome_empresa || `Empresa ${m.empresa}`, 'esquerda'),
+      td(m.fornecedor || '—', 'esquerda'),
+      td(m.documento ? String(m.documento) : '—', 'esquerda'),
+      td(inteiro(m.entrada), 'coluna-final'),
+      td(m.nome, 'esquerda'),
+      quemLancou(m),
+    ],
+  },
+  {
+    id: 'transferencia',
+    titulo: 'Transferências',
+    colunas: [['Data e hora', true], ['Recebida em', true], ['Veio de', true], ['Nota de transferência', true],
+      ['Quantidade no estoque']],
+    linha: (m) => [
+      td(dataHoraBR(m.quando), 'esquerda sem-quebra'),
+      td(m.nome_empresa || `Empresa ${m.empresa}`, 'esquerda'),
+      td(m.fornecedor || '—', 'esquerda'),
+      td(m.documento ? String(m.documento) : '—', 'esquerda'),
+      td(inteiro(m.entrada), 'coluna-final'),
+    ],
+  },
+  {
+    id: 'devolucao',
+    titulo: 'Devoluções',
+    colunas: [['Data e hora', true], ['Empresa', true], ['Cliente', true], ['Nota original', true],
+      ['Nota de devolução', true], ['Quantidade no estoque'], ['Devolução lançada por', true]],
+    linha: (m) => [
+      td(dataHoraBR(m.quando), 'esquerda sem-quebra'),
+      td(m.nome_empresa || `Empresa ${m.empresa}`, 'esquerda'),
+      comAuxiliar(m.cliente || '—', m.nome, 'esquerda'),
+      td(m.documento ? String(m.documento) : '—', 'esquerda'),
+      td(m.devolucao_nota ? String(m.devolucao_nota) : '—', 'esquerda'),
+      td(inteiro(m.entrada), 'coluna-final'),
+      td(m.devolucao_lancada_por ? `${m.devolucao_lancada_por} em ${dataHoraBR(m.devolucao_lancada_em)}` : '—', 'esquerda'),
+    ],
+  },
+];
+
 async function abrirFicha(codigo) {
   const dialogo = el('ficha');
   el('ficha-titulo').textContent = `Produto ${codigo}`;
@@ -296,41 +343,49 @@ async function abrirFicha(codigo) {
       saldos.append(bloco);
     }
 
-    // Entradas: todas, uma por linha, com a nota, o fornecedor e quem lançou
-    const totalEntradas = f.entradas.reduce((t, m) => t + (Number(m.entrada) || 0), 0);
-    const entradas = tabelaSimples(
-      [['Data da entrada', true], ['Empresa', true], ['Fornecedor', true], ['Nota', true],
-        ['Quantidade no estoque'], ['Tipo', true], ['Nota lançada por', true]],
-      f.entradas.map((m) => [
-        td(dataHoraBR(m.quando), 'esquerda sem-quebra'),
-        td(m.nome_empresa || `Empresa ${m.empresa}`, 'esquerda'),
-        td(m.fornecedor || '—', 'esquerda'),
-        td(m.documento ? String(m.documento) : '—', 'esquerda'),
-        td(inteiro(m.entrada), 'coluna-final'),
-        td(m.nome, 'esquerda'),
-        quemLancou(m),
-      ]),
-      'Nenhuma entrada no período.',
-    );
-
-    // Devoluções: o que voltou para o estoque, separado do que chegou
-    const totalDevolvido = f.devolucoes.reduce((t, m) => t + (Number(m.entrada) || 0), 0);
-    const devolucoes = tabelaSimples(
-      [['Data da entrada', true], ['Empresa', true], ['Cliente', true], ['Nota original', true],
-        ['Nota de devolução', true], ['Quantidade no estoque'], ['Devolução lançada por', true]],
-      f.devolucoes.map((m) => [
-        td(dataHoraBR(m.quando), 'esquerda sem-quebra'),
-        td(m.nome_empresa || `Empresa ${m.empresa}`, 'esquerda'),
-        comAuxiliar(m.cliente || '—', m.nome, 'esquerda'),
-        td(m.documento ? String(m.documento) : '—', 'esquerda'),
-        td(m.devolucao_nota ? String(m.devolucao_nota) : '—', 'esquerda'),
-        td(inteiro(m.entrada), 'coluna-final'),
-        m.devolucao_lancada_por
-          ? td(`${m.devolucao_lancada_por} em ${dataHoraBR(m.devolucao_lancada_em)}`, 'esquerda')
-          : td('—', 'esquerda'),
-      ]),
-      'Nenhuma devolução no período.',
-    );
+    // Entradas em cards: notas fiscais, transferências e devoluções (só os que tiverem movimento).
+    // Clicar no card abre o detalhe embaixo.
+    const detalhe = document.createElement('div');
+    const cartoes = document.createElement('div');
+    cartoes.className = 'cartoes';
+    const grupos = GRUPOS_DE_ENTRADA
+      .map((g) => ({ ...g, itens: f.entradas.filter((m) => m.grupo === g.id) }))
+      .filter((g) => g.itens.length);
+    let aberto = null;
+    const mostrarGrupo = (g) => {
+      aberto = aberto === g.id ? null : g.id;
+      for (const botao of cartoes.children) {
+        const ativo = botao.dataset.grupo === aberto;
+        botao.classList.toggle('cartao--ativo', ativo);
+        botao.setAttribute('aria-pressed', String(ativo));
+      }
+      detalhe.replaceChildren(...(aberto
+        ? [Object.assign(document.createElement('h3'), { textContent: g.titulo }),
+          tabelaSimples(g.colunas, g.itens.map(g.linha), '')]
+        : []));
+    };
+    for (const g of grupos) {
+      const quantidade = g.itens.reduce((t, m) => t + (Number(m.entrada) || 0), 0);
+      const botao = document.createElement('button');
+      botao.type = 'button';
+      botao.className = 'cartao';
+      botao.dataset.grupo = g.id;
+      botao.setAttribute('aria-pressed', 'false');
+      botao.append(
+        Object.assign(document.createElement('h3'), { textContent: g.titulo }),
+        Object.assign(document.createElement('p'), { className: 'cartao-valor', textContent: inteiro(quantidade) }),
+        Object.assign(document.createElement('p'), {
+          className: 'cartao-nota',
+          textContent: `${plural(g.itens.length, 'entrada', 'entradas')} · última em ${dataBR(g.itens[0].quando)}`,
+        }),
+      );
+      botao.addEventListener('click', () => mostrarGrupo(g));
+      cartoes.append(botao);
+    }
+    const semEntradas = Object.assign(document.createElement('p'), {
+      className: 'explica',
+      textContent: 'Nenhuma entrada no período.',
+    });
 
     // Saídas: só o total, e os 3 clientes que mais compraram
     const saida = document.createElement('dl');
@@ -355,19 +410,13 @@ async function abrirFicha(codigo) {
     el('ficha-corpo').replaceChildren(
       Object.assign(document.createElement('h3'), { textContent: 'Saldo hoje por empresa' }),
       saldos,
-      Object.assign(document.createElement('h3'), { textContent: `Notas que chegaram (${inteiro(totalEntradas)})` }),
+      Object.assign(document.createElement('h3'), { textContent: 'Entradas do período' }),
       Object.assign(document.createElement('p'), {
         className: 'explica',
-        textContent: 'Mercadoria que entrou no estoque por nota: compras, transferências e outras notas. '
-          + 'Nas compras, quem lançou no PROCFIT e quando foi processada.',
+        textContent: 'Clique num card para ver cada entrada, com data, hora, nota e quantidade.',
       }),
-      entradas,
-      Object.assign(document.createElement('h3'), { textContent: `Devoluções (${inteiro(totalDevolvido)})` }),
-      Object.assign(document.createElement('p'), {
-        className: 'explica',
-        textContent: 'O que o cliente devolveu e voltou para o estoque, por nota de devolução ou no caixa.',
-      }),
-      devolucoes,
+      grupos.length ? cartoes : semEntradas,
+      detalhe,
       Object.assign(document.createElement('h3'), { textContent: 'Saídas do período' }),
       saida,
       Object.assign(document.createElement('h3'), { textContent: 'Clientes que mais compraram' }),
