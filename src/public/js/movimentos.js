@@ -260,21 +260,25 @@ function tabelaSimples(colunas, linhas, vazio) {
   return rolagem;
 }
 
-// Nota de compra: quem lançou no PROCFIT e quando; o processamento (entrada no estoque) embaixo
-function quemLancou(m) {
-  if (!m.nota_compra && !m.nota_lancada_por) return td('—', 'esquerda');
-  const texto = `${m.nota_lancada_por ?? 'usuário não encontrado'} em ${dataHoraBR(m.nota_lancada_em)}`;
-  const auxiliar = m.nota_processada_em ? `processada em ${dataHoraBR(m.nota_processada_em)}` : null;
-  return comAuxiliar(texto, auxiliar, 'esquerda');
+// Nota de compra: quando chegou pelo eDoc (o PROCFIT cria a nota sozinho, com o login ADMIN).
+// Se foi lançada com o login de uma pessoa, o nome aparece embaixo.
+function chegadaDaNota(m) {
+  if (!m.nota_lancada_em) return td('—', 'esquerda');
+  const auxiliar = m.nota_lancada_por ? `lançada por ${m.nota_lancada_por}` : null;
+  return comAuxiliar(dataHoraBR(m.nota_lancada_em), auxiliar, 'esquerda sem-quebra');
 }
+
+// Quem fez e quando; o login ADMIN (genérico) vem sem nome
+const quemEQuando = (quem, quando) => td(quando
+  ? `${quem ?? 'login genérico (ADMIN)'} em ${dataHoraBR(quando)}` : '—', 'esquerda');
 
 // Os grupos de entrada da ficha, cada um com as colunas do seu detalhe
 const GRUPOS_DE_ENTRADA = [
   {
     id: 'nota',
     titulo: 'Notas fiscais de entrada',
-    colunas: [['Data e hora', true], ['Empresa', true], ['Fornecedor', true], ['Nota', true],
-      ['Quantidade no estoque'], ['Tipo', true], ['Nota registrada por', true]],
+    colunas: [['Entrada no estoque', true], ['Empresa', true], ['Fornecedor', true], ['Nota', true],
+      ['Quantidade no estoque'], ['Tipo', true], ['Nota chegou (eDoc)', true]],
     linha: (m) => [
       td(dataHoraBR(m.quando), 'esquerda sem-quebra'),
       td(m.nome_empresa || `Empresa ${m.empresa}`, 'esquerda'),
@@ -282,7 +286,7 @@ const GRUPOS_DE_ENTRADA = [
       td(m.documento ? String(m.documento) : '—', 'esquerda'),
       td(inteiro(m.entrada), 'coluna-final'),
       td(m.nome, 'esquerda'),
-      quemLancou(m),
+      chegadaDaNota(m),
     ],
   },
   {
@@ -310,7 +314,7 @@ const GRUPOS_DE_ENTRADA = [
       td(m.documento ? String(m.documento) : '—', 'esquerda'),
       td(m.devolucao_nota ? String(m.devolucao_nota) : '—', 'esquerda'),
       td(inteiro(m.entrada), 'coluna-final'),
-      td(m.devolucao_lancada_por ? `${m.devolucao_lancada_por} em ${dataHoraBR(m.devolucao_lancada_em)}` : '—', 'esquerda'),
+      quemEQuando(m.devolucao_lancada_por, m.devolucao_lancada_em),
     ],
   },
   {
@@ -325,7 +329,7 @@ const GRUPOS_DE_ENTRADA = [
       td(m.documento ? String(m.documento) : '—', 'esquerda'),
       td(inteiro(m.entrada), 'coluna-final'),
       td(m.motivo_cancelamento || '—', 'esquerda'),
-      td(m.cancelada_por ? `${m.cancelada_por} em ${dataHoraBR(m.cancelada_em)}` : '—', 'esquerda'),
+      quemEQuando(m.cancelada_por, m.cancelada_em),
     ],
   },
 ];

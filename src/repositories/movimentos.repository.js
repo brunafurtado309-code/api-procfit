@@ -31,10 +31,11 @@ const TAB_CAIXA = 601979;
 const TAB_CANCELAMENTO_NOTA = 561384;
 const LIMITE_LISTA = 3000;
 
-// Nome de quem lançou a partir do usuário do PROCFIT. O login ADMIN é genérico: as notas de compra
-// (todas desde set/2026, inclusive várias no mesmo segundo de madrugada) e alguns cancelamentos
-// ficam nele, então ele não identifica uma pessoa e aparece como "login genérico".
-const QUEM = (u) => `CASE WHEN LTRIM(RTRIM(${u}.LOGIN)) = 'ADMIN' THEN N'login genérico (ADMIN)'
+// Nome de quem lançou a partir do usuário do PROCFIT. O login ADMIN é genérico e não identifica uma
+// pessoa (vem NULL): a nota de compra chega pelo eDoc já com o ADMIN e quem a finaliza não fica
+// gravado em lugar nenhum (conferido em out/2026: NF_COMPRA, ESPELHO, conferências e
+// ESTOQUE_LANCAMENTOS_LOG, que só registra exclusões de reprocessamento).
+const QUEM = (u) => `CASE WHEN LTRIM(RTRIM(${u}.LOGIN)) = 'ADMIN' THEN NULL
         ELSE COALESCE(NULLIF(LTRIM(RTRIM(${u}.NOME)), ''), LTRIM(RTRIM(${u}.LOGIN))) END`;
 const LIMITE_MOVIMENTOS = 500;
 
@@ -123,7 +124,6 @@ async function movimentos(codigo, filtros) {
         LTRIM(RTRIM(E.NOME))                             AS entidade,
         NC.NF_NUMERO                                     AS nota_compra,
         CONVERT(varchar(19), NC.DATA_HORA, 120)          AS nota_lancada_em,
-        CONVERT(varchar(19), NC.DATA_PROCESSAMENTO, 120) AS nota_processada_em,
         ${QUEM('U')} AS nota_lancada_por,
         DEV.NF_NUMERO                                    AS devolucao_nota,
         CONVERT(varchar(19), DEV.DATA_HORA, 120)         AS devolucao_lancada_em,
@@ -136,7 +136,7 @@ async function movimentos(codigo, filtros) {
       LEFT JOIN EMPRESAS_USUARIAS EU WITH (NOLOCK) ON EU.EMPRESA_USUARIA = ${EMPRESA_DO_CENTRO}
       LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = EL.ENTIDADE
       OUTER APPLY (
-        SELECT TOP 1 N.NF_NUMERO, N.DATA_HORA, N.DATA_PROCESSAMENTO, N.USUARIO_LOGADO
+        SELECT TOP 1 N.NF_NUMERO, N.DATA_HORA, N.USUARIO_LOGADO
         FROM NF_COMPRA N WITH (NOLOCK)
         WHERE EL.TAB_MASTER_ORIGEM = ${TAB_NOTA_COMPRA}
           AND (N.NF_COMPRA = EL.REG_MASTER_ORIGEM
