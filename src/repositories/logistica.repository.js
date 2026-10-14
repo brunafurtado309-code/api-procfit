@@ -59,7 +59,6 @@ const MUDANCAS_DE_PRECO = `
     A.DATA_HORA_GRAVACAO_LOG                    AS quando,
     D.PRECO_VENDA                               AS antes,
     A.PRECO_VENDA                               AS depois,
-    LTRIM(RTRIM(A.USER_NAME))                   AS usuario,
     LTRIM(RTRIM(A.HOST_NAME))                   AS computador,
     CASE WHEN A.APP_NAME LIKE 'PROCFIT%' THEN 0 ELSE 1 END AS fora_do_sistema,
     CASE WHEN A.APP_NAME LIKE 'PROCFIT%'
