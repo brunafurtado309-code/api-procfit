@@ -274,7 +274,7 @@ const GRUPOS_DE_ENTRADA = [
     id: 'nota',
     titulo: 'Notas fiscais de entrada',
     colunas: [['Data e hora', true], ['Empresa', true], ['Fornecedor', true], ['Nota', true],
-      ['Quantidade no estoque'], ['Tipo', true], ['Nota lançada por', true]],
+      ['Quantidade no estoque'], ['Tipo', true], ['Nota registrada por', true]],
     linha: (m) => [
       td(dataHoraBR(m.quando), 'esquerda sem-quebra'),
       td(m.nome_empresa || `Empresa ${m.empresa}`, 'esquerda'),

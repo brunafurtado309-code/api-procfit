@@ -30,6 +30,12 @@ const TAB_NOTA_COMPRA = 41;
 const TAB_CAIXA = 601979;
 const TAB_CANCELAMENTO_NOTA = 561384;
 const LIMITE_LISTA = 3000;
+
+// Nome de quem lançou a partir do usuário do PROCFIT. O login ADMIN é genérico: as notas de compra
+// (todas desde set/2026, inclusive várias no mesmo segundo de madrugada) e alguns cancelamentos
+// ficam nele, então ele não identifica uma pessoa e aparece como "login genérico".
+const QUEM = (u) => `CASE WHEN LTRIM(RTRIM(${u}.LOGIN)) = 'ADMIN' THEN N'login genérico (ADMIN)'
+        ELSE COALESCE(NULLIF(LTRIM(RTRIM(${u}.NOME)), ''), LTRIM(RTRIM(${u}.LOGIN))) END`;
 const LIMITE_MOVIMENTOS = 500;
 
 function criarRequest(pool, filtros) {
@@ -118,12 +124,12 @@ async function movimentos(codigo, filtros) {
         NC.NF_NUMERO                                     AS nota_compra,
         CONVERT(varchar(19), NC.DATA_HORA, 120)          AS nota_lancada_em,
         CONVERT(varchar(19), NC.DATA_PROCESSAMENTO, 120) AS nota_processada_em,
-        COALESCE(NULLIF(LTRIM(RTRIM(U.NOME)), ''), LTRIM(RTRIM(U.LOGIN))) AS nota_lancada_por,
+        ${QUEM('U')} AS nota_lancada_por,
         DEV.NF_NUMERO                                    AS devolucao_nota,
         CONVERT(varchar(19), DEV.DATA_HORA, 120)         AS devolucao_lancada_em,
-        COALESCE(NULLIF(LTRIM(RTRIM(UD.NOME)), ''), LTRIM(RTRIM(UD.LOGIN))) AS devolucao_lancada_por,
+        ${QUEM('UD')} AS devolucao_lancada_por,
         CONVERT(varchar(19), CN.DATA_HORA, 120)          AS cancelada_em,
-        COALESCE(NULLIF(LTRIM(RTRIM(UC.NOME)), ''), LTRIM(RTRIM(UC.LOGIN))) AS cancelada_por,
+        ${QUEM('UC')} AS cancelada_por,
         LTRIM(RTRIM(COALESCE(NULLIF(CAST(CN.JUSTIFICATIVA AS varchar(500)), ''),
                             CAST(CN.OBSERVACAO AS varchar(500))))) AS motivo_cancelamento
       FROM ESTOQUE_LANCAMENTOS EL WITH (NOLOCK)
