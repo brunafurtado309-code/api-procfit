@@ -243,6 +243,7 @@ const COLUNAS = [
   ['Varejo', 'varejo'],
   ['Atacado', 'atacado'],
   ['Valor vendido', 'valor_vendido'],
+  ['Últimas mudanças de preço (R$)', 'ultima_alteracao_texto', true],
 ];
 
 function cabecalhoOrdenavel(tabela, colunas, aoOrdenar) {
@@ -268,6 +269,26 @@ function cabecalhoOrdenavel(tabela, colunas, aoOrdenar) {
     cab.append(th);
   }
   tabela.tHead.replaceChildren(cab);
+}
+
+// As últimas mudanças de preço do produto, uma por linha: data, tabela, de → para
+function mudancasDePreco(mudancas = []) {
+  if (!mudancas.length) return span('sem mudança desde mai/2026', 'qtd');
+  const lista = document.createElement('div');
+  for (const m of mudancas) {
+    const linha = document.createElement('div');
+    const valor = (v) => Number(v ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    linha.title = `${dataHoraBR(m.quando)} · ${m.nome_tabela}: ${dinheiro(m.antes)} → ${dinheiro(m.depois)}`
+      + `${m.fora_do_sistema ? ' · alterado fora do sistema' : ''}`;
+    linha.append(
+      `${dataBR(m.quando).slice(0, 6)}${dataBR(m.quando).slice(8)} `,
+      span(m.nome_tabela, m.tabela === 4 ? 'tabela-preco tabela-preco--atacado' : 'tabela-preco tabela-preco--varejo'),
+      ` ${valor(m.antes)} → ${valor(m.depois)}`,
+    );
+    if (m.fora_do_sistema) linha.append(span(' · fora', 'negativo'));
+    lista.append(linha);
+  }
+  return lista;
 }
 
 function mostrarLista() {
@@ -308,10 +329,9 @@ function mostrarLista() {
       comAuxiliar(dinheiro(p.valor_unitario), p.ultima_compra ? `em ${dataBR(p.ultima_compra)}` : null),
       td(dinheiro(p.custo_medio)),
       td(dinheiro(p.varejo)),
-      comAuxiliar(dinheiro(p.atacado),
-        Number(p.precos_alterados) ? `preço alterado ${dataBR(p.ultima_alteracao_texto)}` : null, null,
-        Number(p.precos_fora) ? 'qtd negativo' : 'qtd'),
+      td(dinheiro(p.atacado)),
       td(dinheiro(p.valor_vendido), 'coluna-final'),
+      td(mudancasDePreco(p.ultimas_mudancas), 'esquerda sem-quebra'),
     );
     linha.addEventListener('click', () => abrirFicha(p.produto));
     linha.addEventListener('keydown', (evento) => {
@@ -326,8 +346,8 @@ function mostrarLista() {
   const rotulo = td(itens.length > MAXIMO
     ? `Total (${plural(itens.length, 'produto', 'produtos')}; mostrando os ${MAXIMO} primeiros)`
     : `Total (${plural(itens.length, 'produto', 'produtos')})`, 'esquerda');
-  rotulo.colSpan = COLUNAS.length - 1;
-  rodape.append(rotulo, td(dinheiro(soma('valor_vendido'))));
+  rotulo.colSpan = COLUNAS.length - 2;
+  rodape.append(rotulo, td(dinheiro(soma('valor_vendido'))), td(''));
   tabela.tFoot.replaceChildren(rodape);
 }
 

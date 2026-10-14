@@ -52,7 +52,20 @@ function montarFiltros(query) {
   return filtros;
 }
 
-const painel = (query) => repo.painel(montarFiltros(query));
+const nomeTabela = (t) => NOMES_TABELAS[t] ?? `Tabela ${t}`;
+const moedaBR = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+// Mudança de preço em uma linha de texto (usada no Excel)
+const mudancaEmTexto = (m) => `${String(m.quando).slice(0, 10).split('-').reverse().join('/')} ${m.nome_tabela}: `
+  + `${moedaBR(m.antes)} → ${moedaBR(m.depois)}${m.fora_do_sistema ? ' (fora do sistema)' : ''}`;
+
+async function painel(query) {
+  const dados = await repo.painel(montarFiltros(query));
+  for (const linha of dados.lista) {
+    linha.ultimas_mudancas = linha.ultimas_mudancas.map((m) => ({ ...m, nome_tabela: nomeTabela(m.tabela) }));
+  }
+  return dados;
+}
 const empresas = () => repo.empresas();
 
 async function produto(query, params) {
@@ -60,7 +73,6 @@ async function produto(query, params) {
   if (!Number.isInteger(codigo) || codigo <= 0) throw new AppError('Código do produto inválido');
   const ficha = await repo.produto(codigo, { empresa: empresa(query.empresa) });
   if (!ficha.produto) throw new AppError(`Produto ${codigo} não encontrado`, 404);
-  const nomeTabela = (t) => NOMES_TABELAS[t] ?? `Tabela ${t}`;
   // A rotina da madrugada grava o nome do servidor (SQL-...): isso não é uma pessoa
   const pessoa = (nome) => (nome && !/^SQL-/i.test(nome) ? nome : null);
   const margem = (preco, custo) => (Number(preco) > 0 && custo != null
@@ -89,7 +101,10 @@ async function produto(query, params) {
 
 async function exportar(query) {
   const filtros = montarFiltros(query);
-  const { lista } = await repo.painel(filtros);
+  const { lista } = await painel(query);
+  for (const linha of lista) {
+    linha.ultimas_mudancas_texto = linha.ultimas_mudancas.map(mudancaEmTexto).join(' | ');
+  }
   const dataBR = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : null);
   const workbook = excel.novaPlanilha();
   excel.adicionarTabela(workbook, 'Produtos', {
@@ -117,6 +132,7 @@ async function exportar(query) {
       { titulo: 'Valor vendido', chave: 'valor_vendido', tipo: 'moeda', largura: 14 },
       { titulo: 'Mudanças de preço', chave: 'precos_alterados', tipo: 'inteiro', largura: 10 },
       { titulo: 'Fora do sistema', chave: 'precos_fora', tipo: 'inteiro', largura: 10 },
+      { titulo: 'Últimas mudanças de preço', chave: 'ultimas_mudancas_texto', largura: 48 },
     ],
     linhas: lista,
   });
