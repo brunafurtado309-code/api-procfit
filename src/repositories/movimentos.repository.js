@@ -19,7 +19,9 @@
 // (NF_FATURAMENTO_ORIGEM), igual à VENDAS_ANALITICAS. Devolução no caixa = origem 601979.
 // Nota de venda cancelada = origem 561384 (CANCELAMENTOS_NOTAS_FISCAIS, conferido em out/2026 na
 // nota 10579): o cancelamento devolve ao estoque todos os itens da nota; DOCUMENTO é o nº da nota
-// cancelada e ENTIDADE é o cliente dela.
+// cancelada e ENTIDADE é o cliente dela. O lançamento aponta o cancelamento em REG_MASTER_ORIGEM
+// (= NF_CANCELAMENTO), de onde vêm quem cancelou (USUARIO_LOGADO), quando (DATA_HORA) e o motivo
+// (JUSTIFICATIVA).
 
 const { sql, getPool } = require('../config/db');
 const { EMPRESA_DO_CENTRO } = require('./logistica.repository');
@@ -119,7 +121,11 @@ async function movimentos(codigo, filtros) {
         COALESCE(NULLIF(LTRIM(RTRIM(U.NOME)), ''), LTRIM(RTRIM(U.LOGIN))) AS nota_lancada_por,
         DEV.NF_NUMERO                                    AS devolucao_nota,
         CONVERT(varchar(19), DEV.DATA_HORA, 120)         AS devolucao_lancada_em,
-        COALESCE(NULLIF(LTRIM(RTRIM(UD.NOME)), ''), LTRIM(RTRIM(UD.LOGIN))) AS devolucao_lancada_por
+        COALESCE(NULLIF(LTRIM(RTRIM(UD.NOME)), ''), LTRIM(RTRIM(UD.LOGIN))) AS devolucao_lancada_por,
+        CONVERT(varchar(19), CN.DATA_HORA, 120)          AS cancelada_em,
+        COALESCE(NULLIF(LTRIM(RTRIM(UC.NOME)), ''), LTRIM(RTRIM(UC.LOGIN))) AS cancelada_por,
+        LTRIM(RTRIM(COALESCE(NULLIF(CAST(CN.JUSTIFICATIVA AS varchar(500)), ''),
+                            CAST(CN.OBSERVACAO AS varchar(500))))) AS motivo_cancelamento
       FROM ESTOQUE_LANCAMENTOS EL WITH (NOLOCK)
       LEFT JOIN EMPRESAS_USUARIAS EU WITH (NOLOCK) ON EU.EMPRESA_USUARIA = ${EMPRESA_DO_CENTRO}
       LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = EL.ENTIDADE
@@ -142,6 +148,9 @@ async function movimentos(codigo, filtros) {
                  DV.NF_FATURAMENTO_DEVOLUCAO DESC
       ) DEV
       LEFT JOIN USUARIOS UD WITH (NOLOCK) ON UD.USUARIO = DEV.USUARIO_LOGADO
+      LEFT JOIN CANCELAMENTOS_NOTAS_FISCAIS CN WITH (NOLOCK)
+        ON EL.TAB_MASTER_ORIGEM = ${TAB_CANCELAMENTO_NOTA} AND CN.NF_CANCELAMENTO = EL.REG_MASTER_ORIGEM
+      LEFT JOIN USUARIOS UC WITH (NOLOCK) ON UC.USUARIO = CN.USUARIO_LOGADO
       WHERE EL.PRODUTO = @produto
         AND EL.DATA >= @de AND EL.DATA < @ate
         AND ISNULL(EL.ESTOQUE_ENTRADA, 0) > 0

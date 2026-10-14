@@ -317,13 +317,15 @@ const GRUPOS_DE_ENTRADA = [
     id: 'cancelada',
     titulo: 'Notas de venda canceladas',
     colunas: [['Data e hora', true], ['Empresa', true], ['Cliente', true], ['Nota cancelada', true],
-      ['Quantidade que voltou']],
+      ['Quantidade que voltou'], ['Motivo', true], ['Cancelada por', true]],
     linha: (m) => [
       td(dataHoraBR(m.quando), 'esquerda sem-quebra'),
       td(m.nome_empresa || `Empresa ${m.empresa}`, 'esquerda'),
       td(m.cliente || '—', 'esquerda'),
       td(m.documento ? String(m.documento) : '—', 'esquerda'),
       td(inteiro(m.entrada), 'coluna-final'),
+      td(m.motivo_cancelamento || '—', 'esquerda'),
+      td(m.cancelada_por ? `${m.cancelada_por} em ${dataHoraBR(m.cancelada_em)}` : '—', 'esquerda'),
     ],
   },
 ];

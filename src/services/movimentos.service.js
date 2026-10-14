@@ -76,6 +76,11 @@ async function movimentos(query, params) {
     else if (m.devolucao_nota != null || m.origem === repo.TAB_CAIXA) grupo = 'devolucao';
     else if (m.origem === TAB_TRANSFERENCIA) grupo = 'transferencia';
     const doCliente = grupo === 'devolucao' || grupo === 'cancelada';
+    // O motivo vem como "CANCELAMENTO DE NOTA MOTIVO:DESACORDO COMERCIAL": fica só "Desacordo comercial"
+    if (m.motivo_cancelamento) {
+      const motivo = m.motivo_cancelamento.replace(/^.*MOTIVO\s*:\s*/i, '').trim().toLowerCase();
+      m.motivo_cancelamento = motivo ? motivo[0].toUpperCase() + motivo.slice(1) : null;
+    }
     return {
       ...m,
       grupo,
