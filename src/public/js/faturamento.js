@@ -46,6 +46,9 @@ let resumo = {};
 let filtroAtual = null;
 let pedidoAberto = null;
 let ordem = { coluna: 'dia', direcao: 'desc' };
+// A lista mostra uma página de pedidos por vez, para a tela não virar uma rolagem sem fim
+const POR_PAGINA = 25;
+let pagina = 1;
 
 // Quanto tempo esperar a API antes de desistir (em milissegundos)
 const TEMPO_LIMITE_MS = 60000;
@@ -150,6 +153,7 @@ async function carregar() {
     const dados = await buscar('pedidos', { ...filtrosAtuais(), filtro: filtroAtual });
     lista = dados.lista;
     resumo = dados.resumo;
+    pagina = 1; // dados novos (período, etapa ou busca): volta para a primeira página
     mostrarResumo();
     mostrarFunil();
     mostrarDivergencias();
@@ -182,116 +186,133 @@ async function carregarVendedores() {
   }
 }
 
+// Nome de cada filtro (marcadores e título da lista)
+const NOMES_FILTRO = {
+  orcamento: 'Orçamentos', aprovacao: 'Pendentes de aprovação', pedido: 'Pedidos sem checkout',
+  checkout: 'Com checkout', faturado: 'Faturados', pago: 'Pagos', cancelado: 'Cancelados',
+  pago_com_titulo_aberto: 'Pago no caixa com título aberto', nota_sem_cobranca: 'Nota sem cobrança',
+  cancelado_com_nota: 'Cancelado com nota', parado_sem_faturar: 'Parado sem faturar',
+  devolvido: 'Com devolução',
+};
+
+// Clicar num filtro liga; clicar de novo no mesmo desliga
+function alternarFiltro(id) {
+  filtroAtual = filtroAtual === id ? null : id;
+  pedidoAberto = null;
+  carregar();
+}
+
+// 1. Total do período
 function mostrarResumo() {
   el('total-pedidos').textContent = dinheiro(resumo.valor);
   const devolvido = Number(resumo.valor_devolvido) || 0;
   el('total-explica').textContent = `${plural(resumo.pedidos, 'pedido', 'pedidos')} no período`
     + (devolvido > 0.009 ? ` · ${dinheiro(Number(resumo.valor) - devolvido)} descontando as devoluções` : '');
-  el('ind-pagos').replaceChildren(dinheiro(resumo.valor_pagos), span(plural(resumo.pagos, 'pedido', 'pedidos')));
-  el('ind-faturados').replaceChildren(dinheiro(resumo.valor_faturados),
-    span(`${plural(resumo.faturados, 'pedido', 'pedidos')} com nota e sem pagamento`));
-  const parados = Number(resumo.pedidos_abertos) + Number(resumo.checkouts);
-  el('ind-parados').replaceChildren(
-    dinheiro(Number(resumo.valor_pedidos_abertos) + Number(resumo.valor_checkouts)),
-    span(`${plural(parados, 'pedido', 'pedidos')} sem nota nem cupom`),
-  );
-  el('ind-cancelados').replaceChildren(dinheiro(resumo.valor_cancelados),
-    span(plural(resumo.cancelados, 'pedido', 'pedidos')));
-  el('ind-parados').classList.toggle('negativo', parados > 0);
-  el('ind-devolvidos').replaceChildren(dinheiro(devolvido),
-    span(`${plural(resumo.devolvidos, 'pedido', 'pedidos')}`
-      + `${Number(resumo.devolvidos_total) ? ` · ${inteiro(resumo.devolvidos_total)} devolvido(s) por inteiro` : ''}`));
-  el('ind-devolvidos').classList.toggle('negativo', devolvido > 0.009);
-  el('ind-devolvidos').setAttribute('aria-pressed', String(filtroAtual === 'devolvido'));
 }
 
-// O indicador "Devolvidos" filtra a lista (clicar de novo tira o filtro)
-function alternarDevolvidos() {
-  filtroAtual = filtroAtual === 'devolvido' ? null : 'devolvido';
-  pedidoAberto = null;
-  carregar();
-}
-
-// Funil em barras: cada etapa vira um filtro
+// 1. O caminho do pedido: as etapas em ordem, numa linha só. Cancelado fica à parte, no fim.
 function mostrarFunil() {
   const etapas = [
     { id: 'orcamento', nome: 'Orçamento', qtd: resumo.orcamentos, valor: resumo.valor_orcamentos },
-    { id: 'aprovacao', nome: 'Pendente de aprovação', qtd: resumo.aprovacao, valor: resumo.valor_aprovacao },
-    { id: 'pedido', nome: 'Pedido (sem checkout)', qtd: resumo.pedidos_abertos, valor: resumo.valor_pedidos_abertos },
-    { id: 'checkout', nome: 'Checkout feito', qtd: resumo.checkouts, valor: resumo.valor_checkouts },
-    { id: 'faturado', nome: 'Faturado (nota emitida)', qtd: resumo.faturados, valor: resumo.valor_faturados },
-    { id: 'pago', nome: 'Pago', qtd: resumo.pagos, valor: resumo.valor_pagos },
-    { id: 'cancelado', nome: 'Cancelado', qtd: resumo.cancelados, valor: resumo.valor_cancelados },
+    { id: 'aprovacao', nome: 'Aprovação', qtd: resumo.aprovacao, valor: resumo.valor_aprovacao },
+    { id: 'pedido', nome: 'Pedido', dica: 'sem checkout', qtd: resumo.pedidos_abertos, valor: resumo.valor_pedidos_abertos },
+    { id: 'checkout', nome: 'Checkout', dica: 'sem nota', qtd: resumo.checkouts, valor: resumo.valor_checkouts },
+    { id: 'faturado', nome: 'Faturado', dica: 'sem pagamento', qtd: resumo.faturados, valor: resumo.valor_faturados },
+    { id: 'pago', nome: 'Pago', qtd: resumo.pagos, valor: resumo.valor_pagos, final: true },
+    { id: 'cancelado', nome: 'Cancelado', qtd: resumo.cancelados, valor: resumo.valor_cancelados, aParte: true },
   ];
-  const maximo = Math.max(0, ...etapas.map((e) => Number(e.valor) || 0));
+  const total = Number(resumo.valor) || 0;
   el('funil').replaceChildren(...etapas.map((e) => {
-    const linha = document.createElement('button');
-    linha.type = 'button';
-    linha.className = `barra${filtroAtual === e.id ? ' barra--ativa' : ''}`;
-    const trilho = span('', 'barra-trilho');
-    const preenchida = span('', 'barra-preenchida');
-    preenchida.style.width = `${maximo ? Math.max(1, ((Number(e.valor) || 0) / maximo) * 100) : 0}%`;
-    if (e.id === 'cancelado') preenchida.style.background = 'var(--alerta)';
-    trilho.append(preenchida);
-    const valor = span(dinheiro(e.valor), 'barra-valor');
-    valor.append(Object.assign(document.createElement('small'), { textContent: plural(e.qtd, 'pedido', 'pedidos') }));
-    linha.append(span(e.nome, 'barra-rotulo'), trilho, valor);
-    linha.addEventListener('click', () => {
-      filtroAtual = filtroAtual === e.id ? null : e.id;
-      pedidoAberto = null;
-      carregar();
-    });
-    return linha;
+    const item = document.createElement('li');
+    item.className = `etapa${e.final ? ' etapa--final' : ''}${e.aParte ? ' etapa--a-parte' : ''}`
+      + `${Number(e.qtd) ? '' : ' etapa--vazia'}`;
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    botao.className = `etapa__botao${filtroAtual === e.id ? ' etapa__botao--ativa' : ''}`;
+    botao.setAttribute('aria-pressed', String(filtroAtual === e.id));
+    // Faixa no alto: o tamanho mostra quanto do valor do período está nesta etapa
+    const faixa = span('', 'etapa__faixa');
+    const parte = span('', 'etapa__parte');
+    parte.style.width = `${total ? Math.min(100, ((Number(e.valor) || 0) / total) * 100) : 0}%`;
+    faixa.append(parte);
+    const nome = span(e.nome, 'etapa__nome');
+    if (e.dica) nome.append(span(e.dica, 'etapa__dica'));
+    botao.append(faixa, nome, span(dinheiro(e.valor), 'etapa__valor'),
+      span(plural(e.qtd, 'pedido', 'pedidos'), 'etapa__qtd'));
+    botao.addEventListener('click', () => alternarFiltro(e.id));
+    item.append(botao);
+    return item;
   }));
 }
 
+// 2. Precisa de atenção: só aparece o que tem pedido. Cada linha filtra a lista.
 function mostrarDivergencias() {
+  const devolvido = Number(resumo.valor_devolvido) || 0;
   const itens = [
     {
       id: 'pago_com_titulo_aberto',
-      titulo: 'Pago no caixa, título em aberto',
+      titulo: 'Pago no caixa, mas com título em aberto',
+      explica: 'pode estar sendo cobrado duas vezes',
       qtd: resumo.div_pago_titulo,
-      nota: `${dinheiro(resumo.valor_pago_titulo)} cobrados em duplicidade`,
+      valor: resumo.valor_pago_titulo,
+      alerta: true,
     },
     {
       id: 'nota_sem_cobranca',
-      titulo: 'Nota sem título e sem cupom',
+      titulo: 'Nota emitida sem título e sem cupom',
+      explica: 'saiu sem nenhuma cobrança',
       qtd: resumo.div_nota_sem_cobranca,
-      nota: `${dinheiro(resumo.valor_nota_sem_cobranca)} entregues sem cobrança`,
+      valor: resumo.valor_nota_sem_cobranca,
+      alerta: true,
     },
     {
       id: 'cancelado_com_nota',
-      titulo: 'Cancelado com nota ou título',
+      titulo: 'Cancelado, mas com nota ou título ativo',
+      explica: 'o documento continua valendo',
       qtd: resumo.div_cancelado_com_nota,
-      nota: `${dinheiro(resumo.valor_cancelado_com_nota)} em documentos ativos`,
+      valor: resumo.valor_cancelado_com_nota,
+      alerta: true,
     },
     {
       id: 'parado_sem_faturar',
-      titulo: 'Parado sem faturar (+7 dias)',
+      titulo: 'Processado há mais de 7 dias sem nota nem cupom',
+      explica: 'pedido parado',
       qtd: resumo.div_parado,
-      nota: `${dinheiro(resumo.valor_parado)} sem nota nem cupom`,
+      valor: resumo.valor_parado,
+      alerta: true,
     },
-  ];
-  el('divergencias').replaceChildren(...itens.map((d) => {
+    {
+      id: 'devolvido',
+      titulo: 'Pedidos com devolução',
+      explica: Number(resumo.devolvidos_total)
+        ? `${plural(resumo.devolvidos_total, 'devolvido por inteiro', 'devolvidos por inteiro')}`
+        : (devolvido > 0.009 ? 'devolução de parte dos produtos' : 'valor da devolução não encontrado'),
+      qtd: resumo.devolvidos,
+      valor: devolvido,
+    },
+  ].filter((d) => Number(d.qtd) > 0);
+
+  const area = el('divergencias');
+  if (!itens.length) {
+    area.replaceChildren(span('Nenhuma divergência no período. Tudo certo entre as telas.', 'atencao__vazio'));
+    return;
+  }
+  area.replaceChildren(...itens.map((d) => {
+    const ativo = filtroAtual === d.id;
     const botao = document.createElement('button');
     botao.type = 'button';
-    const ativo = filtroAtual === d.id;
-    botao.className = `cartao${ativo ? ' cartao--ativo' : ''}`;
+    botao.className = `atencao__linha${d.alerta ? ' atencao__linha--alerta' : ''}${ativo ? ' atencao__linha--ativa' : ''}`;
     botao.setAttribute('aria-pressed', String(ativo));
-    const titulo = document.createElement('h3');
-    titulo.textContent = d.titulo;
-    const valor = document.createElement('p');
-    valor.className = `cartao-valor${Number(d.qtd) > 0 ? ' negativo' : ''}`;
-    valor.textContent = inteiro(d.qtd);
-    const nota = document.createElement('p');
-    nota.className = 'cartao-nota';
-    nota.textContent = Number(d.qtd) > 0 ? d.nota : 'nada encontrado';
-    botao.append(titulo, valor, nota);
-    botao.addEventListener('click', () => {
-      filtroAtual = ativo ? null : d.id;
-      pedidoAberto = null;
-      carregar();
-    });
+    const texto = span(d.titulo, 'atencao__titulo');
+    texto.append(span(d.explica, 'atencao__explica'));
+    botao.append(
+      span('', 'atencao__marca'),
+      texto,
+      span(plural(d.qtd, 'pedido', 'pedidos'), 'atencao__qtd'),
+      span(dinheiro(d.valor), 'atencao__valor'),
+      span(ativo ? 'Mostrar todos' : 'Ver pedidos →', 'atencao__ver'),
+    );
+    botao.addEventListener('click', () => alternarFiltro(d.id));
     return botao;
   }));
 }
@@ -312,14 +333,7 @@ function mostrarGrafico(porDia) {
 function mostrarMarcadores() {
   const itens = [];
   if (filtroAtual) {
-    const nomes = {
-      orcamento: 'Orçamentos', aprovacao: 'Pendentes de aprovação', pedido: 'Pedidos sem checkout',
-      checkout: 'Com checkout', faturado: 'Faturados', pago: 'Pagos', cancelado: 'Cancelados',
-      pago_com_titulo_aberto: 'Pago no caixa com título aberto', nota_sem_cobranca: 'Nota sem cobrança',
-      cancelado_com_nota: 'Cancelado com nota', parado_sem_faturar: 'Parado sem faturar',
-      devolvido: 'Com devolução',
-    };
-    itens.push({ texto: nomes[filtroAtual] ?? filtroAtual, remover: () => { filtroAtual = null; } });
+    itens.push({ texto: NOMES_FILTRO[filtroAtual] ?? filtroAtual, remover: () => { filtroAtual = null; } });
   }
   const termo = el('pesquisa-termo').value.trim();
   if (termo) {
@@ -352,7 +366,9 @@ function mostrarLista() {
     if (typeof x === 'number' || typeof y === 'number') return ((Number(x) || 0) - (Number(y) || 0)) * fator;
     return String(x ?? '').localeCompare(String(y ?? ''), 'pt-BR', { sensitivity: 'base' }) * fator;
   });
-  el('titulo-lista').textContent = `Pedidos (${inteiro(itens.length)})`;
+  el('titulo-lista').textContent = filtroAtual
+    ? `Pedidos · ${NOMES_FILTRO[filtroAtual] ?? filtroAtual} (${inteiro(itens.length)})`
+    : `Pedidos (${inteiro(itens.length)})`;
 
   const tabela = el('tabela-pedidos');
   const cab = document.createElement('tr');
@@ -377,6 +393,7 @@ function mostrarLista() {
       botao.addEventListener('click', (evento) => {
         evento.stopPropagation();
         ordem = { coluna: campo, direcao: ativa && crescente ? 'desc' : 'asc' };
+        pagina = 1;
         mostrarLista();
       });
       th.append(botao);
@@ -393,8 +410,10 @@ function mostrarLista() {
     linha.append(vazio);
     linhas.push(linha);
   }
-  const MAXIMO = 500;
-  for (const p of itens.slice(0, MAXIMO)) {
+  const paginas = Math.max(1, Math.ceil(itens.length / POR_PAGINA));
+  pagina = Math.min(Math.max(1, pagina), paginas);
+  const primeiro = (pagina - 1) * POR_PAGINA;
+  for (const p of itens.slice(primeiro, primeiro + POR_PAGINA)) {
     const aberto = pedidoAberto === p.pedido;
     const linha = document.createElement('tr');
     linha.className = `linha-dia${aberto ? ' linha-dia--aberta' : ''}`;
@@ -451,12 +470,28 @@ function mostrarLista() {
 
   const soma = (campo) => itens.reduce((t, p) => t + (Number(p[campo]) || 0), 0);
   const rodape = document.createElement('tr');
-  const rotulo = td(itens.length > MAXIMO
-    ? `Total (${plural(itens.length, 'pedido', 'pedidos')}; mostrando os ${MAXIMO} primeiros)`
-    : `Total (${plural(itens.length, 'pedido', 'pedidos')})`, 'esquerda');
+  // O total soma a lista inteira, não só a página que está na tela
+  const rotulo = td(`Total (${plural(itens.length, 'pedido', 'pedidos')})`, 'esquerda');
   rotulo.colSpan = 6;
   rodape.append(rotulo, td(dinheiro(soma('valor'))), td(dinheiro(soma('pendente'))), td(''));
   tabela.tFoot.replaceChildren(rodape);
+
+  // Navegação entre páginas (some quando tudo cabe numa página só)
+  el('paginacao-pedidos').hidden = paginas <= 1;
+  el('pagina-pedidos').textContent = itens.length
+    ? `Pedidos ${inteiro(primeiro + 1)} a ${inteiro(Math.min(primeiro + POR_PAGINA, itens.length))}`
+      + ` de ${inteiro(itens.length)} · página ${pagina} de ${paginas}`
+    : '';
+  el('pedidos-anterior').disabled = pagina <= 1;
+  el('pedidos-proxima').disabled = pagina >= paginas;
+}
+
+// Troca de página e volta a tela para o começo da lista
+function irParaPagina(nova) {
+  pagina = nova;
+  pedidoAberto = null;
+  mostrarLista();
+  el('titulo-lista').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // Linha do tempo de um pedido: cada passo com data, valor e quem fez
@@ -645,13 +680,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   el('filtro-vendedor').addEventListener('change', () => carregar());
   el('baixar-excel').addEventListener('click', baixarExcel);
   el('baixar-excel-lista').addEventListener('click', baixarExcel);
-  el('ind-devolvidos').addEventListener('click', alternarDevolvidos);
-  el('ind-devolvidos').addEventListener('keydown', (evento) => {
-    if (evento.key === 'Enter' || evento.key === ' ') {
-      evento.preventDefault();
-      alternarDevolvidos();
-    }
-  });
+  el('pedidos-anterior').addEventListener('click', () => irParaPagina(pagina - 1));
+  el('pedidos-proxima').addEventListener('click', () => irParaPagina(pagina + 1));
 
   carregar();
 });

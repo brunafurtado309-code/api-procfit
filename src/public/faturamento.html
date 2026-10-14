@@ -12,7 +12,7 @@
   <script src="js/graficos.js" defer></script>
   <script src="js/faturamento.js" defer></script>
 </head>
-<body>
+<body class="tela-faturamento">
   <header class="topo">
     <div>
       <p class="marca">Belo Norte</p>
@@ -62,50 +62,27 @@
     </section>
 
     <div id="painel" hidden>
+      <!-- 1. Total e o caminho do pedido: cada etapa filtra a lista -->
       <section class="destaque">
-        <div class="painel-topo">
-          <div>
-            <h2>Pedidos no período</h2>
-            <p id="total-pedidos" class="valor-grande">—</p>
-            <p id="total-explica" class="explica"></p>
-          </div>
-          <dl class="indicadores indicadores--cinco">
-            <dt>Pagos</dt>
-            <dd id="ind-pagos">—</dd>
-            <dt>Faturados (sem pagamento)</dt>
-            <dd id="ind-faturados">—</dd>
-            <dt>Parados antes da nota</dt>
-            <dd id="ind-parados">—</dd>
-            <dt>Cancelados</dt>
-            <dd id="ind-cancelados">—</dd>
-            <dt>Devolvidos</dt>
-            <dd id="ind-devolvidos" class="indicador-clicavel" role="button" tabindex="0"
-                title="Ver só os pedidos com devolução">—</dd>
-          </dl>
+        <h2>Pedidos no período</h2>
+        <p id="total-pedidos" class="valor-grande">—</p>
+        <p id="total-explica" class="explica"></p>
+
+        <div class="caminho">
+          <p class="caminho__titulo">Onde cada pedido está hoje <span>· clique numa etapa para ver os pedidos dela</span></p>
+          <ol class="caminho__etapas" id="funil"></ol>
         </div>
       </section>
 
-      <!-- Funil: clicar filtra a lista -->
+      <!-- 2. Só o que tem problema: o que está zerado não aparece -->
       <section class="bloco">
-        <h2>Do orçamento ao pagamento</h2>
-        <p class="bloco__descricao">Onde cada pedido do período parou. Clique numa etapa para ver os pedidos dela.</p>
-        <div class="barras" id="funil"></div>
-      </section>
-
-      <!-- Divergências entre telas -->
-      <section class="bloco">
-        <h2>Divergências entre telas</h2>
-        <p class="bloco__descricao">Casos em que uma tela do PROCFIT diz uma coisa e a outra diz outra.
+        <h2>Precisa de atenção</h2>
+        <p class="bloco__descricao">Pedidos em que uma tela do PROCFIT diz uma coisa e a outra diz outra.
           Clique para ver os pedidos.</p>
-        <div class="cartoes cartoes--cinco" id="divergencias"></div>
+        <div class="atencao" id="divergencias"></div>
       </section>
 
-      <section class="bloco">
-        <h2>Pedidos por dia</h2>
-        <p class="bloco__descricao">Valor dos pedidos de cada dia e quanto já está pago.</p>
-        <div id="grafico-dias"></div>
-      </section>
-
+      <!-- 3. A lista, uma página por vez -->
       <section class="bloco">
         <div class="bloco-topo">
           <h2 id="titulo-lista">Pedidos</h2>
@@ -120,6 +97,18 @@
             <tfoot></tfoot>
           </table>
         </div>
+        <div class="paginacao" id="paginacao-pedidos" hidden>
+          <button id="pedidos-anterior" type="button" class="botao-secundario">Anterior</button>
+          <span id="pagina-pedidos"></span>
+          <button id="pedidos-proxima" type="button" class="botao-secundario">Próxima</button>
+        </div>
+      </section>
+
+      <!-- 4. Evolução no período -->
+      <section class="bloco">
+        <h2>Pedidos por dia</h2>
+        <p class="bloco__descricao">Valor dos pedidos de cada dia e quanto já está pago.</p>
+        <div id="grafico-dias"></div>
       </section>
     </div>
   </main>

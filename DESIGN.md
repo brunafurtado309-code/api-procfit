@@ -108,6 +108,13 @@ Todas usam o mesmo `style.css` e as mesmas variáveis; o que muda fica preso à 
   `.trilha__passo`), na ordem de trabalho. Situação na linha: bolinha cheia verde = certo,
   cheia laranja = problema, vazada laranja = sugestão a conferir.
 
+- **Faturamento (`body.tela-faturamento`, seção 21 do style.css)**: ordem de leitura fixa:
+  total → **caminho do pedido** (`.caminho` > `.etapa`, as etapas numa linha só, com a faixa no alto
+  mostrando quanto do valor está em cada uma; Cancelado à parte) → **Precisa de atenção**
+  (`.atencao__linha`, só o que tem pedido; bolinha laranja = problema, verde = informação) →
+  lista com **25 pedidos por página** (`.paginacao`) → gráfico por dia no fim.
+  Cada etapa e cada linha de atenção filtram a lista; clicar de novo tira o filtro.
+
 ## Gráficos
 
 Todo gráfico usa `js/graficos.js` (SVG puro, sem biblioteca externa: o painel não carrega
