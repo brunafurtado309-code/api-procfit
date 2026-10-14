@@ -296,7 +296,8 @@ async function abrirFicha(codigo) {
       saldos.append(bloco);
     }
 
-    // Entradas: uma linha por entrada, com a nota e quem lançou
+    // Entradas: todas, uma por linha, com a nota, o fornecedor e quem lançou
+    const totalEntradas = f.entradas.reduce((t, m) => t + (Number(m.entrada) || 0), 0);
     const entradas = tabelaSimples(
       [['Quando', true], ['Empresa', true], ['Entrada', true], ['Quantidade'], ['Nota / documento', true],
         ['Fornecedor', true], ['Nota lançada por', true]],
@@ -306,39 +307,49 @@ async function abrirFicha(codigo) {
         td(m.nome, 'esquerda'),
         td(inteiro(m.entrada), 'coluna-final'),
         td(m.documento ? String(m.documento) : '—', 'esquerda'),
-        td(m.entidade || '—', 'esquerda'),
+        td(m.fornecedor || '—', 'esquerda'),
         quemLancou(m),
       ]),
       'Nenhuma entrada no período.',
     );
 
-    // Saídas: só o total de cada tipo
-    const totalSaidas = f.saidas.reduce((t, s) => t + (Number(s.saida) || 0), 0);
-    const saidas = tabelaSimples(
-      [['Saída', true], ['Quantidade'], ['Lançamentos'], ['Última', true]],
-      f.saidas.map((s) => [
-        td(s.nome, 'esquerda'),
-        td(inteiro(s.saida), 'coluna-final'),
-        td(inteiro(s.lancamentos)),
-        td(dataHoraBR(s.ultima), 'esquerda sem-quebra'),
+    // Saídas: só o total, e os 3 clientes que mais compraram
+    const saida = document.createElement('dl');
+    saida.className = 'numeros';
+    const blocoSaida = document.createElement('div');
+    blocoSaida.className = 'numero';
+    blocoSaida.append(
+      Object.assign(document.createElement('dt'), { textContent: 'Saiu no período' }),
+      Object.assign(document.createElement('dd'), { textContent: inteiro(f.saida) }),
+    );
+    saida.append(blocoSaida);
+    const clientes = tabelaSimples(
+      [['', true], ['Cliente', true], ['Quantidade comprada']],
+      f.clientes.map((c, i) => [
+        td(`${i + 1}º`, 'esquerda'),
+        comAuxiliar(c.nome || `Cliente ${c.cliente}`, `código ${c.cliente}`, 'esquerda'),
+        td(inteiro(c.quantidade), 'coluna-final'),
       ]),
-      'Nenhuma saída no período.',
+      'Nenhuma venda com cliente identificado no período.',
     );
 
     el('ficha-corpo').replaceChildren(
       Object.assign(document.createElement('h3'), { textContent: 'Saldo hoje por empresa' }),
       saldos,
-      Object.assign(document.createElement('h3'), {
-        textContent: `Entradas do período (${inteiro(f.entradas.reduce((t, m) => t + (Number(m.entrada) || 0), 0))})`,
-      }),
+      Object.assign(document.createElement('h3'), { textContent: `Entradas do período (${inteiro(totalEntradas)})` }),
       Object.assign(document.createElement('p'), {
         className: 'explica',
-        textContent: 'Cada entrada no estoque. Nas notas de compra, quem lançou no PROCFIT e quando foi processada.',
+        textContent: 'Todas as entradas no estoque. Nas notas de compra, quem lançou no PROCFIT e quando foi processada.',
       }),
       entradas,
-      Object.assign(document.createElement('h3'), { textContent: `Saídas do período (${inteiro(totalSaidas)})` }),
-      Object.assign(document.createElement('p'), { className: 'explica', textContent: 'Total que saiu, por tipo.' }),
-      saidas,
+      Object.assign(document.createElement('h3'), { textContent: 'Saídas do período' }),
+      saida,
+      Object.assign(document.createElement('h3'), { textContent: 'Clientes que mais compraram' }),
+      Object.assign(document.createElement('p'), {
+        className: 'explica',
+        textContent: 'Os 3 que mais compraram este produto no período (vendas no caixa sem cliente identificado ficam de fora).',
+      }),
+      clientes,
     );
   } catch (erro) {
     mostrarStatus(erro.message, true, 'ficha-status');

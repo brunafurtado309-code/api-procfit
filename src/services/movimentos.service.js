@@ -12,11 +12,20 @@ const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0
 
 // Nome do movimento pela tela de origem (TAB_MASTER_ORIGEM) e o tipo (ver movimentos.repository.js).
 // Para dar nome a um tipo novo, é só acrescentar aqui.
+// Os de out/2026 (tipos 4, 19 e 20) foram nomeados pelo que os lançamentos mostram: o tipo 20
+// traz o cliente e o nº da nota de venda; o tipo 4 traz a indústria do grupo e grandes quantidades.
 const NOMES_POR_ORIGEM = {
   [repo.TAB_NOTA_COMPRA]: { 2: 'Compra (nota de entrada)', entrada: 'Entrada por nota de compra' },
   753289: { 1: 'Venda por nota', saida: 'Saída por nota fiscal' },
   601979: { saida: 'Venda no caixa', entrada: 'Devolução no caixa' },
+  339822: { 4: 'Transferência recebida' },
+  561384: { 20: 'Devolução de cliente' },
+  773844: { 19: 'Devolução de cliente' },
 };
+
+// Entradas que vêm de fornecedor: compra e transferência. Nas outras (devoluções), quem aparece
+// no lançamento é o cliente, e ele não vai na coluna de fornecedor.
+const ORIGENS_DE_FORNECEDOR = [repo.TAB_NOTA_COMPRA, 339822];
 
 function nomeDoMovimento(m) {
   const sentido = Number(m.entrada) > 0 ? 'entrada' : 'saida';
@@ -59,8 +68,11 @@ async function movimentos(query, params) {
   if (!Number.isInteger(codigo) || codigo <= 0) throw new AppError('Código do produto inválido');
   const dados = await repo.movimentos(codigo, montarFiltros(query));
   if (!dados.produto) throw new AppError(`Produto ${codigo} não encontrado`, 404);
-  dados.entradas = dados.entradas.map((m) => ({ ...m, nome: nomeDoMovimento(m) }));
-  dados.saidas = dados.saidas.map((m) => ({ ...m, nome: nomeDoMovimento({ ...m, entrada: 0 }) }));
+  dados.entradas = dados.entradas.map(({ entidade, ...m }) => ({
+    ...m,
+    nome: nomeDoMovimento(m),
+    fornecedor: ORIGENS_DE_FORNECEDOR.includes(m.origem) ? entidade : null,
+  }));
   return dados;
 }
 

@@ -79,8 +79,10 @@ async function produtos(filtros) {
   return { resumo: resumo[0] ?? {}, lista };
 }
 
-// Ficha de um produto no período: cada ENTRADA em detalhe (com quem lançou a nota de compra)
-// e as SAÍDAS só somadas por tipo, porque as vendas viram centenas de linhas.
+// Ficha de um produto no período: cada ENTRADA em detalhe (com quem lançou a nota de compra),
+// o TOTAL que saiu (as vendas viram centenas de linhas) e os 3 clientes que mais compraram.
+// Clientes: VENDAS_ANALITICAS.CLIENTE, sem o tipo 20 (mesma regra do painel de vendas); a venda
+// no caixa sem cliente identificado fica fora do ranking.
 async function movimentos(codigo, filtros) {
   const pool = await getPool();
   const { recordsets } = await criarRequest(pool, filtros)
@@ -124,19 +126,11 @@ async function movimentos(codigo, filtros) {
         AND (@empresa IS NULL OR ${EMPRESA_DO_CENTRO} = @empresa)
       ORDER BY EL.DATA_HORA DESC, EL.ESTOQUE DESC;
 
-      SELECT
-        EL.TIPO_MOVIMENTO                AS tipo,
-        EL.TAB_MASTER_ORIGEM             AS origem,
-        SUM(ISNULL(EL.ESTOQUE_SAIDA, 0)) AS saida,
-        COUNT(*)                         AS lancamentos,
-        CONVERT(varchar(19), MAX(EL.DATA_HORA), 120) AS ultima
+      SELECT SUM(ISNULL(EL.ESTOQUE_SAIDA, 0)) AS saida
       FROM ESTOQUE_LANCAMENTOS EL WITH (NOLOCK)
       WHERE EL.PRODUTO = @produto
         AND EL.DATA >= @de AND EL.DATA < @ate
-        AND ISNULL(EL.ESTOQUE_SAIDA, 0) > 0
-        AND (@empresa IS NULL OR ${EMPRESA_DO_CENTRO} = @empresa)
-      GROUP BY EL.TIPO_MOVIMENTO, EL.TAB_MASTER_ORIGEM
-      ORDER BY SUM(ISNULL(EL.ESTOQUE_SAIDA, 0)) DESC;
+        AND (@empresa IS NULL OR ${EMPRESA_DO_CENTRO} = @empresa);
 
       SELECT X.empresa, LTRIM(RTRIM(EU.NOME_FANTASIA)) AS nome, X.saldo
       FROM (
@@ -149,9 +143,24 @@ async function movimentos(codigo, filtros) {
       LEFT JOIN EMPRESAS_USUARIAS EU WITH (NOLOCK) ON EU.EMPRESA_USUARIA = X.empresa
       WHERE @empresa IS NULL OR X.empresa = @empresa
       ORDER BY X.empresa;
+
+      SELECT TOP 3
+        VA.CLIENTE                  AS cliente,
+        LTRIM(RTRIM(E.NOME))        AS nome,
+        SUM(VA.QUANTIDADE)          AS quantidade
+      FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
+      LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = VA.CLIENTE
+      WHERE VA.PRODUTO = @produto
+        AND VA.MOVIMENTO >= @de AND VA.MOVIMENTO < @ate
+        AND VA.DOCUMENTO_TIPO <> 20
+        AND ISNULL(VA.CLIENTE, 0) > 0
+        AND (@empresa IS NULL OR VA.EMPRESA = @empresa)
+      GROUP BY VA.CLIENTE, E.NOME
+      HAVING SUM(VA.QUANTIDADE) > 0
+      ORDER BY SUM(VA.QUANTIDADE) DESC;
     `);
-  const [cadastro, entradas, estoque, saidas] = recordsets;
-  return { produto: cadastro[0] ?? null, entradas, saidas, estoque };
+  const [cadastro, entradas, saidas, estoque, clientes] = recordsets;
+  return { produto: cadastro[0] ?? null, entradas, saida: saidas[0]?.saida ?? 0, estoque, clientes };
 }
 
 module.exports = { TAB_NOTA_COMPRA, produtos, movimentos };
