@@ -299,15 +299,15 @@ async function abrirFicha(codigo) {
     // Entradas: todas, uma por linha, com a nota, o fornecedor e quem lançou
     const totalEntradas = f.entradas.reduce((t, m) => t + (Number(m.entrada) || 0), 0);
     const entradas = tabelaSimples(
-      [['Quando', true], ['Empresa', true], ['Entrada', true], ['Quantidade'], ['Nota / documento', true],
-        ['Fornecedor', true], ['Nota lançada por', true]],
+      [['Data da entrada', true], ['Empresa', true], ['Fornecedor', true], ['Nota', true],
+        ['Quantidade no estoque'], ['Tipo', true], ['Nota lançada por', true]],
       f.entradas.map((m) => [
         td(dataHoraBR(m.quando), 'esquerda sem-quebra'),
         td(m.nome_empresa || `Empresa ${m.empresa}`, 'esquerda'),
-        td(m.nome, 'esquerda'),
-        td(inteiro(m.entrada), 'coluna-final'),
-        td(m.documento ? String(m.documento) : '—', 'esquerda'),
         td(m.fornecedor || '—', 'esquerda'),
+        td(m.documento ? String(m.documento) : '—', 'esquerda'),
+        td(inteiro(m.entrada), 'coluna-final'),
+        td(m.nome, 'esquerda'),
         quemLancou(m),
       ]),
       'Nenhuma entrada no período.',
