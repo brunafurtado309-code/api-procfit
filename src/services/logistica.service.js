@@ -61,8 +61,29 @@ async function produto(query, params) {
   const ficha = await repo.produto(codigo, { empresa: empresa(query.empresa) });
   if (!ficha.produto) throw new AppError(`Produto ${codigo} não encontrado`, 404);
   const nomeTabela = (t) => NOMES_TABELAS[t] ?? `Tabela ${t}`;
-  ficha.precos = ficha.precos.map((p) => ({ ...p, nome_tabela: nomeTabela(p.tabela) }));
-  ficha.historico = ficha.historico.map((h) => ({ ...h, nome_tabela: nomeTabela(h.tabela) }));
+  // A rotina da madrugada grava o nome do servidor (SQL-...): isso não é uma pessoa
+  const pessoa = (nome) => (nome && !/^SQL-/i.test(nome) ? nome : null);
+  const margem = (preco, custo) => (Number(preco) > 0 && custo != null
+    ? Math.round(((Number(preco) - Number(custo)) / Number(preco)) * 10000) / 100
+    : null);
+  ficha.precos = ficha.precos.map((p) => ({
+    ...p,
+    nome_tabela: nomeTabela(p.tabela),
+    margem_pct: margem(p.preco, p.custo_medio),
+    atualizado_por: pessoa(p.atualizado_por),
+  }));
+  // Quem alterou: fora do sistema, o login do banco; pelo sistema o log só diz "PROCFIT",
+  // então usa quem salvou a tabela de preço por último, se foi no mesmo minuto
+  const segundos = (texto) => (texto ? new Date(String(texto).replace(' ', 'T')).getTime() / 1000 : null);
+  ficha.historico = ficha.historico.map((h) => {
+    const salvo = ficha.precos.find((p) => p.tabela === h.tabela && p.atualizado_por
+      && Math.abs(segundos(p.atualizado_em) - segundos(h.quando)) <= 60);
+    return {
+      ...h,
+      nome_tabela: nomeTabela(h.tabela),
+      quem: h.fora_do_sistema ? h.usuario : (salvo?.atualizado_por ?? null),
+    };
+  });
   return ficha;
 }
 

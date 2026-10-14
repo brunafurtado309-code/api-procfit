@@ -22,6 +22,11 @@
 //                 O log começa em mai/2026 (carga inicial do sistema); antes disso não há histórico.
 //                 APP_NAME começando com "PROCFIT" = alterado pelo sistema; qualquer outro
 //                 (ex.: SQL Server Management Studio) = alterado direto no banco.
+//                 USER_NAME pelo sistema é sempre "PROCFIT"; HOST_NAME (o computador) ajuda a
+//                 saber quem foi. Em PRODUTOS_VENDAS, USUARIO_ALTERACAO é quem salvou por último,
+//                 mas a rotina da madrugada regrava a linha com o nome do servidor (SQL-...).
+//                 A margem do PROCFIT (MARGEM_BRUTA_PERCENTUAL) desconta encargos que variam por
+//                 tabela; o painel mostra a conta simples: (preço - custo médio) / preço.
 //
 // O que o banco mostrou e a tela aponta como alerta:
 //   - açaí (produto 150): vende sem dar entrada (a produção da indústria não entra no estoque),
@@ -49,6 +54,7 @@ const MUDANCAS_DE_PRECO = `
     D.PRECO_VENDA                               AS antes,
     A.PRECO_VENDA                               AS depois,
     LTRIM(RTRIM(A.USER_NAME))                   AS usuario,
+    LTRIM(RTRIM(A.HOST_NAME))                   AS computador,
     CASE WHEN A.APP_NAME LIKE 'PROCFIT%' THEN 0 ELSE 1 END AS fora_do_sistema
   FROM LOG_PRODUTOS_VENDAS A WITH (NOLOCK)
   JOIN LOG_PRODUTOS_VENDAS D WITH (NOLOCK)
@@ -244,7 +250,6 @@ async function produto(codigo, filtros) {
         PV.GRUPO_PRECO                                         AS tabela,
         PV.PRECO_VENDA                                         AS preco,
         PV.CUSTO_MEDIO                                         AS custo_medio,
-        PV.MARGEM_BRUTA_PERCENTUAL                             AS margem_pct,
         CONVERT(varchar(19), PV.DATA_HORA_ATUALIZACAO_PRECO, 120) AS atualizado_em,
         LTRIM(RTRIM(PV.USUARIO_ALTERACAO))                     AS atualizado_por
       FROM PRODUTOS_VENDAS PV WITH (NOLOCK)
@@ -255,7 +260,7 @@ async function produto(codigo, filtros) {
       SELECT TOP 200
         M.tabela,
         CONVERT(varchar(19), M.quando, 120) AS quando,
-        M.antes, M.depois, M.usuario, M.fora_do_sistema
+        M.antes, M.depois, M.usuario, M.computador, M.fora_do_sistema
       FROM (${MUDANCAS_DE_PRECO}) M
       WHERE M.produto = @produto
       ORDER BY M.quando DESC;

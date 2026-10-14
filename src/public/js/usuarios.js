@@ -10,7 +10,9 @@
     return window[tipo].getItem(nome) || '';
   }
 
-  const NOMES_TELAS = { vendas: 'Vendas', financeiro: 'Financeiro', faturamento: 'Faturamento', admin: 'Administrativo' };
+  const NOMES_TELAS = {
+    vendas: 'Vendas', financeiro: 'Financeiro', faturamento: 'Faturamento', logistica: 'Logística', admin: 'Administrativo',
+  };
   const NOMES_STATUS = { pendente: 'Aguardando', aprovado: 'Liberado', bloqueado: 'Bloqueado' };
 
   const $ = (id) => document.getElementById(id);
@@ -90,7 +92,7 @@
   async function carregar() {
     try {
       const { setores, usuarios } = await chamar('/usuarios');
-      const ordem = ['vendas', 'financeiro', 'faturamento', 'admin'].filter((s) => setores.includes(s));
+      const ordem = ['vendas', 'financeiro', 'faturamento', 'logistica', 'admin'].filter((s) => setores.includes(s));
       const linhas = $('linhas');
       linhas.replaceChildren();
 

@@ -11,6 +11,7 @@ const modulos = (() => {
     vendas: { titulo: 'Vendas', pagina: 'index.html' },
     financeiro: { titulo: 'Financeiro', pagina: 'financeiro.html' },
     faturamento: { titulo: 'Faturamento', pagina: 'faturamento.html' },
+    logistica: { titulo: 'Logística', pagina: 'logistica.html' },
     admin: { titulo: 'Administrativo', pagina: 'admin.html' },
   };
 
