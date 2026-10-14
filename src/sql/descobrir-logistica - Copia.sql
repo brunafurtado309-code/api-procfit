@@ -11,14 +11,11 @@
      - quando um valor foi mudado          -> blocos 3, 4 e 5
 
    Como rodar: selecione UM bloco por vez (do comentário até o próximo)
-   e aperte F5. (Cada bloco termina com GO, então rodar o arquivo
-   inteiro também funciona, sem erro de variável repetida.) Em cada resultado: clique com o botão direito na grade
+   e aperte F5. Em cada resultado: clique com o botão direito na grade
    -> "Copiar com cabeçalhos" e cole numa planilha (uma aba por bloco),
    ou mande um print.
    ===================================================================== */
 
-
-GO
 
 -- =====================================================================
 -- BLOCO 1 — Tabelas candidatas, com a quantidade de linhas
@@ -53,8 +50,6 @@ GROUP BY t.name
 ORDER BY assunto, linhas DESC;
 
 
-GO
-
 -- =====================================================================
 -- BLOCO 2 — Colunas que interessam, dentro dessas tabelas
 -- Mostra onde estão quantidade, custo, preço e fornecedor.
@@ -78,8 +73,6 @@ WHERE (c.TABLE_NAME LIKE '%PRODUT%' OR c.TABLE_NAME LIKE '%FORNEC%'
     OR c.COLUMN_NAME = 'PRODUTO')
 ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION;
 
-
-GO
 
 -- =====================================================================
 -- BLOCO 3 — O banco guarda histórico de alterações?
@@ -111,8 +104,6 @@ SELECT
     (SELECT COUNT(*) FROM sys.triggers WHERE parent_class = 1)   AS gatilhos_em_tabelas;
 
 
-GO
-
 -- =====================================================================
 -- BLOCO 4 — Gatilhos (triggers) nas tabelas de produto e preço
 -- Gatilho costuma ser o que grava o "antes e depois" num log.
@@ -130,8 +121,6 @@ WHERE tr.parent_class = 1
 ORDER BY tabela;
 
 
-GO
-
 -- =====================================================================
 -- BLOCO 5 — Colunas de "última alteração" nas tabelas de produto
 -- Se existir DATA_HORA / ULTIMA_ALTERACAO / USUARIO_LOGADO, ao menos
@@ -147,8 +136,6 @@ WHERE (c.TABLE_NAME LIKE '%PRODUT%' OR c.TABLE_NAME LIKE '%PRECO%' OR c.TABLE_NA
     OR c.COLUMN_NAME LIKE '%USUARIO%')
 ORDER BY c.TABLE_NAME, c.COLUMN_NAME;
 
-
-GO
 
 -- =====================================================================
 -- BLOCO 6 — Rastrear UM produto pelo banco inteiro
@@ -204,8 +191,6 @@ SELECT tabela, linhas AS linhas_do_produto
 FROM @achados
 ORDER BY tabela;
 
-
-GO
 
 -- =====================================================================
 -- BLOCO 7 — Prova com UM produto: confirmar o que cada número significa
@@ -306,4 +291,3 @@ SELECT TOP 10 DATA_HORA_LOG, TIPO_LOG, CENTRO_ESTOQUE, ESTOQUE_ENTRADA, ESTOQUE_
 FROM ESTOQUE_LANCAMENTOS_LOG WITH (NOLOCK)
 WHERE PRODUTO = @produto
 ORDER BY DATA_HORA_LOG DESC;
-GO

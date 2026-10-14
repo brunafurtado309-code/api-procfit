@@ -8,6 +8,7 @@ const pagar = require('../src/repositories/pagar.repository');
 const despachos = require('../src/repositories/despachos.repository');
 const admin = require('../src/repositories/admin.repository');
 const faturamento = require('../src/repositories/faturamento.repository');
+const logistica = require('../src/repositories/logistica.repository');
 const servicoFinanceiro = require('../src/services/financeiro.service');
 
 const testes = [
@@ -103,6 +104,25 @@ const testes = [
       + ` (R$ ${semBaixa.reduce((t, p) => t + (Number(p.valor) || 0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`);
     console.log(`       ${lista.length} pagamentos em 90 dias, ${identificados} com a pessoa identificada`
       + ` (${lista.length ? Math.round((identificados / lista.length) * 100) : 0}%)`);
+  }],
+  ['Logística: produtos (30 dias)', async () => {
+    const fim = new Date().toISOString().slice(0, 10);
+    const inicio = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
+    const { resumo } = await logistica.painel({ inicio, fim });
+    console.log(`       ${resumo.produtos ?? 0} produtos · ${resumo.negativos ?? 0} com estoque negativo`
+      + ` · ${resumo.sobras ?? 0} entrou o dobro do que saiu · ${resumo.precos_alterados ?? 0} com preço alterado`
+      + ` (${resumo.precos_fora ?? 0} fora do sistema)`);
+  }],
+  ['Logística: ficha dos produtos 150 (açaí) e 1653 (morango) na loja', async () => {
+    for (const codigo of [150, 1653]) {
+      const ficha = await logistica.produto(codigo, { empresa: 3 });
+      const saldo = ficha.estoque.reduce((t, e) => t + Number(e.saldo || 0), 0);
+      const ultima = ficha.compras[0];
+      console.log(`       ${codigo} ${ficha.produto?.descricao ?? '(não encontrado)'}`);
+      console.log(`         saldo ${saldo} · preços ${ficha.precos.map((p) => `${p.tabela}: R$ ${p.preco}`).join(' / ')}`
+        + ` · ${ficha.historico.length} mudanças de preço · ${ficha.compras.length} compras`
+        + `${ultima ? ` (última ${ultima.data}, ${ultima.fornecedor}, R$ ${Number(ultima.valor_unitario).toFixed(2)} por unidade)` : ''}`);
+    }
   }],
 ];
 

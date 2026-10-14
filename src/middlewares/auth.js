@@ -4,7 +4,7 @@
 
 const crypto = require('crypto');
 
-const SETORES = ['vendas', 'financeiro', 'admin', 'faturamento'];
+const SETORES = ['vendas', 'financeiro', 'admin', 'faturamento', 'logistica'];
 const PREFIXO_SESSAO = 'sess_';
 const COOKIE_SESSAO = 'painel_sessao';
 
