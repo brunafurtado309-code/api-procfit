@@ -212,12 +212,15 @@ async function movimentos(query, params) {
 
 async function exportar(query) {
   const filtros = montarFiltros(query);
-  const { lista } = await repo.produtos(filtros);
+  const soNegativos = query.negativos === '1';
+  const { lista: todos } = await repo.produtos(filtros);
+  const lista = soNegativos ? todos.filter((p) => Number(p.saldo) < 0) : todos;
   const dataBR = (d) => String(d).split('-').reverse().join('/');
   const workbook = excel.novaPlanilha();
   excel.adicionarTabela(workbook, 'Entradas e saídas', {
     titulo: 'Entradas e saídas do estoque | Belo Norte',
-    subtitulo: `${lista.length} produtos · de ${dataBR(filtros.inicio)} até ${dataBR(filtros.fim)}`
+    subtitulo: `${lista.length} produtos${soNegativos ? ' com estoque negativo' : ''}`
+      + ` · de ${dataBR(filtros.inicio)} até ${dataBR(filtros.fim)}`
       + `${filtros.empresa ? ` · empresa ${filtros.empresa}` : ''}`
       + `${filtros.busca ? ` · pesquisa "${filtros.busca}"` : ''}`,
     colunas: [

@@ -2269,3 +2269,5 @@ button.barra:hover { background: var(--verde-suave); color: inherit; }
 .tipo-entrada--nota { background: var(--fundo); color: var(--tinta-suave); }
 /* Cartões por tipo de entrada, logo abaixo do total de notas */
 .cartoes-tipo-entrada { margin-top: 1.5rem; }
+/* "ver quais" do estoque negativo (aba Por produto) */
+.indicadores dd .ver-negativos { display: inline-block; margin-top: 0.35rem; font-family: var(--fonte); }

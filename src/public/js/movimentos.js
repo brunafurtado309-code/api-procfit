@@ -20,6 +20,7 @@ const chave = {
 let lista = [];
 let resumo = {};
 let ordem = { coluna: 'saiu', direcao: 'desc' };
+let soNegativos = false; // "ver quais" no estoque negativo: só os produtos com saldo abaixo de zero
 let notas = [];
 let infoNotas = {};
 let filtroTipo = null; // cartão de tipo clicado: só as notas daquele tipo
@@ -362,8 +363,26 @@ function mostrarResumo() {
   el('total-saiu').textContent = inteiro(resumo.saiu);
   el('total-explica').textContent = `unidades · ${plural(resumo.produtos, 'produto', 'produtos')} com movimento`;
   el('ind-entrou').replaceChildren(inteiro(resumo.entrou), span('unidades'));
-  el('ind-negativos').replaceChildren(inteiro(resumo.negativos), span('produtos com saldo abaixo de zero'));
-  el('ind-negativos').classList.toggle('negativo', Number(resumo.negativos) > 0);
+  const negativos = Number(resumo.negativos) || 0;
+  if (!negativos) soNegativos = false;
+  el('ind-negativos').replaceChildren(inteiro(negativos), span('produtos com saldo abaixo de zero'));
+  el('ind-negativos').classList.toggle('negativo', negativos > 0);
+  if (negativos) {
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    botao.className = 'ver-detalhes ver-negativos';
+    botao.textContent = soNegativos ? 'mostrar todos' : 'ver quais';
+    botao.setAttribute('aria-pressed', String(soNegativos));
+    botao.addEventListener('click', () => {
+      soNegativos = !soNegativos;
+      // ao abrir, o mais negativo primeiro
+      if (soNegativos) ordem = { coluna: 'saldo', direcao: 'asc' };
+      mostrarResumo();
+      mostrarLista();
+      if (soNegativos) el('titulo-lista').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    el('ind-negativos').append(botao);
+  }
 }
 
 // ===== Lista de produtos =====
@@ -378,13 +397,16 @@ const COLUNAS = [
 
 function mostrarLista() {
   const fator = ordem.direcao === 'asc' ? 1 : -1;
-  const itens = [...lista].sort((a, b) => {
+  const base = soNegativos ? lista.filter((p) => Number(p.saldo) < 0) : lista;
+  const itens = [...base].sort((a, b) => {
     const x = a[ordem.coluna];
     const y = b[ordem.coluna];
     if (typeof x === 'number' || typeof y === 'number') return ((Number(x) || 0) - (Number(y) || 0)) * fator;
     return String(x ?? '').localeCompare(String(y ?? ''), 'pt-BR', { sensitivity: 'base' }) * fator;
   });
-  el('titulo-lista').textContent = `Produtos (${inteiro(itens.length)})`;
+  el('titulo-lista').textContent = soNegativos
+    ? `Produtos com estoque negativo (${inteiro(itens.length)})`
+    : `Produtos (${inteiro(itens.length)})`;
 
   const tabela = el('tabela-produtos');
   const cab = document.createElement('tr');
@@ -677,6 +699,7 @@ async function baixarExcel() {
       if (valor) url.searchParams.set(nome, valor);
     }
     if (aba === 'notas' && filtroTipo) url.searchParams.set('tipo', filtroTipo);
+    if (aba === 'produtos' && soNegativos) url.searchParams.set('negativos', '1');
     const resposta = await fetch(url, { headers: { 'x-api-key': chave.ler() ?? '' } });
     if (!resposta.ok) {
       const corpo = await resposta.json().catch(() => ({}));
