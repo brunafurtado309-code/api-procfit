@@ -228,8 +228,8 @@ async function exportar(query) {
       { titulo: 'Produto', chave: 'descricao', largura: 48 },
       { titulo: 'Entrou', chave: 'entrou', tipo: 'inteiro', largura: 12 },
       { titulo: 'Saiu', chave: 'saiu', tipo: 'inteiro', largura: 12 },
+      { titulo: 'Lançamentos', chave: 'movimentos', tipo: 'inteiro', largura: 13 },
       { titulo: 'Saldo hoje', chave: 'saldo', tipo: 'inteiro', largura: 12 },
-      { titulo: 'Movimentos', chave: 'movimentos', tipo: 'inteiro', largura: 12 },
     ],
     linhas: lista,
   });

@@ -2271,3 +2271,6 @@ button.barra:hover { background: var(--verde-suave); color: inherit; }
 .cartoes-tipo-entrada { margin-top: 1.5rem; }
 /* "ver quais" do estoque negativo (aba Por produto) */
 .indicadores dd .ver-negativos { display: inline-block; margin-top: 0.35rem; font-family: var(--fonte); }
+/* Saldo de hoje separado das colunas do período (aba Por produto) */
+.tabela th.coluna-saldo,
+.tabela td.coluna-saldo { border-left: 1px solid var(--linha-forte); padding-left: 1.25rem; }

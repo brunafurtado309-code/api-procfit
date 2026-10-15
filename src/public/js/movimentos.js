@@ -386,13 +386,15 @@ function mostrarResumo() {
 }
 
 // ===== Lista de produtos =====
+// Primeiro o que é do período (entrou, saiu, quantas vezes, quando foi o último), e por último,
+// separado, o saldo de hoje, que não muda com o período escolhido.
 const COLUNAS = [
   ['Produto', 'descricao', true],
   ['Entrou', 'entrou'],
   ['Saiu', 'saiu'],
-  ['Saldo hoje', 'saldo'],
-  ['Movimentos', 'movimentos'],
-  ['Último movimento', 'ultimo', true],
+  ['Lançamentos', 'movimentos', false, 'Quantas vezes o produto entrou ou saiu do estoque no período'],
+  ['Último lançamento', 'ultimo', true],
+  ['Saldo hoje', 'saldo', false, 'Quanto tem no estoque agora (não depende do período)', 'coluna-saldo'],
 ];
 
 function mostrarLista() {
@@ -410,10 +412,11 @@ function mostrarLista() {
 
   const tabela = el('tabela-produtos');
   const cab = document.createElement('tr');
-  for (const [texto, campo, esquerda] of COLUNAS) {
+  for (const [texto, campo, esquerda, dica, classe] of COLUNAS) {
     const th = document.createElement('th');
     th.scope = 'col';
-    if (esquerda) th.className = 'esquerda';
+    th.className = [esquerda ? 'esquerda' : '', classe ?? ''].join(' ').trim();
+    if (dica) th.title = dica;
     const ativa = ordem.coluna === campo;
     const crescente = ordem.direcao === 'asc';
     if (ativa) th.setAttribute('aria-sort', crescente ? 'ascending' : 'descending');
@@ -450,9 +453,9 @@ function mostrarLista() {
       comAuxiliar(p.descricao, String(p.produto), 'esquerda'),
       td(inteiro(p.entrou)),
       td(inteiro(p.saiu)),
-      td(inteiro(p.saldo), Number(p.saldo) < 0 ? 'negativo' : 'coluna-final'),
       td(inteiro(p.movimentos)),
       td(dataHoraBR(p.ultimo), 'esquerda sem-quebra'),
+      td(inteiro(p.saldo), Number(p.saldo) < 0 ? 'coluna-saldo negativo' : 'coluna-saldo coluna-final'),
     );
     linha.addEventListener('click', () => abrirFicha(p.produto));
     linha.addEventListener('keydown', (evento) => {
@@ -467,7 +470,7 @@ function mostrarLista() {
   const rotulo = td(itens.length > MAXIMO
     ? `Total (${plural(itens.length, 'produto', 'produtos')}; mostrando os ${MAXIMO} primeiros)`
     : `Total (${plural(itens.length, 'produto', 'produtos')})`, 'esquerda');
-  rodape.append(rotulo, td(inteiro(soma('entrou'))), td(inteiro(soma('saiu'))), td(''), td(inteiro(soma('movimentos'))), td(''));
+  rodape.append(rotulo, td(inteiro(soma('entrou'))), td(inteiro(soma('saiu'))), td(inteiro(soma('movimentos'))), td(''), td('', 'coluna-saldo'));
   tabela.tFoot.replaceChildren(rodape);
 }
 
@@ -645,7 +648,7 @@ async function abrirFicha(codigo) {
       textContent: 'Nenhuma entrada no período.',
     });
 
-    // Saídas: só o total, e os 3 clientes que mais compraram
+    // Saídas: só o total
     const saida = document.createElement('dl');
     saida.className = 'numeros';
     const blocoSaida = document.createElement('div');
@@ -655,15 +658,6 @@ async function abrirFicha(codigo) {
       Object.assign(document.createElement('dd'), { textContent: inteiro(f.saida) }),
     );
     saida.append(blocoSaida);
-    const clientes = tabelaSimples(
-      [['', true], ['Cliente', true], ['Quantidade comprada']],
-      f.clientes.map((c, i) => [
-        td(`${i + 1}º`, 'esquerda'),
-        comAuxiliar(c.nome || `Cliente ${c.cliente}`, `código ${c.cliente}`, 'esquerda'),
-        td(inteiro(c.quantidade), 'coluna-final'),
-      ]),
-      'Nenhuma venda com cliente identificado no período.',
-    );
 
     el('ficha-corpo').replaceChildren(
       Object.assign(document.createElement('h3'), { textContent: 'Saldo hoje por empresa' }),
@@ -677,12 +671,6 @@ async function abrirFicha(codigo) {
       detalhe,
       Object.assign(document.createElement('h3'), { textContent: 'Saídas do período' }),
       saida,
-      Object.assign(document.createElement('h3'), { textContent: 'Clientes que mais compraram' }),
-      Object.assign(document.createElement('p'), {
-        className: 'explica',
-        textContent: 'Os 3 que mais compraram este produto no período (vendas no caixa sem cliente identificado ficam de fora).',
-      }),
-      clientes,
     );
   } catch (erro) {
     mostrarStatus(erro.message, true, 'ficha-status');
