@@ -2267,3 +2267,5 @@ button.barra:hover { background: var(--verde-suave); color: inherit; }
 .tipo-entrada--devolucao { background: var(--outros-claro); color: var(--tinta); }
 .tipo-entrada--cancelada { background: var(--superficie); border-color: var(--linha-forte); color: var(--tinta-suave); }
 .tipo-entrada--nota { background: var(--fundo); color: var(--tinta-suave); }
+/* Cartões por tipo de entrada, logo abaixo do total de notas */
+.cartoes-tipo-entrada { margin-top: 1.5rem; }

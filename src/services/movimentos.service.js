@@ -153,7 +153,9 @@ async function itensDaNota(query) {
 
 async function exportarNotas(query) {
   const filtros = montarFiltros(query);
-  const lista = (await repo.notas(filtros)).map(prepararNota).map((n) => ({
+  const tipo = String(query.tipo ?? '').trim();
+  if (tipo && !TIPO_CURTO[tipo]) throw new AppError('Tipo de entrada inválido');
+  const lista = (await repo.notas(filtros)).map(prepararNota).filter((n) => !tipo || n.grupo === tipo).map((n) => ({
     ...n,
     quando: n.quando ? n.quando.slice(0, 16).replace('T', ' ') : '',
     lancada: n.lancada_por ? `${n.lancada_por}${n.lancada_em ? ` em ${n.lancada_em.slice(0, 16)}` : ''}` : '',
@@ -164,7 +166,8 @@ async function exportarNotas(query) {
     titulo: 'Notas de entrada no estoque | Belo Norte',
     subtitulo: `${lista.length} notas · de ${dataBR(filtros.inicio)} até ${dataBR(filtros.fim)}`
       + `${filtros.empresa ? ` · empresa ${filtros.empresa}` : ''}`
-      + `${filtros.busca ? ` · pesquisa "${filtros.busca}"` : ''}`,
+      + `${filtros.busca ? ` · pesquisa "${filtros.busca}"` : ''}`
+      + `${tipo ? ` · só ${TIPO_CURTO[tipo].toLowerCase()}` : ''}`,
     colunas: [
       { titulo: 'Entrada no estoque', chave: 'quando', largura: 18 },
       { titulo: 'Tipo', chave: 'tipo', largura: 16 },

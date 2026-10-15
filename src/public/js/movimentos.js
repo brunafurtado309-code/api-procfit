@@ -21,6 +21,8 @@ let lista = [];
 let resumo = {};
 let ordem = { coluna: 'saiu', direcao: 'desc' };
 let notas = [];
+let infoNotas = {};
+let filtroTipo = null; // cartão de tipo clicado: só as notas daquele tipo
 
 // Aba aberta: notas de entrada por padrão; "#produtos" no endereço abre a outra
 const ABAS = {
@@ -126,6 +128,7 @@ function mostrarAba() {
     botao.setAttribute('aria-pressed', String(ativa));
   }
   el('pesquisa-termo').placeholder = ABAS[aba].pesquisa;
+  el('destaque-notas').hidden = true;
   el('bloco-notas').hidden = true;
   el('painel').hidden = true;
 }
@@ -142,7 +145,11 @@ async function carregar() {
       const dados = await buscar('notas', filtrosAtuais());
       if (minhaCarga !== carga) return;
       notas = dados.lista;
-      mostrarNotas(dados);
+      infoNotas = { limite: dados.limite, cortada: dados.cortada };
+      if (filtroTipo && !notas.some((n) => n.grupo === filtroTipo)) filtroTipo = null;
+      mostrarDestaqueNotas();
+      mostrarNotas();
+      el('destaque-notas').hidden = false;
       el('bloco-notas').hidden = false;
     } else {
       const dados = await buscar('produtos', filtrosAtuais());
@@ -184,8 +191,62 @@ function celulaLancada(n) {
   return comAuxiliar(n.lancada_por, n.lancada_em ? dataHoraBR(n.lancada_em) : null, 'esquerda');
 }
 
-function mostrarNotas(dados) {
-  el('titulo-notas').textContent = `Notas de entrada (${inteiro(notas.length)})`;
+// Destaque: quantas NOTAS entraram (não unidades: caixa, quilo e fardo não se somam) e um cartão
+// por tipo de entrada. Clicar no cartão mostra só aquele tipo na lista; clicar de novo tira o filtro.
+const TIPOS_DE_ENTRADA = [
+  { grupo: 'compra', titulo: 'Compras' },
+  { grupo: 'transferencia', titulo: 'Transferências' },
+  { grupo: 'devolucao', titulo: 'Devoluções' },
+  { grupo: 'cancelada', titulo: 'Vendas canceladas' },
+  { grupo: 'nota', titulo: 'Outras entradas' },
+];
+
+function mostrarDestaqueNotas() {
+  el('total-notas').textContent = inteiro(notas.length);
+  const fornecedores = new Set(notas.filter((n) => n.grupo === 'compra' && n.quem_enviou).map((n) => n.quem_enviou));
+  const partes = [
+    plural(fornecedores.size, 'fornecedor nas compras', 'fornecedores nas compras'),
+    notas.length ? `última entrada em ${dataHoraBR(notas[0].quando)}` : null,
+    infoNotas.cortada ? `contando só as ${inteiro(infoNotas.limite)} mais recentes` : null,
+  ];
+  el('total-notas-explica').textContent = partes.filter(Boolean).join(' · ');
+
+  const cartoes = [];
+  for (const t of TIPOS_DE_ENTRADA) {
+    const doTipo = notas.filter((n) => n.grupo === t.grupo);
+    if (!doTipo.length && t.grupo === 'nota') continue; // "outras" só aparece quando existe
+    const ativo = filtroTipo === t.grupo;
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    botao.className = ativo ? 'cartao cartao--ativo' : 'cartao';
+    botao.setAttribute('aria-pressed', String(ativo));
+    botao.disabled = !doTipo.length;
+    botao.append(
+      Object.assign(document.createElement('h3'), { textContent: t.titulo }),
+      Object.assign(document.createElement('p'), { className: 'cartao-valor', textContent: inteiro(doTipo.length) }),
+      Object.assign(document.createElement('p'), {
+        className: 'cartao-nota',
+        textContent: doTipo.length
+          ? `${doTipo.length === 1 ? 'nota' : 'notas'} · última em ${dataHoraBR(doTipo[0].quando)}`
+          : 'nenhuma no período',
+      }),
+    );
+    botao.addEventListener('click', () => {
+      filtroTipo = ativo ? null : t.grupo;
+      mostrarDestaqueNotas();
+      mostrarNotas();
+    });
+    cartoes.push(botao);
+  }
+  el('cartoes-tipo').replaceChildren(...cartoes);
+}
+
+function mostrarNotas() {
+  const tipo = TIPOS_DE_ENTRADA.find((t) => t.grupo === filtroTipo);
+  const visiveis = tipo ? notas.filter((n) => n.grupo === tipo.grupo) : notas;
+  el('titulo-notas').textContent = tipo
+    ? `${tipo.titulo} (${inteiro(visiveis.length)})`
+    : `Notas de entrada (${inteiro(visiveis.length)})`;
   const tabela = el('tabela-notas');
   const cab = document.createElement('tr');
   for (const [texto, esquerda] of COLUNAS_NOTAS) {
@@ -198,14 +259,14 @@ function mostrarNotas(dados) {
   tabela.tHead.replaceChildren(cab);
 
   const linhas = [];
-  if (!notas.length) {
+  if (!visiveis.length) {
     const linha = document.createElement('tr');
     const vazio = td('Nenhuma nota de entrada com esses filtros.', 'vazio');
     vazio.colSpan = COLUNAS_NOTAS.length;
     linha.append(vazio);
     linhas.push(linha);
   }
-  for (const n of notas) {
+  for (const n of visiveis) {
     const linha = document.createElement('tr');
     linha.className = 'linha-dia';
     linha.tabIndex = 0;
@@ -229,9 +290,9 @@ function mostrarNotas(dados) {
   tabela.tBodies[0].replaceChildren(...linhas);
 
   const rodape = document.createElement('tr');
-  const rotulo = td(dados.cortada
-    ? `Mostrando as ${inteiro(dados.limite)} notas mais recentes. Escolha um período menor ou pesquise para ver as outras.`
-    : `Total: ${plural(notas.length, 'nota', 'notas')}`, 'esquerda');
+  const rotulo = td(infoNotas.cortada
+    ? `Mostrando as ${inteiro(infoNotas.limite)} notas mais recentes. Escolha um período menor ou pesquise para ver as outras.`
+    : `Total: ${plural(visiveis.length, 'nota', 'notas')}${tipo ? ` de ${tipo.titulo.toLowerCase()}` : ''}`, 'esquerda');
   rotulo.colSpan = COLUNAS_NOTAS.length;
   rodape.append(rotulo);
   tabela.tFoot.replaceChildren(rodape);
@@ -615,6 +676,7 @@ async function baixarExcel() {
     for (const [nome, valor] of Object.entries(filtrosAtuais())) {
       if (valor) url.searchParams.set(nome, valor);
     }
+    if (aba === 'notas' && filtroTipo) url.searchParams.set('tipo', filtroTipo);
     const resposta = await fetch(url, { headers: { 'x-api-key': chave.ler() ?? '' } });
     if (!resposta.ok) {
       const corpo = await resposta.json().catch(() => ({}));
