@@ -203,6 +203,17 @@ async function movimentos(codigo, filtros) {
 }
 
 // ===== Notas de entrada =====
+// Chave que junta os lançamentos de uma mesma nota. A devolução no caixa (PDV) não tem nota nem
+// cliente e gera um lançamento por cupom: ela vira uma linha só por dia e por loja.
+const CHAVE_NOTA = `
+  CROSS APPLY (SELECT
+    ${EMPRESA_DO_CENTRO} AS empresa,
+    CASE WHEN EL.TAB_MASTER_ORIGEM = ${TAB_CAIXA} THEN NULL ELSE EL.REG_MASTER_ORIGEM END AS registro,
+    CASE WHEN EL.TAB_MASTER_ORIGEM = ${TAB_CAIXA} THEN NULL ELSE NULLIF(EL.DOCUMENTO, 0) END AS documento,
+    CASE WHEN EL.TAB_MASTER_ORIGEM = ${TAB_CAIXA} THEN NULL ELSE EL.ENTIDADE END AS entidade,
+    CASE WHEN EL.TAB_MASTER_ORIGEM = ${TAB_CAIXA} THEN CAST(EL.DATA AS date) END AS dia
+  ) C`;
+
 // Cada documento que colocou mercadoria no estoque no período (nota de compra, transferência,
 // devolução, nota de venda cancelada...), uma linha por documento. Os lançamentos de estoque do
 // mesmo documento são juntados pela tela de origem + registro de origem + nº do documento +
@@ -217,10 +228,11 @@ async function notas(filtros) {
 
     SELECT
       EL.TAB_MASTER_ORIGEM                       AS origem,
-      EL.REG_MASTER_ORIGEM                       AS registro,
+      C.registro,
       C.empresa,
       C.documento,
-      EL.ENTIDADE                                AS entidade,
+      C.entidade,
+      C.dia,
       MAX(EL.TIPO_MOVIMENTO)                     AS tipo,
       MIN(EL.DATA_HORA)                          AS quando,
       COUNT(DISTINCT EL.PRODUTO)                 AS itens,
@@ -228,17 +240,18 @@ async function notas(filtros) {
       MAX(CASE WHEN PR.PRODUTO IS NOT NULL THEN 1 ELSE 0 END) AS bate_produto
     INTO #ENT
     FROM ESTOQUE_LANCAMENTOS EL WITH (NOLOCK)
-    CROSS APPLY (SELECT ${EMPRESA_DO_CENTRO} AS empresa, NULLIF(EL.DOCUMENTO, 0) AS documento) C
+    ${CHAVE_NOTA}
     LEFT JOIN PRODUTOS PR WITH (NOLOCK)
       ON @busca IS NOT NULL AND PR.PRODUTO = EL.PRODUTO
      AND (CAST(PR.PRODUTO AS varchar(20)) = @busca OR PR.DESCRICAO LIKE '%' + @busca + '%')
     WHERE EL.DATA >= @de AND EL.DATA < @ate
       AND ISNULL(EL.ESTOQUE_ENTRADA, 0) > 0
       AND (@empresa IS NULL OR C.empresa = @empresa)
-    GROUP BY EL.TAB_MASTER_ORIGEM, EL.REG_MASTER_ORIGEM, C.empresa, C.documento, EL.ENTIDADE;
+    GROUP BY EL.TAB_MASTER_ORIGEM, C.registro, C.empresa, C.documento, C.entidade, C.dia;
 
     SELECT TOP (${LIMITE_NOTAS})
       X.origem, X.registro, X.empresa, X.documento, X.entidade, X.tipo, X.itens, X.quantidade,
+      CONVERT(varchar(10), X.dia, 120)                 AS dia,
       CONVERT(varchar(19), X.quando, 120)              AS quando,
       LTRIM(RTRIM(EU.NOME_FANTASIA))                   AS nome_empresa,
       LTRIM(RTRIM(E.NOME))                             AS nome_entidade,
@@ -294,6 +307,7 @@ async function itensDaNota(nota, filtros) {
     .input('documento', sql.BigInt, nota.documento)
     .input('entidade', sql.Int, nota.entidade)
     .input('empresaNota', sql.Int, nota.empresa)
+    .input('dia', sql.VarChar(10), nota.dia)
     .query(`
       SET NOCOUNT ON;
       ${PERIODO}
@@ -303,14 +317,15 @@ async function itensDaNota(nota, filtros) {
         SUM(ISNULL(EL.ESTOQUE_ENTRADA, 0))         AS quantidade,
         CONVERT(varchar(19), MIN(EL.DATA_HORA), 120) AS quando
       FROM ESTOQUE_LANCAMENTOS EL WITH (NOLOCK)
-      CROSS APPLY (SELECT ${EMPRESA_DO_CENTRO} AS empresa, NULLIF(EL.DOCUMENTO, 0) AS documento) C
+      ${CHAVE_NOTA}
       LEFT JOIN PRODUTOS PR WITH (NOLOCK) ON PR.PRODUTO = EL.PRODUTO
       WHERE EL.DATA >= @de AND EL.DATA < @ate
         AND ISNULL(EL.ESTOQUE_ENTRADA, 0) > 0
         AND EL.TAB_MASTER_ORIGEM = @origem
-        AND ((@registro IS NULL AND EL.REG_MASTER_ORIGEM IS NULL) OR EL.REG_MASTER_ORIGEM = @registro)
+        AND ((@registro IS NULL AND C.registro IS NULL) OR C.registro = @registro)
         AND ((@documento IS NULL AND C.documento IS NULL) OR C.documento = @documento)
-        AND ((@entidade IS NULL AND EL.ENTIDADE IS NULL) OR EL.ENTIDADE = @entidade)
+        AND ((@entidade IS NULL AND C.entidade IS NULL) OR C.entidade = @entidade)
+        AND ((@dia IS NULL AND C.dia IS NULL) OR C.dia = CAST(@dia AS date))
         AND C.empresa = @empresaNota
       GROUP BY EL.PRODUTO, PR.DESCRICAO
       ORDER BY PR.DESCRICAO;

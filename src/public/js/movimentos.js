@@ -174,7 +174,7 @@ function etiquetaTipo(n) {
 }
 
 function celulaNota(n) {
-  const celula = td(n.nota ? String(n.nota) : 'sem número', n.nota ? 'esquerda' : 'esquerda vazio');
+  const celula = td(n.nota ? String(n.nota) : n.sem_nota, n.nota ? 'esquerda' : 'esquerda vazio');
   if (n.nota_original) celula.append(span(`venda ${n.nota_original}`, 'qtd'));
   return celula;
 }
@@ -259,6 +259,7 @@ async function abrirNota(n) {
       documento: n.documento,
       entidade: n.entidade,
       empresa_nota: n.empresa,
+      dia: n.dia,
     });
     mostrarStatus('', false, 'ficha-status');
     const total = itens.reduce((t, i) => t + (Number(i.quantidade) || 0), 0);

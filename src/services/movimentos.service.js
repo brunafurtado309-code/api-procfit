@@ -98,6 +98,7 @@ function prepararNota(m) {
     lancadaEm = m.cancelada_em;
   }
   const doCliente = grupo === 'devolucao' || grupo === 'cancelada';
+  const noCaixa = m.origem === repo.TAB_CAIXA;
   return {
     // o que a tela devolve para abrir os produtos da nota
     origem: m.origem,
@@ -105,9 +106,11 @@ function prepararNota(m) {
     empresa: m.empresa,
     documento: m.documento,
     entidade: m.entidade,
+    dia: m.dia ?? null,
     // o que aparece
     grupo,
-    tipo: TIPO_CURTO[grupo],
+    tipo: noCaixa ? 'Devolução no caixa' : TIPO_CURTO[grupo],
+    sem_nota: noCaixa ? 'cupons do dia' : 'sem número',
     detalhe: grupo === 'nota' ? nomeDoMovimento({ ...m, entrada: 1 }) : null,
     quando: m.quando,
     nota: m.nota_compra ?? m.devolucao_nota ?? m.documento ?? null,
@@ -142,6 +145,7 @@ async function itensDaNota(query) {
     documento: numeroOuNulo(query.documento, 'documento'),
     entidade: numeroOuNulo(query.entidade, 'entidade'),
     empresa: numeroOuNulo(query.empresa_nota, 'empresa_nota'),
+    dia: data(query.dia, 'dia'),
   };
   if (nota.origem === null || nota.empresa === null) throw new AppError('Nota inválida');
   return repo.itensDaNota(nota, montarFiltros(query));
