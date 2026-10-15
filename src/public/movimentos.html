@@ -22,13 +22,18 @@
   </header>
 
   <main class="conteudo conteudo--largo">
+    <nav class="abas" id="abas" aria-label="Visões de entradas e saídas">
+      <button class="aba aba--ativa" type="button" data-aba="notas" aria-pressed="true">Notas de entrada</button>
+      <button class="aba" type="button" data-aba="produtos" aria-pressed="false">Por produto</button>
+    </nav>
+
     <section class="barra-filtros" aria-label="Filtros">
       <div class="barra-filtros__linha">
         <form id="form-pesquisa" class="pesquisa" role="search">
           <label class="campo campo--busca">
             <span class="sr-only">Encontrar produto</span>
             <input id="pesquisa-termo" type="search" maxlength="60" autocomplete="off"
-                   placeholder="Encontrar por código ou nome do produto">
+                   placeholder="Encontrar por nº da nota, fornecedor ou produto">
           </label>
           <button type="submit">Pesquisar</button>
           <button id="limpar-pesquisa" type="button" class="botao-secundario" hidden>Limpar</button>
@@ -55,6 +60,21 @@
       </form>
 
       <p id="status" class="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="bloco" id="bloco-notas" hidden>
+      <div class="bloco-topo">
+        <h2 id="titulo-notas">Notas de entrada</h2>
+      </div>
+      <p class="bloco__descricao">Cada nota que colocou mercadoria no estoque, da mais recente para a mais antiga.
+        Clique na nota para ver os produtos que entraram.</p>
+      <div class="tabela-rolagem">
+        <table class="tabela" id="tabela-notas">
+          <thead></thead>
+          <tbody></tbody>
+          <tfoot></tfoot>
+        </table>
+      </div>
     </section>
 
     <div id="painel" hidden>

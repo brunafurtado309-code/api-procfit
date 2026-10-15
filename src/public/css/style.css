@@ -2248,3 +2248,22 @@ button.barra:hover { background: var(--verde-suave); color: inherit; }
   .atencao__valor { grid-column: 3; grid-row: 1; }
   .atencao__ver { grid-column: 3; grid-row: 2; }
 }
+
+/* ==========================================================
+   22. Entradas e saídas: etiqueta do tipo de entrada (aba Notas de entrada)
+   Só verdes e cinzas: nenhum tipo de entrada é alerta.
+   ========================================================== */
+.tipo-entrada {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: var(--texto-mini);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tipo-entrada--compra { background: var(--verde-claro); color: var(--verde-escuro); }
+.tipo-entrada--transferencia { background: var(--acai-claro); color: var(--verde); }
+.tipo-entrada--devolucao { background: var(--outros-claro); color: var(--tinta); }
+.tipo-entrada--cancelada { background: var(--superficie); border-color: var(--linha-forte); color: var(--tinta-suave); }
+.tipo-entrada--nota { background: var(--fundo); color: var(--tinta-suave); }

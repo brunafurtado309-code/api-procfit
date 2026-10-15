@@ -29,7 +29,9 @@ const { EMPRESA_DO_CENTRO } = require('./logistica.repository');
 const TAB_NOTA_COMPRA = 41;
 const TAB_CAIXA = 601979;
 const TAB_CANCELAMENTO_NOTA = 561384;
+const TAB_TRANSFERENCIA = 339822;
 const LIMITE_LISTA = 3000;
+const LIMITE_NOTAS = 1000;
 
 // Nome de quem lançou a partir do usuário do PROCFIT. O login ADMIN é genérico e não identifica uma
 // pessoa (vem NULL): a nota de compra chega pelo eDoc já com o ADMIN e quem a finaliza não fica
@@ -148,7 +150,7 @@ async function movimentos(codigo, filtros) {
         SELECT TOP 1 DV.NF_NUMERO, DV.DATA_HORA, DV.USUARIO_LOGADO
         FROM NF_FATURAMENTO_DEVOLUCOES DV WITH (NOLOCK)
         LEFT JOIN NF_FATURAMENTO NFO WITH (NOLOCK) ON NFO.NF_FATURAMENTO = DV.NF_FATURAMENTO_ORIGEM
-        WHERE EL.TAB_MASTER_ORIGEM NOT IN (${TAB_NOTA_COMPRA}, ${TAB_CAIXA}, ${TAB_CANCELAMENTO_NOTA})
+        WHERE EL.TAB_MASTER_ORIGEM NOT IN (${TAB_NOTA_COMPRA}, ${TAB_CAIXA}, ${TAB_CANCELAMENTO_NOTA}, ${TAB_TRANSFERENCIA})
           AND (DV.NF_FATURAMENTO_DEVOLUCAO = EL.REG_MASTER_ORIGEM OR NFO.NF_NUMERO = EL.DOCUMENTO)
         ORDER BY CASE WHEN DV.NF_FATURAMENTO_DEVOLUCAO = EL.REG_MASTER_ORIGEM THEN 0 ELSE 1 END,
                  DV.NF_FATURAMENTO_DEVOLUCAO DESC
@@ -200,4 +202,123 @@ async function movimentos(codigo, filtros) {
   return { produto: cadastro[0] ?? null, entradas, saida: saidas[0]?.saida ?? 0, estoque, clientes };
 }
 
-module.exports = { TAB_NOTA_COMPRA, TAB_CAIXA, TAB_CANCELAMENTO_NOTA, produtos, movimentos };
+// ===== Notas de entrada =====
+// Cada documento que colocou mercadoria no estoque no período (nota de compra, transferência,
+// devolução, nota de venda cancelada...), uma linha por documento. Os lançamentos de estoque do
+// mesmo documento são juntados pela tela de origem + registro de origem + nº do documento +
+// fornecedor/cliente + empresa. As regras de quem lançou são as mesmas da ficha do produto.
+// A pesquisa acha pelo nº da nota, pelo nome do fornecedor/cliente ou por um produto da nota.
+async function notas(filtros) {
+  const pool = await getPool();
+  const { recordsets } = await criarRequest(pool, filtros).query(`
+    SET NOCOUNT ON;
+    ${PERIODO}
+    IF OBJECT_ID('tempdb..#ENT') IS NOT NULL DROP TABLE #ENT;
+
+    SELECT
+      EL.TAB_MASTER_ORIGEM                       AS origem,
+      EL.REG_MASTER_ORIGEM                       AS registro,
+      C.empresa,
+      C.documento,
+      EL.ENTIDADE                                AS entidade,
+      MAX(EL.TIPO_MOVIMENTO)                     AS tipo,
+      MIN(EL.DATA_HORA)                          AS quando,
+      COUNT(DISTINCT EL.PRODUTO)                 AS itens,
+      SUM(ISNULL(EL.ESTOQUE_ENTRADA, 0))         AS quantidade,
+      MAX(CASE WHEN PR.PRODUTO IS NOT NULL THEN 1 ELSE 0 END) AS bate_produto
+    INTO #ENT
+    FROM ESTOQUE_LANCAMENTOS EL WITH (NOLOCK)
+    CROSS APPLY (SELECT ${EMPRESA_DO_CENTRO} AS empresa, NULLIF(EL.DOCUMENTO, 0) AS documento) C
+    LEFT JOIN PRODUTOS PR WITH (NOLOCK)
+      ON @busca IS NOT NULL AND PR.PRODUTO = EL.PRODUTO
+     AND (CAST(PR.PRODUTO AS varchar(20)) = @busca OR PR.DESCRICAO LIKE '%' + @busca + '%')
+    WHERE EL.DATA >= @de AND EL.DATA < @ate
+      AND ISNULL(EL.ESTOQUE_ENTRADA, 0) > 0
+      AND (@empresa IS NULL OR C.empresa = @empresa)
+    GROUP BY EL.TAB_MASTER_ORIGEM, EL.REG_MASTER_ORIGEM, C.empresa, C.documento, EL.ENTIDADE;
+
+    SELECT TOP (${LIMITE_NOTAS})
+      X.origem, X.registro, X.empresa, X.documento, X.entidade, X.tipo, X.itens, X.quantidade,
+      CONVERT(varchar(19), X.quando, 120)              AS quando,
+      LTRIM(RTRIM(EU.NOME_FANTASIA))                   AS nome_empresa,
+      LTRIM(RTRIM(E.NOME))                             AS nome_entidade,
+      NC.NF_NUMERO                                     AS nota_compra,
+      CONVERT(varchar(19), NC.DATA_HORA, 120)          AS nota_lancada_em,
+      ${QUEM('U')} AS nota_lancada_por,
+      DEV.NF_NUMERO                                    AS devolucao_nota,
+      CONVERT(varchar(19), DEV.DATA_HORA, 120)         AS devolucao_lancada_em,
+      ${QUEM('UD')} AS devolucao_lancada_por,
+      CONVERT(varchar(19), CN.DATA_HORA, 120)          AS cancelada_em,
+      ${QUEM('UC')} AS cancelada_por
+    FROM #ENT X
+    LEFT JOIN EMPRESAS_USUARIAS EU WITH (NOLOCK) ON EU.EMPRESA_USUARIA = X.empresa
+    LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = X.entidade
+    OUTER APPLY (
+      SELECT TOP 1 N.NF_NUMERO, N.DATA_HORA, N.USUARIO_LOGADO
+      FROM NF_COMPRA N WITH (NOLOCK)
+      WHERE X.origem = ${TAB_NOTA_COMPRA}
+        AND (N.NF_COMPRA = X.registro OR (N.NF_NUMERO = X.documento AND N.ENTIDADE = X.entidade))
+      ORDER BY CASE WHEN N.NF_COMPRA = X.registro THEN 0 ELSE 1 END, N.NF_COMPRA DESC
+    ) NC
+    LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = NC.USUARIO_LOGADO
+    OUTER APPLY (
+      SELECT TOP 1 DV.NF_NUMERO, DV.DATA_HORA, DV.USUARIO_LOGADO
+      FROM NF_FATURAMENTO_DEVOLUCOES DV WITH (NOLOCK)
+      LEFT JOIN NF_FATURAMENTO NFO WITH (NOLOCK) ON NFO.NF_FATURAMENTO = DV.NF_FATURAMENTO_ORIGEM
+      WHERE X.origem NOT IN (${TAB_NOTA_COMPRA}, ${TAB_CAIXA}, ${TAB_CANCELAMENTO_NOTA}, ${TAB_TRANSFERENCIA})
+        AND (DV.NF_FATURAMENTO_DEVOLUCAO = X.registro OR NFO.NF_NUMERO = X.documento)
+      ORDER BY CASE WHEN DV.NF_FATURAMENTO_DEVOLUCAO = X.registro THEN 0 ELSE 1 END,
+               DV.NF_FATURAMENTO_DEVOLUCAO DESC
+    ) DEV
+    LEFT JOIN USUARIOS UD WITH (NOLOCK) ON UD.USUARIO = DEV.USUARIO_LOGADO
+    LEFT JOIN CANCELAMENTOS_NOTAS_FISCAIS CN WITH (NOLOCK)
+      ON X.origem = ${TAB_CANCELAMENTO_NOTA} AND CN.NF_CANCELAMENTO = X.registro
+    LEFT JOIN USUARIOS UC WITH (NOLOCK) ON UC.USUARIO = CN.USUARIO_LOGADO
+    WHERE @busca IS NULL
+       OR X.bate_produto = 1
+       OR CAST(X.documento AS varchar(20)) = @busca
+       OR CAST(NC.NF_NUMERO AS varchar(20)) = @busca
+       OR CAST(DEV.NF_NUMERO AS varchar(20)) = @busca
+       OR E.NOME LIKE '%' + @busca + '%'
+    ORDER BY X.quando DESC;
+  `);
+  return recordsets[0];
+}
+
+// Produtos de uma nota de entrada (a mesma junção da lista de notas)
+async function itensDaNota(nota, filtros) {
+  const pool = await getPool();
+  const { recordset } = await criarRequest(pool, filtros)
+    .input('origem', sql.Int, nota.origem)
+    .input('registro', sql.Int, nota.registro)
+    .input('documento', sql.BigInt, nota.documento)
+    .input('entidade', sql.Int, nota.entidade)
+    .input('empresaNota', sql.Int, nota.empresa)
+    .query(`
+      SET NOCOUNT ON;
+      ${PERIODO}
+      SELECT
+        EL.PRODUTO                                 AS produto,
+        LTRIM(RTRIM(PR.DESCRICAO))                 AS descricao,
+        SUM(ISNULL(EL.ESTOQUE_ENTRADA, 0))         AS quantidade,
+        CONVERT(varchar(19), MIN(EL.DATA_HORA), 120) AS quando
+      FROM ESTOQUE_LANCAMENTOS EL WITH (NOLOCK)
+      CROSS APPLY (SELECT ${EMPRESA_DO_CENTRO} AS empresa, NULLIF(EL.DOCUMENTO, 0) AS documento) C
+      LEFT JOIN PRODUTOS PR WITH (NOLOCK) ON PR.PRODUTO = EL.PRODUTO
+      WHERE EL.DATA >= @de AND EL.DATA < @ate
+        AND ISNULL(EL.ESTOQUE_ENTRADA, 0) > 0
+        AND EL.TAB_MASTER_ORIGEM = @origem
+        AND ((@registro IS NULL AND EL.REG_MASTER_ORIGEM IS NULL) OR EL.REG_MASTER_ORIGEM = @registro)
+        AND ((@documento IS NULL AND C.documento IS NULL) OR C.documento = @documento)
+        AND ((@entidade IS NULL AND EL.ENTIDADE IS NULL) OR EL.ENTIDADE = @entidade)
+        AND C.empresa = @empresaNota
+      GROUP BY EL.PRODUTO, PR.DESCRICAO
+      ORDER BY PR.DESCRICAO;
+    `);
+  return recordset;
+}
+
+module.exports = {
+  TAB_NOTA_COMPRA, TAB_CAIXA, TAB_CANCELAMENTO_NOTA, TAB_TRANSFERENCIA, LIMITE_NOTAS,
+  produtos, movimentos, notas, itensDaNota,
+};

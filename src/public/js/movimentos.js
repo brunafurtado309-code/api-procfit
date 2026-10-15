@@ -1,4 +1,6 @@
 // Entradas e saídas: o que entrou e saiu do estoque, só em quantidade.
+// Duas abas: "Notas de entrada" (uma linha por nota, a pergunta da logística: o que chegou, de quem,
+// em qual nota e quem lançou) e "Por produto" (entrou, saiu e saldo de cada produto).
 // Na ficha do produto, cada movimento com o documento e quem lançou a nota de compra.
 
 const el = (id) => document.getElementById(id);
@@ -18,6 +20,14 @@ const chave = {
 let lista = [];
 let resumo = {};
 let ordem = { coluna: 'saiu', direcao: 'desc' };
+let notas = [];
+
+// Aba aberta: notas de entrada por padrão; "#produtos" no endereço abre a outra
+const ABAS = {
+  notas: { pesquisa: 'Encontrar por nº da nota, fornecedor ou produto', excel: 'notas/excel' },
+  produtos: { pesquisa: 'Encontrar por código ou nome do produto', excel: 'produtos/excel' },
+};
+let aba = window.location.hash === '#produtos' ? 'produtos' : 'notas';
 
 const TEMPO_LIMITE_MS = 60000;
 
@@ -108,22 +118,166 @@ function marcarAtalho() {
   }
 }
 
+// ===== Abas =====
+function mostrarAba() {
+  for (const botao of el('abas').querySelectorAll('[data-aba]')) {
+    const ativa = botao.dataset.aba === aba;
+    botao.classList.toggle('aba--ativa', ativa);
+    botao.setAttribute('aria-pressed', String(ativa));
+  }
+  el('pesquisa-termo').placeholder = ABAS[aba].pesquisa;
+  el('bloco-notas').hidden = true;
+  el('painel').hidden = true;
+}
+
 // ===== Carregar =====
+let carga = 0; // trocar de aba no meio de uma carga descarta a resposta antiga
 async function carregar() {
-  mostrarStatus('Carregando os movimentos…');
+  const minhaCarga = ++carga;
+  const abaDaCarga = aba;
+  mostrarStatus(abaDaCarga === 'notas' ? 'Carregando as notas de entrada…' : 'Carregando os movimentos…');
   const inicioCarga = Date.now();
   try {
-    const dados = await buscar('produtos', filtrosAtuais());
-    lista = dados.lista;
-    resumo = dados.resumo;
-    mostrarResumo();
-    mostrarLista();
-    el('painel').hidden = false;
+    if (abaDaCarga === 'notas') {
+      const dados = await buscar('notas', filtrosAtuais());
+      if (minhaCarga !== carga) return;
+      notas = dados.lista;
+      mostrarNotas(dados);
+      el('bloco-notas').hidden = false;
+    } else {
+      const dados = await buscar('produtos', filtrosAtuais());
+      if (minhaCarga !== carga) return;
+      lista = dados.lista;
+      resumo = dados.resumo;
+      mostrarResumo();
+      mostrarLista();
+      el('painel').hidden = false;
+    }
     const segundos = ((Date.now() - inicioCarga) / 1000).toFixed(1).replace('.', ',');
     mostrarStatus(`atualizado às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
       + ` · carregou em ${segundos} s`);
   } catch (erro) {
-    mostrarStatus(erro.message, true);
+    if (minhaCarga === carga) mostrarStatus(erro.message, true);
+  }
+}
+
+// ===== Notas de entrada =====
+const COLUNAS_NOTAS = [
+  ['Entrada no estoque', true], ['Tipo', true], ['Nota', true], ['Fornecedor / cliente', true],
+  ['Empresa', true], ['Produtos'], ['Quantidade'], ['Lançada por', true],
+];
+
+function etiquetaTipo(n) {
+  const etiqueta = span(n.tipo, `tipo-entrada tipo-entrada--${n.grupo}`);
+  if (n.detalhe) etiqueta.title = n.detalhe;
+  return etiqueta;
+}
+
+function celulaNota(n) {
+  const celula = td(n.nota ? String(n.nota) : 'sem número', n.nota ? 'esquerda' : 'esquerda vazio');
+  if (n.nota_original) celula.append(span(`venda ${n.nota_original}`, 'qtd'));
+  return celula;
+}
+
+function celulaLancada(n) {
+  if (!n.lancada_por) return td('—', 'esquerda');
+  return comAuxiliar(n.lancada_por, n.lancada_em ? dataHoraBR(n.lancada_em) : null, 'esquerda');
+}
+
+function mostrarNotas(dados) {
+  el('titulo-notas').textContent = `Notas de entrada (${inteiro(notas.length)})`;
+  const tabela = el('tabela-notas');
+  const cab = document.createElement('tr');
+  for (const [texto, esquerda] of COLUNAS_NOTAS) {
+    const th = document.createElement('th');
+    th.scope = 'col';
+    th.textContent = texto;
+    if (esquerda) th.className = 'esquerda';
+    cab.append(th);
+  }
+  tabela.tHead.replaceChildren(cab);
+
+  const linhas = [];
+  if (!notas.length) {
+    const linha = document.createElement('tr');
+    const vazio = td('Nenhuma nota de entrada com esses filtros.', 'vazio');
+    vazio.colSpan = COLUNAS_NOTAS.length;
+    linha.append(vazio);
+    linhas.push(linha);
+  }
+  for (const n of notas) {
+    const linha = document.createElement('tr');
+    linha.className = 'linha-dia';
+    linha.tabIndex = 0;
+    linha.title = 'Ver os produtos desta nota';
+    linha.append(
+      td(dataHoraBR(n.quando), 'esquerda sem-quebra'),
+      td(etiquetaTipo(n), 'esquerda'),
+      celulaNota(n),
+      n.quem_enviou ? td(n.quem_enviou, 'esquerda') : td('—', 'esquerda'),
+      td(n.nome_empresa, 'esquerda'),
+      td(inteiro(n.itens)),
+      td(inteiro(n.quantidade), 'coluna-final'),
+      celulaLancada(n),
+    );
+    linha.addEventListener('click', () => abrirNota(n));
+    linha.addEventListener('keydown', (evento) => {
+      if (evento.key === 'Enter') abrirNota(n);
+    });
+    linhas.push(linha);
+  }
+  tabela.tBodies[0].replaceChildren(...linhas);
+
+  const rodape = document.createElement('tr');
+  const rotulo = td(dados.cortada
+    ? `Mostrando as ${inteiro(dados.limite)} notas mais recentes. Escolha um período menor ou pesquise para ver as outras.`
+    : `Total: ${plural(notas.length, 'nota', 'notas')}`, 'esquerda');
+  rotulo.colSpan = COLUNAS_NOTAS.length;
+  rodape.append(rotulo);
+  tabela.tFoot.replaceChildren(rodape);
+}
+
+async function abrirNota(n) {
+  const dialogo = el('ficha');
+  el('ficha-titulo').textContent = `${n.tipo}${n.nota ? ` · nota ${n.nota}` : ''}`;
+  const partes = [
+    n.quem_enviou ? `${n.quem_enviou_rotulo} ${n.quem_enviou}` : null,
+    n.nome_empresa,
+    `entrou em ${dataHoraBR(n.quando)}`,
+    n.lancada_por ? `lançada por ${n.lancada_por}` : null,
+  ];
+  el('ficha-resumo').textContent = partes.filter(Boolean).join(' · ');
+  el('ficha-corpo').replaceChildren();
+  mostrarStatus('Carregando os produtos da nota…', false, 'ficha-status');
+  if (!dialogo.open) dialogo.showModal();
+  try {
+    const itens = await buscar('notas/itens', {
+      ...filtrosAtuais(),
+      busca: null,
+      origem: n.origem,
+      registro: n.registro,
+      documento: n.documento,
+      entidade: n.entidade,
+      empresa_nota: n.empresa,
+    });
+    mostrarStatus('', false, 'ficha-status');
+    const total = itens.reduce((t, i) => t + (Number(i.quantidade) || 0), 0);
+    const tabela = tabelaSimples(
+      [['Produto', true], ['Quantidade que entrou']],
+      itens.map((i) => [
+        comAuxiliar(i.descricao || `Produto ${i.produto}`, `código ${i.produto}`, 'esquerda'),
+        td(inteiro(i.quantidade), 'coluna-final'),
+      ]),
+      'Nenhum produto encontrado para esta nota.',
+    );
+    const rodape = tabela.querySelector('table').createTFoot().insertRow();
+    rodape.append(td(`Total (${plural(itens.length, 'produto', 'produtos')})`, 'esquerda'), td(inteiro(total), 'coluna-final'));
+    el('ficha-corpo').replaceChildren(
+      Object.assign(document.createElement('h3'), { textContent: 'Produtos que entraram' }),
+      tabela,
+    );
+  } catch (erro) {
+    mostrarStatus(erro.message, true, 'ficha-status');
   }
 }
 
@@ -456,7 +610,7 @@ async function baixarExcel() {
   const botao = el('baixar-excel');
   botao.disabled = true;
   try {
-    const url = new URL('/movimentos/produtos/excel', window.location.origin);
+    const url = new URL(`/movimentos/${ABAS[aba].excel}`, window.location.origin);
     for (const [nome, valor] of Object.entries(filtrosAtuais())) {
       if (valor) url.searchParams.set(nome, valor);
     }
@@ -506,6 +660,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   el('fim').value = periodo.fim;
   await carregarEmpresas();
   marcarAtalho();
+  mostrarAba();
+
+  el('abas').addEventListener('click', (evento) => {
+    const botao = evento.target.closest('[data-aba]');
+    if (!botao || botao.dataset.aba === aba) return;
+    aba = botao.dataset.aba;
+    window.history.replaceState(null, '', aba === 'produtos' ? '#produtos' : window.location.pathname);
+    mostrarAba();
+    carregar();
+  });
 
   el('trocar-chave').addEventListener('click', () => {
     chave.apagar();

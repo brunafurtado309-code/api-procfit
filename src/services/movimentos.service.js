@@ -12,7 +12,7 @@ const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0
 
 // Nome do movimento pela tela de origem (TAB_MASTER_ORIGEM) e o tipo (ver movimentos.repository.js).
 // Para dar nome a um tipo novo, é só acrescentar aqui.
-const TAB_TRANSFERENCIA = 339822;
+const TAB_TRANSFERENCIA = repo.TAB_TRANSFERENCIA;
 
 // Os de out/2026 foram nomeados pelo que os lançamentos mostram: o tipo 4 traz a indústria do grupo
 // e grandes quantidades; o tipo 20 é a nota de venda cancelada voltando ao estoque (conferido no
@@ -59,7 +59,122 @@ function montarFiltros(query) {
   return filtros;
 }
 
+// Em que grupo cai uma entrada: nota fiscal que chegou, transferência entre empresas, devolução
+// ou nota de venda cancelada. Usado na ficha do produto e na lista de notas.
+function grupoDaEntrada(m) {
+  if (m.origem === repo.TAB_CANCELAMENTO_NOTA) return 'cancelada';
+  if (m.devolucao_nota != null || m.origem === repo.TAB_CAIXA) return 'devolucao';
+  if (m.origem === TAB_TRANSFERENCIA) return 'transferencia';
+  return 'nota';
+}
+
 const produtos = (query) => repo.produtos(montarFiltros(query));
+
+// ===== Notas de entrada =====
+// Tipo curto (a etiqueta da lista) e quem lançou, já em texto para a tela e o Excel.
+// O login ADMIN vem sem nome: na nota de compra é a nota que chegou sozinha pelo eDoc.
+// Quem finaliza a nota no PROCFIT não fica gravado no banco (conferido em out/2026).
+const TIPO_CURTO = {
+  compra: 'Compra',
+  nota: 'Outra entrada',
+  transferencia: 'Transferência',
+  devolucao: 'Devolução',
+  cancelada: 'Venda cancelada',
+};
+
+function prepararNota(m) {
+  let grupo = grupoDaEntrada(m);
+  if (grupo === 'nota' && m.origem === repo.TAB_NOTA_COMPRA) grupo = 'compra';
+  let lancadaPor = null;
+  let lancadaEm = null;
+  if (grupo === 'compra' && m.nota_lancada_em) {
+    lancadaPor = m.nota_lancada_por ?? 'eDoc (automático)';
+    lancadaEm = m.nota_lancada_em;
+  } else if (grupo === 'devolucao' && m.devolucao_lancada_em) {
+    lancadaPor = m.devolucao_lancada_por ?? 'login genérico (ADMIN)';
+    lancadaEm = m.devolucao_lancada_em;
+  } else if (grupo === 'cancelada' && m.cancelada_em) {
+    lancadaPor = m.cancelada_por ?? 'login genérico (ADMIN)';
+    lancadaEm = m.cancelada_em;
+  }
+  const doCliente = grupo === 'devolucao' || grupo === 'cancelada';
+  return {
+    // o que a tela devolve para abrir os produtos da nota
+    origem: m.origem,
+    registro: m.registro,
+    empresa: m.empresa,
+    documento: m.documento,
+    entidade: m.entidade,
+    // o que aparece
+    grupo,
+    tipo: TIPO_CURTO[grupo],
+    detalhe: grupo === 'nota' ? nomeDoMovimento({ ...m, entrada: 1 }) : null,
+    quando: m.quando,
+    nota: m.nota_compra ?? m.devolucao_nota ?? m.documento ?? null,
+    nota_original: grupo === 'devolucao' && m.devolucao_nota != null ? m.documento : null,
+    nome_empresa: m.nome_empresa || `Empresa ${m.empresa}`,
+    quem_enviou: m.nome_entidade || null,
+    quem_enviou_rotulo: doCliente ? 'cliente' : 'fornecedor',
+    itens: m.itens,
+    quantidade: m.quantidade,
+    lancada_por: lancadaPor,
+    lancada_em: lancadaEm,
+  };
+}
+
+async function notas(query) {
+  const filtros = montarFiltros(query);
+  const lista = (await repo.notas(filtros)).map(prepararNota);
+  return { lista, limite: repo.LIMITE_NOTAS, cortada: lista.length >= repo.LIMITE_NOTAS };
+}
+
+function numeroOuNulo(valor, nome) {
+  if (valor === undefined || valor === null || valor === '') return null;
+  const n = Number(valor);
+  if (!Number.isInteger(n)) throw new AppError(`"${nome}" deve ser um número`);
+  return n;
+}
+
+async function itensDaNota(query) {
+  const nota = {
+    origem: numeroOuNulo(query.origem, 'origem'),
+    registro: numeroOuNulo(query.registro, 'registro'),
+    documento: numeroOuNulo(query.documento, 'documento'),
+    entidade: numeroOuNulo(query.entidade, 'entidade'),
+    empresa: numeroOuNulo(query.empresa_nota, 'empresa_nota'),
+  };
+  if (nota.origem === null || nota.empresa === null) throw new AppError('Nota inválida');
+  return repo.itensDaNota(nota, montarFiltros(query));
+}
+
+async function exportarNotas(query) {
+  const filtros = montarFiltros(query);
+  const lista = (await repo.notas(filtros)).map(prepararNota).map((n) => ({
+    ...n,
+    quando: n.quando ? n.quando.slice(0, 16).replace('T', ' ') : '',
+    lancada: n.lancada_por ? `${n.lancada_por}${n.lancada_em ? ` em ${n.lancada_em.slice(0, 16)}` : ''}` : '',
+  }));
+  const dataBR = (d) => String(d).split('-').reverse().join('/');
+  const workbook = excel.novaPlanilha();
+  excel.adicionarTabela(workbook, 'Notas de entrada', {
+    titulo: 'Notas de entrada no estoque | Belo Norte',
+    subtitulo: `${lista.length} notas · de ${dataBR(filtros.inicio)} até ${dataBR(filtros.fim)}`
+      + `${filtros.empresa ? ` · empresa ${filtros.empresa}` : ''}`
+      + `${filtros.busca ? ` · pesquisa "${filtros.busca}"` : ''}`,
+    colunas: [
+      { titulo: 'Entrada no estoque', chave: 'quando', largura: 18 },
+      { titulo: 'Tipo', chave: 'tipo', largura: 16 },
+      { titulo: 'Nota', chave: 'nota', tipo: 'codigo', largura: 12 },
+      { titulo: 'Fornecedor / cliente', chave: 'quem_enviou', largura: 40 },
+      { titulo: 'Empresa', chave: 'nome_empresa', largura: 24 },
+      { titulo: 'Produtos', chave: 'itens', tipo: 'inteiro', largura: 10 },
+      { titulo: 'Quantidade', chave: 'quantidade', tipo: 'inteiro', largura: 12 },
+      { titulo: 'Lançada por', chave: 'lancada', largura: 36 },
+    ],
+    linhas: lista,
+  });
+  return { workbook, nomeArquivo: `notas_de_entrada_${filtros.inicio}_a_${filtros.fim}.xlsx` };
+}
 const empresas = () => listaEmpresas();
 
 async function movimentos(query, params) {
@@ -71,10 +186,7 @@ async function movimentos(query, params) {
   // nota de venda cancelada. Quem está no lançamento é quem mandou a mercadoria (fornecedor ou
   // empresa do grupo) ou, na devolução e no cancelamento, o cliente da venda.
   dados.entradas = dados.entradas.map(({ entidade, ...m }) => {
-    let grupo = 'nota';
-    if (m.origem === repo.TAB_CANCELAMENTO_NOTA) grupo = 'cancelada';
-    else if (m.devolucao_nota != null || m.origem === repo.TAB_CAIXA) grupo = 'devolucao';
-    else if (m.origem === TAB_TRANSFERENCIA) grupo = 'transferencia';
+    const grupo = grupoDaEntrada(m);
     const doCliente = grupo === 'devolucao' || grupo === 'cancelada';
     // O motivo vem como "CANCELAMENTO DE NOTA MOTIVO:DESACORDO COMERCIAL": fica só "Desacordo comercial"
     if (m.motivo_cancelamento) {
@@ -114,4 +226,4 @@ async function exportar(query) {
   return { workbook, nomeArquivo: `entradas_e_saidas_${filtros.inicio}_a_${filtros.fim}.xlsx` };
 }
 
-module.exports = { produtos, empresas, movimentos, exportar };
+module.exports = { produtos, empresas, movimentos, exportar, notas, itensDaNota, exportarNotas };
