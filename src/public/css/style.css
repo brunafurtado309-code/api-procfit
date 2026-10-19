@@ -2274,3 +2274,27 @@ button.barra:hover { background: var(--verde-suave); color: inherit; }
 /* Saldo de hoje separado das colunas do período (aba Por produto) */
 .tabela th.coluna-saldo,
 .tabela td.coluna-saldo { border-left: 1px solid var(--linha-forte); padding-left: 1.25rem; }
+
+/* ==========================================================
+   23. Precificação (body.tela-precificacao)
+   Seletor de tipo dentro da tabela (nota e fornecedor) e a marca de "sugerido".
+   Sugerido = tom claro e itálico; confirmado = texto normal. Sem cor nova: só as variáveis.
+   ========================================================== */
+.tela-precificacao .campo-marcar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+  font-size: var(--texto-pequeno);
+  color: var(--tinta-suave);
+  cursor: pointer;
+}
+.tela-precificacao .campo-marcar input { width: 1.1rem; height: 1.1rem; accent-color: var(--verde); }
+.tela-precificacao .seletor-tipo {
+  min-width: 13rem;
+  padding: 0.3rem 0.5rem;
+  font-size: var(--texto-mini);
+}
+.tela-precificacao .seletor-tipo--sugerido { color: var(--tinta-suave); font-style: italic; }
+.tela-precificacao .seletor-tipo:disabled { opacity: 0.6; cursor: progress; }
+.tela-precificacao #aviso-fornecedores .ver-detalhes { margin-left: 0.5rem; }

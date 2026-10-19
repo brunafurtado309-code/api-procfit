@@ -17,10 +17,12 @@
 //                     emitente e destinatário (o grupo usa 35.018.014) ou natureza de operação
 //                     com "TRANSFER" (ex.: Belo Norte Indústria → filiais).
 //   Matéria-prima     Polpas, ingredientes e açaí NÃO dão entrada no estoque: o processo da
-//                     produção ainda não existe no sistema (sem ficha técnica). Por isso nota
-//                     sem entrada só vira "mercadoria parada" quando o fornecedor já teve alguma
-//                     nota finalizada; os outros vão para "sem entrada no sistema" (produção ou
-//                     uso e consumo), sem alerta.
+//                     produção ainda não existe no sistema (sem ficha técnica). O banco não tem
+//                     como dizer se uma nota é de revenda, produção ou uso e consumo (o CFOP diz
+//                     como o fornecedor vendeu, não o que fazemos com o produto), e há fornecedor
+//                     que manda as duas coisas (ex.: Nutrilatino). Por isso o tipo vem da
+//                     classificação feita na tela (classificacao.repository.js); aqui só saem
+//                     os fatos: a nota entrou ou não, e o histórico de cada fornecedor.
 //   Cancelamento      EdocEventosNFe, evento 110111 (cancelamento pelo emitente), pela chave.
 //   eDoc              EdocRegistrosNFe NÃO é usada: tem notas de muitos CNPJs.
 //   Classificação     PRODUTOS.CATEGORIA_PRODUTO e CLASSIFICACAO vêm vazias. INDUSTRIALIZADO
@@ -46,12 +48,8 @@ const CANCELADA = (chave) => `EXISTS (
     SELECT 1 FROM EdocEventosNFe EV WITH (NOLOCK)
     WHERE EV.tpEvento = ${EVENTO_CANCELAMENTO} AND RIGHT(EV.chNFe, 44) = ${chave})`;
 
-// Notas de compra do período em quatro situações:
-//   parada       ainda não entrou, e o fornecedor já teve nota finalizada (mercadoria)
-//   nao_lancada  chegou contra o CNPJ (NFE) e não virou nota de compra
-//   entrou       finalizada pela logística
-//   sem_entrada  ainda não entrou, e o fornecedor nunca teve nota finalizada
-//                (matéria-prima da produção ou uso e consumo)
+// Notas do período: as de compra (entrou ou não no estoque) e as que chegaram contra o CNPJ
+// e não viraram nota de compra. A situação final (parada, a classificar...) é decidida no service.
 async function notas(filtros) {
   const pool = await getPool();
   const { recordsets } = await pool
@@ -77,12 +75,7 @@ async function notas(filtros) {
         CONVERT(varchar(16), N.DATA_HORA, 120)              AS lancada_em,
         CONVERT(varchar(10), N.DATA_PROCESSAMENTO, 23)      AS entrou_em,
         N.TOTAL_GERAL                                       AS valor,
-        CASE
-          WHEN ISNULL(N.PROCESSAR, 'N') = 'S' THEN 'entrou'
-          WHEN EXISTS (SELECT 1 FROM NF_COMPRA H WITH (NOLOCK)
-                       WHERE H.ENTIDADE = N.ENTIDADE AND H.PROCESSAR = 'S') THEN 'parada'
-          ELSE 'sem_entrada'
-        END                                                 AS situacao,
+        CASE WHEN ISNULL(N.PROCESSAR, 'N') = 'S' THEN 1 ELSE 0 END AS entrou,
         CASE
           WHEN ISNULL(N.PROCESSAR, 'N') = 'S'
             THEN DATEDIFF(day, N.EMISSAO, N.DATA_PROCESSAMENTO)
@@ -118,25 +111,34 @@ async function notas(filtros) {
         AND NOT EXISTS (SELECT 1 FROM NF_COMPRA N WITH (NOLOCK) WHERE N.CHAVE_NFE = X.ID)
         AND NOT ${CANCELADA('X.ID')};
 
-      -- Resumo de cada situação
-      SELECT situacao, COUNT(*) AS notas, SUM(valor) AS valor,
-             AVG(CAST(dias AS decimal(10, 1))) AS dias_medio,
-             MAX(dias) AS dias_maximo
-      FROM #NC
-      GROUP BY situacao
-      UNION ALL
-      SELECT 'nao_lancada', COUNT(*), SUM(valor), AVG(CAST(dias AS decimal(10, 1))), MAX(dias)
-      FROM #XML;
-
-      -- Listas (as mais urgentes primeiro)
-      SELECT TOP (${LIMITE_LISTA}) * FROM #NC
-      ORDER BY CASE situacao WHEN 'sem_entrada' THEN valor ELSE dias END DESC, nota_id DESC;
-
-      SELECT TOP (${LIMITE_LISTA}) * FROM #XML
-      ORDER BY dias DESC;
+      -- As mais antigas primeiro (o service separa por situação)
+      SELECT TOP (${LIMITE_LISTA}) * FROM #NC ORDER BY dias DESC, nota_id DESC;
+      SELECT TOP (${LIMITE_LISTA}) * FROM #XML ORDER BY dias DESC;
     `);
-  const [resumo, compras, xml] = recordsets;
-  return { resumo, compras, xml };
+  const [compras, xml] = recordsets;
+  return { compras, xml };
 }
 
-module.exports = { notas };
+// Histórico de cada fornecedor (desde o início do sistema): quantas notas mandou e quantas
+// entraram no estoque. É a base da sugestão de tipo (service).
+async function fornecedores() {
+  const pool = await getPool();
+  const { recordset } = await pool.request().query(`
+    SELECT
+      N.ENTIDADE                                                   AS codigo,
+      MAX(LTRIM(RTRIM(NE.NOME)))                                   AS nome,
+      COUNT(*)                                                     AS notas,
+      SUM(CASE WHEN ISNULL(N.PROCESSAR, 'N') = 'S' THEN 1 ELSE 0 END) AS finalizadas,
+      SUM(N.TOTAL_GERAL)                                           AS valor,
+      CONVERT(varchar(10), MAX(N.EMISSAO), 23)                     AS ultima_nota
+    FROM NF_COMPRA N WITH (NOLOCK)
+    LEFT JOIN NF_COMPRA_ENTIDADE NE WITH (NOLOCK) ON NE.NF_COMPRA = N.NF_COMPRA
+    LEFT JOIN NFE X WITH (NOLOCK) ON X.ID = N.CHAVE_NFE
+    WHERE N.ENTIDADE IS NOT NULL
+      AND NOT (X.ID IS NOT NULL AND ${TRANSFERENCIA('X')})
+    GROUP BY N.ENTIDADE;
+  `);
+  return recordset;
+}
+
+module.exports = { notas, fornecedores };

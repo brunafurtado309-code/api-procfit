@@ -26,7 +26,7 @@
       <div class="barra-filtros__linha">
         <form id="form-pesquisa" class="pesquisa" role="search">
           <label class="campo campo--busca">
-            <span class="sr-only">Encontrar nota</span>
+            <span class="sr-only">Encontrar nota ou fornecedor</span>
             <input id="pesquisa-termo" type="search" maxlength="60" autocomplete="off"
                    placeholder="Encontrar por fornecedor ou número da nota">
           </label>
@@ -53,13 +53,44 @@
         Enquanto a nota de compra não entra no estoque, o PROCFIT não atualiza o custo do produto,
         e o preço é calculado em cima de um custo velho. Clique numa situação para ver as notas.
       </p>
-      <div class="cartoes" id="situacoes"></div>
+      <p class="aviso-alerta" id="aviso-fornecedores" hidden>
+        <span id="aviso-fornecedores-texto"></span>
+        <a href="#bloco-fornecedores" class="ver-detalhes">Classificar fornecedores</a>
+      </p>
+      <div class="cartoes cartoes--cinco" id="situacoes"></div>
 
       <h3 class="subtitulo" id="titulo-lista">Notas</h3>
       <p class="bloco__descricao" id="explica-lista"></p>
       <div class="tabela-rolagem">
         <table class="tabela" id="tabela-notas">
           <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="bloco" id="bloco-fornecedores" hidden>
+      <h2>Fornecedores</h2>
+      <p class="bloco__descricao" id="explica-fornecedores">
+        O tipo do fornecedor decide para onde vão as notas dele. A sugestão vem do histórico no PROCFIT
+        e vale até alguém confirmar. Fornecedor misto manda as duas coisas: cada nota dele é classificada na lista de cima.
+      </p>
+      <label class="campo-marcar">
+        <input type="checkbox" id="so-pendentes" checked>
+        Mostrar só os fornecedores ainda não confirmados
+      </label>
+      <div class="tabela-rolagem">
+        <table class="tabela" id="tabela-fornecedores">
+          <thead>
+            <tr>
+              <th scope="col" class="esquerda">Fornecedor</th>
+              <th scope="col">Notas</th>
+              <th scope="col">Entraram no estoque</th>
+              <th scope="col">Última nota</th>
+              <th scope="col" class="esquerda">Tipo</th>
+              <th scope="col" class="esquerda">Confirmado por</th>
+            </tr>
+          </thead>
           <tbody></tbody>
         </table>
       </div>

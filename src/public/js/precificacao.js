@@ -1,11 +1,15 @@
 // Painel da Precificação. Cada passo da construção acrescenta uma parte da tela aqui.
 //
-// Parte 1 — "O custo está certo?": as notas de compra em quatro situações.
-// A API manda as quatro listas de uma vez; trocar de situação ou pesquisar não chama a API de novo.
+// Parte 1 — "O custo está certo?": as notas de compra por situação.
+// Parte 2 — Fornecedores: o tipo de cada um (revenda, produção, uso e consumo ou misto).
+// A API manda as listas inteiras; trocar de situação ou pesquisar não chama a API de novo.
+// Classificar uma nota ou um fornecedor grava no banco do painel e recarrega as duas partes,
+// porque uma decisão muda a situação das notas.
 
 const el = (id) => document.getElementById(id);
 const inteiro = (v) => new Intl.NumberFormat('pt-BR').format(Number(v) || 0);
 const dinheiro = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(v) || 0);
+const decimal = (v) => new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(Number(v) || 0);
 const plural = (n, um, varios) => `${inteiro(n)} ${Number(n) === 1 ? um : varios}`;
 // "2026-10-15" -> "15/10/2026"; "2026-10-15 19:22" -> "15/10/2026 19:22"
 const dataBR = (t) => (t ? `${t.slice(0, 10).split('-').reverse().join('/')}${t.length > 10 ? ` ${t.slice(11, 16)}` : ''}` : '–');
@@ -18,6 +22,7 @@ const chave = {
 };
 
 let dados = null;
+let fornecedores = null;
 let dias = 90;
 let situacaoAtual = 'parada';
 
@@ -25,13 +30,21 @@ let situacaoAtual = 'parada';
 const SITUACOES = {
   parada: {
     titulo: 'Mercadoria parada',
-    explica: (d) => `Notas de fornecedores de mercadoria que ainda não entraram no estoque. `
+    explica: (d) => 'Notas de revenda que ainda não entraram no estoque. '
       + `Em laranja, as que passaram de ${d.prazo_entrada_dias} dias desde a emissão.`,
-    nota: (r, d) => (r.notas
-      ? `${dinheiro(r.valor)} · ${inteiro(r.atrasadas)} com mais de ${d.prazo_entrada_dias} dias`
-      : 'nenhuma nota parada'),
+    nota: (r, d) => (r.notas ? `${dinheiro(r.valor)} · ${inteiro(r.atrasadas)} com mais de ${d.prazo_entrada_dias} dias` : 'nenhuma nota parada'),
     alerta: (r) => r.atrasadas > 0,
     colunaDias: 'Dias parada',
+    classifica: true,
+  },
+  a_classificar: {
+    titulo: 'Nota a classificar',
+    explica: () => 'Notas de fornecedores mistos (que mandam revenda e matéria-prima). '
+      + 'Escolha o tipo de cada uma: as de revenda passam a contar como mercadoria parada.',
+    nota: (r) => (r.notas ? dinheiro(r.valor) : 'nenhuma nota'),
+    alerta: (r) => r.notas > 0,
+    colunaDias: 'Dias desde a emissão',
+    classifica: true,
   },
   nao_lancada: {
     titulo: 'Chegou e não foi lançada',
@@ -45,17 +58,18 @@ const SITUACOES = {
     titulo: 'Entrou no estoque',
     explica: () => 'Notas finalizadas pela logística: o custo do produto já foi atualizado no PROCFIT. '
       + 'Dias = quanto tempo a nota levou da emissão até entrar.',
-    nota: (r) => (r.notas ? `espera média de ${String(r.dias_medio ?? 0).replace('.', ',')} dias` : 'nenhuma nota'),
+    nota: (r) => (r.notas ? `espera média de ${decimal(r.dias_medio)} dias` : 'nenhuma nota'),
     alerta: () => false,
     colunaDias: 'Dias até entrar',
   },
-  sem_entrada: {
-    titulo: 'Sem entrada no sistema',
-    explica: () => 'Notas de fornecedores que nunca tiveram nenhuma nota finalizada: matéria-prima da produção '
-      + '(que ainda não tem processo no sistema) ou uso e consumo. Não entram no custo de revenda e não são atraso.',
-    nota: (r) => (r.notas ? `${dinheiro(r.valor)} · produção ou uso e consumo` : 'nenhuma nota'),
+  producao_consumo: {
+    titulo: 'Produção ou uso e consumo',
+    explica: () => 'Notas que não entram no custo de revenda: matéria-prima da produção (que ainda não tem '
+      + 'processo no sistema) e uso e consumo. Não são atraso. As de maior valor aparecem primeiro.',
+    nota: (r) => (r.notas ? dinheiro(r.valor) : 'nenhuma nota'),
     alerta: () => false,
     colunaDias: 'Dias desde a emissão',
+    classifica: true,
   },
 };
 
@@ -65,8 +79,11 @@ function mostrarStatus(texto, erro = false) {
 }
 
 // Chama a API com a chave do login; trata "sem login" e "sem acesso" num lugar só
-async function chamar(caminho) {
-  const resposta = await fetch(caminho, { headers: { 'x-api-key': chave.ler() ?? '' } });
+async function chamar(caminho, opcoes = {}) {
+  const resposta = await fetch(caminho, {
+    ...opcoes,
+    headers: { 'x-api-key': chave.ler() ?? '', ...(opcoes.body ? { 'Content-Type': 'application/json' } : {}) },
+  });
   if (resposta.status === 401) {
     chave.apagar();
     window.location.reload();
@@ -78,14 +95,36 @@ async function chamar(caminho) {
   return corpo;
 }
 
-function celula(texto, classe = '') {
+function celula(conteudo, classe = '') {
   const td = document.createElement('td');
-  td.textContent = texto;
+  if (conteudo instanceof Node) td.append(conteudo);
+  else td.textContent = conteudo;
   if (classe) td.className = classe;
   return td;
 }
 
-// Cartões das quatro situações: cada um troca a lista de baixo
+// Seletor de tipo: a primeira opção (valor vazio) é "seguir o que já vale" (fornecedor ou sugestão)
+function seletor(tipos, atual, textoPadrao, sugerido, aoMudar) {
+  const select = document.createElement('select');
+  select.className = `seletor-tipo${atual ? '' : ' seletor-tipo--sugerido'}`;
+  select.append(new Option(textoPadrao, ''));
+  for (const [valor, texto] of Object.entries(tipos)) select.append(new Option(texto, valor));
+  select.value = atual ?? '';
+  select.addEventListener('change', async () => {
+    select.disabled = true;
+    try {
+      await aoMudar(select.value || null);
+    } catch (erro) {
+      mostrarStatus(erro.message, true);
+      select.disabled = false;
+    }
+  });
+  if (sugerido) select.title = 'Sugestão automática: escolha um tipo para confirmar';
+  return select;
+}
+
+// ---------- Parte 1: notas ----------
+
 function mostrarSituacoes() {
   el('situacoes').replaceChildren(...Object.entries(SITUACOES).map(([id, s]) => {
     const r = dados.resumo[id];
@@ -110,9 +149,16 @@ function mostrarSituacoes() {
     });
     return botao;
   }));
+
+  const pendentes = dados.fornecedores_a_confirmar;
+  el('aviso-fornecedores').hidden = !pendentes;
+  el('aviso-fornecedores-texto').textContent = pendentes
+    ? `${plural(pendentes, 'fornecedor', 'fornecedores')} deste período ainda com tipo sugerido. `
+      + 'Até alguém confirmar, as notas deles seguem a sugestão automática.'
+    : '';
 }
 
-function cabecalho(colunas) {
+function cabecalho(tabela, colunas) {
   const linha = document.createElement('tr');
   for (const [texto, esquerda] of colunas) {
     const th = document.createElement('th');
@@ -121,7 +167,23 @@ function cabecalho(colunas) {
     if (esquerda) th.className = 'esquerda';
     linha.append(th);
   }
-  el('tabela-notas').tHead.replaceChildren(linha);
+  el(tabela).tHead.replaceChildren(linha);
+}
+
+// O que a nota segue hoje, quando ninguém classificou a própria nota
+function textoPadraoDaNota(n) {
+  if (n.tipo_origem === 'fornecedor') {
+    return n.tipo ? `Do fornecedor: ${dados.tipos_nota[n.tipo]}` : 'Classificar…';
+  }
+  if (n.tipo === 'revenda') return 'Revenda (sugerido)';
+  if (n.tipo === null) return 'Classificar…';
+  return 'Sem entrada (sugerido)';
+}
+
+async function classificarNota(n, tipo) {
+  mostrarStatus(`Gravando a nota ${n.numero}…`);
+  await chamar(`/precificacao/notas/${n.nota_id}`, { method: 'PUT', body: JSON.stringify({ tipo }) });
+  await carregar(`Nota ${n.numero} classificada.`);
 }
 
 function mostrarLista() {
@@ -140,13 +202,14 @@ function mostrarLista() {
     ? [['Nota', true], ['Fornecedor', true], ['Para', true], ['Operação', true],
       ['Emissão', false], [s.colunaDias, false], ['Valor', false]]
     : [['Nota', true], ['Fornecedor', true], ['Empresa', true], ['Emissão', false], ['Lançada', false],
-      ...(situacaoAtual === 'entrou' ? [['Entrou', false]] : []), [s.colunaDias, false], ['Valor', false]];
-  cabecalho(colunas);
+      ...(situacaoAtual === 'entrou' ? [['Entrou', false]] : []), [s.colunaDias, false], ['Valor', false],
+      ...(s.classifica ? [['Tipo da nota', true]] : [])];
+  cabecalho('tabela-notas', colunas);
 
   const linhas = itens.map((n) => {
     const tr = document.createElement('tr');
     if (n.atrasada) tr.className = 'linha-vencida';
-    const dias = celula(inteiro(n.dias), n.atrasada ? 'atraso' : '');
+    const diasNota = celula(inteiro(n.dias), n.atrasada ? 'atraso' : '');
     if (xml) {
       const fornecedor = celula(n.fornecedor, 'esquerda');
       if (n.erro) {
@@ -156,13 +219,18 @@ function mostrarLista() {
         fornecedor.append(document.createElement('br'), erro);
       }
       tr.append(celula(n.numero, 'esquerda'), fornecedor, celula(n.destinatario ?? '–', 'esquerda'),
-        celula(n.operacao ?? '–', 'esquerda'), celula(dataBR(n.emissao)), dias, celula(dinheiro(n.valor)));
+        celula(n.operacao ?? '–', 'esquerda'), celula(dataBR(n.emissao)), diasNota, celula(dinheiro(n.valor)));
     } else {
       tr.append(celula(n.numero, 'esquerda'), celula(n.fornecedor ?? '–', 'esquerda'),
         celula(n.nome_empresa ?? `Empresa ${n.empresa}`, 'esquerda'),
         celula(dataBR(n.emissao)), celula(dataBR(n.lancada_em)),
         ...(situacaoAtual === 'entrou' ? [celula(dataBR(n.entrou_em))] : []),
-        dias, celula(dinheiro(n.valor)));
+        diasNota, celula(dinheiro(n.valor)));
+      if (s.classifica) {
+        const daNota = n.tipo_origem === 'nota' ? n.tipo : null;
+        tr.append(celula(seletor(dados.tipos_nota, daNota, textoPadraoDaNota(n), n.tipo_origem === 'sugestao',
+          (tipo) => classificarNota(n, tipo)), 'esquerda'));
+      }
     }
     return tr;
   });
@@ -177,15 +245,74 @@ function mostrarLista() {
   el('tabela-notas').tBodies[0].replaceChildren(...linhas);
 }
 
-async function carregar() {
+// ---------- Parte 2: fornecedores ----------
+
+function textoSugestao(f) {
+  if (f.sugestao === 'revenda') return 'Sugerido: Revenda';
+  if (f.sugestao === 'misto') return 'Sugerido: Misto';
+  return 'Sugerido: sem entrada no estoque';
+}
+
+async function classificarFornecedor(f, tipo) {
+  mostrarStatus(`Gravando ${f.nome}…`);
+  await chamar(`/precificacao/fornecedores/${f.codigo}`, { method: 'PUT', body: JSON.stringify({ tipo }) });
+  await carregar(`${f.nome}: classificação gravada.`);
+}
+
+function mostrarFornecedores() {
+  const termo = normalizar(el('pesquisa-termo').value.trim());
+  const soPendentes = el('so-pendentes').checked;
+  const itens = fornecedores.fornecedores.filter((f) => (!soPendentes || !f.tipo)
+    && (!termo || normalizar(f.nome).includes(termo)));
+
+  const linhas = itens.map((f) => {
+    const tr = document.createElement('tr');
+    const nome = celula(f.nome ?? `Fornecedor ${f.codigo}`, 'esquerda');
+    const codigo = document.createElement('span');
+    codigo.className = 'qtd';
+    codigo.textContent = ` código ${f.codigo}`;
+    nome.append(codigo);
+    const parcela = f.notas ? Math.round((f.finalizadas / f.notas) * 100) : 0;
+    tr.append(
+      nome,
+      celula(inteiro(f.notas)),
+      celula(`${inteiro(f.finalizadas)} (${parcela}%)`),
+      celula(dataBR(f.ultima_nota)),
+      celula(seletor(fornecedores.tipos, f.tipo, textoSugestao(f), !f.tipo,
+        (tipo) => classificarFornecedor(f, tipo)), 'esquerda'),
+      celula(f.tipo ? `${f.alterado_por ?? '–'} · ${dataBR(String(f.alterado_em).slice(0, 10))}` : '–', 'esquerda'),
+    );
+    return tr;
+  });
+
+  if (!linhas.length) {
+    const tr = document.createElement('tr');
+    const vazio = celula(soPendentes && !termo
+      ? 'Todos os fornecedores já foram confirmados.'
+      : 'Nenhum fornecedor encontrado.', 'vazio');
+    vazio.colSpan = 6;
+    tr.append(vazio);
+    linhas.push(tr);
+  }
+  el('tabela-fornecedores').tBodies[0].replaceChildren(...linhas);
+}
+
+// ---------- Carregar e ligar a tela ----------
+
+async function carregar(mensagem) {
   mostrarStatus('Lendo as notas no PROCFIT…');
   try {
-    dados = await chamar(`/precificacao/notas?dias=${dias}`);
+    [dados, fornecedores] = await Promise.all([
+      chamar(`/precificacao/notas?dias=${dias}`),
+      chamar('/precificacao/fornecedores'),
+    ]);
     mostrarSituacoes();
     mostrarLista();
+    mostrarFornecedores();
     el('bloco-notas').hidden = false;
+    el('bloco-fornecedores').hidden = false;
     const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    mostrarStatus(`notas dos últimos ${dias} dias · atualizado às ${hora}`);
+    mostrarStatus(`${mensagem ? `${mensagem} · ` : ''}notas dos últimos ${dias} dias · atualizado às ${hora}`);
   } catch (erro) {
     mostrarStatus(erro.message, true);
   }
@@ -215,17 +342,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     carregar();
   });
 
-  // Pesquisa: filtra na própria tela
+  // Pesquisa: filtra as notas e os fornecedores na própria tela
+  const repintar = () => {
+    if (!dados) return;
+    mostrarLista();
+    mostrarFornecedores();
+  };
   el('form-pesquisa').addEventListener('submit', (evento) => evento.preventDefault());
   el('pesquisa-termo').addEventListener('input', () => {
     el('limpar-pesquisa').hidden = el('pesquisa-termo').value.trim() === '';
-    if (dados) mostrarLista();
+    repintar();
   });
   el('limpar-pesquisa').addEventListener('click', () => {
     el('pesquisa-termo').value = '';
     el('limpar-pesquisa').hidden = true;
-    if (dados) mostrarLista();
+    repintar();
   });
+  el('so-pendentes').addEventListener('change', () => fornecedores && mostrarFornecedores());
 
   carregar();
 });
