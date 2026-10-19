@@ -93,6 +93,7 @@ async function notas(filtros) {
       -- 2. Notas que chegaram contra o CNPJ e não viraram nota de compra
       --    (sem transferências, sem devoluções, sem notas emitidas pelo próprio grupo)
       SELECT
+        X.Registro                                          AS registro,
         X.nNF                                               AS numero,
         LTRIM(RTRIM(X.emit_xNome))                          AS fornecedor,
         X.emit_CNPJ                                         AS cnpj,

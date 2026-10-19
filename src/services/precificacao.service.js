@@ -30,6 +30,14 @@ const TIPOS_NOTA = {
   consumo: 'Uso e consumo',
 };
 
+// Nota que chegou contra o CNPJ e não virou nota de compra: além dos tipos acima, pode não ser compra
+// (comodato, locação, remessa, retorno, combustível do posto).
+const TIPOS_NFE = { ...TIPOS_NOTA, nao_compra: 'Não é compra' };
+// Natureza de operação que sugere "não é compra" (sem acento e em maiúsculas antes de comparar)
+// "RETOR" pega RETORNO e a forma abreviada que aparece nas notas (ex.: RETOR.SUBSTITUICAO)
+const OPERACAO_NAO_COMPRA = /COMODATO|LOCACAO|REMESSA|RETOR|COMBUSTIVEL/;
+const semAcento = (t) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+
 const SITUACOES = ['parada', 'a_classificar', 'nao_lancada', 'entrou', 'producao_consumo'];
 
 function periodo(valor) {
@@ -100,8 +108,8 @@ const umaCasa = (v) => Math.round(v * 10) / 10;
 
 async function notas(query) {
   const filtros = { dias: periodo(query.dias) };
-  const [{ compras, xml }, fornecedores, notasConfirmadas] = await Promise.all([
-    repo.notas(filtros), montarFornecedores(), classificacao.listar('nota'),
+  const [{ compras, xml }, fornecedores, notasConfirmadas, nfeConfirmadas] = await Promise.all([
+    repo.notas(filtros), montarFornecedores(), classificacao.listar('nota'), classificacao.listar('nfe'),
   ]);
 
   const listas = Object.fromEntries(SITUACOES.map((s) => [s, []]));
@@ -119,7 +127,19 @@ async function notas(query) {
       atrasada: situacao === 'parada' && n.dias > PRAZO_ENTRADA_DIAS,
     });
   }
-  listas.nao_lancada = xml.map((n) => ({ ...n, valor: Number(n.valor) || 0, atrasada: n.dias > PRAZO_ENTRADA_DIAS }));
+  // Chegou e não foi lançada: só é alerta o que é (ou pode ser) revenda; o resto fica na lista sem laranja
+  listas.nao_lancada = xml.map((n) => {
+    const confirmada = nfeConfirmadas.get(Number(n.registro));
+    const sugerida = OPERACAO_NAO_COMPRA.test(semAcento(n.operacao)) ? 'nao_compra' : null;
+    const tipo = confirmada?.tipo ?? sugerida;
+    return {
+      ...n,
+      valor: Number(n.valor) || 0,
+      tipo,
+      tipo_origem: confirmada ? 'nfe' : 'sugestao',
+      atrasada: (tipo === null || tipo === 'revenda') && n.dias > PRAZO_ENTRADA_DIAS,
+    };
+  });
   // Produção ou uso e consumo: as de maior valor primeiro (não é atraso, é volume)
   listas.producao_consumo.sort((a, b) => b.valor - a.valor);
 
@@ -142,6 +162,7 @@ async function notas(query) {
     dias: filtros.dias,
     prazo_entrada_dias: PRAZO_ENTRADA_DIAS,
     tipos_nota: TIPOS_NOTA,
+    tipos_nfe: TIPOS_NFE,
     fornecedores_a_confirmar: aConfirmar,
     resumo,
     listas,
@@ -187,6 +208,12 @@ async function classificarNota(query, params, corpo, usuario) {
   return classificacao.definir('nota', cod, tipo, quem(usuario));
 }
 
+async function classificarNfe(query, params, corpo, usuario) {
+  const cod = codigo(params.registro, 'da nota');
+  const tipo = tipoValido(corpo?.tipo, TIPOS_NFE);
+  return classificacao.definir('nfe', cod, tipo, quem(usuario));
+}
+
 module.exports = {
-  notas, fornecedores, classificarFornecedor, classificarFornecedores, classificarNota, PERIODOS,
+  notas, fornecedores, classificarFornecedor, classificarFornecedores, classificarNota, classificarNfe, PERIODOS,
 };

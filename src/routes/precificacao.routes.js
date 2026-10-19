@@ -13,5 +13,6 @@ router.get('/fornecedores', controller.fornecedores);
 router.put('/fornecedores', controller.classificarFornecedores);           // { fornecedores: [códigos], tipo }
 router.put('/fornecedores/:fornecedor', controller.classificarFornecedor); // { tipo } ou { tipo: null }
 router.put('/notas/:nota', controller.classificarNota);                   // { tipo } ou { tipo: null }
+router.put('/nfe/:registro', controller.classificarNfe);                  // nota que não virou nota de compra
 
 module.exports = router;

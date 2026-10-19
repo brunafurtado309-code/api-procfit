@@ -6,6 +6,7 @@
 // Uma tabela serve para tudo que se classifica ("alvo"):
 //   fornecedor  código da entidade no PROCFIT (NF_COMPRA.ENTIDADE)
 //   nota        código da nota de compra (NF_COMPRA.NF_COMPRA), para fornecedor que manda as duas coisas
+//   nfe         registro do XML (NFE.Registro) da nota que chegou e não virou nota de compra
 //   produto     (próximo passo) código do produto
 // Toda mudança vira uma linha no histórico: o que era, o que ficou, quem mudou e quando.
 

@@ -17,4 +17,5 @@ module.exports = {
   classificarFornecedor: acao(service.classificarFornecedor),
   classificarFornecedores: acao(service.classificarFornecedores),
   classificarNota: acao(service.classificarNota),
+  classificarNfe: acao(service.classificarNfe),
 };
