@@ -10,6 +10,7 @@ router.get('/notas', controller.notas);
 
 // Classificação (gravada no banco do painel, nunca no PROCFIT)
 router.get('/fornecedores', controller.fornecedores);
+router.put('/fornecedores', controller.classificarFornecedores);           // { fornecedores: [códigos], tipo }
 router.put('/fornecedores/:fornecedor', controller.classificarFornecedor); // { tipo } ou { tipo: null }
 router.put('/notas/:nota', controller.classificarNota);                   // { tipo } ou { tipo: null }
 

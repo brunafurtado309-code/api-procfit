@@ -2298,3 +2298,19 @@ button.barra:hover { background: var(--verde-suave); color: inherit; }
 .tela-precificacao .seletor-tipo--sugerido { color: var(--tinta-suave); font-style: italic; }
 .tela-precificacao .seletor-tipo:disabled { opacity: 0.6; cursor: progress; }
 .tela-precificacao #aviso-fornecedores .ver-detalhes { margin-left: 0.5rem; }
+.tela-precificacao .fornecedores-opcoes { display: flex; flex-wrap: wrap; gap: 0 1.5rem; }
+/* Barra dos fornecedores marcados: faixa verde clara, sem caixa (aparece só com algum marcado) */
+.tela-precificacao .lote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 1rem;
+  border-left: 4px solid var(--verde);
+  background: var(--verde-suave);
+  font-weight: 600;
+}
+.tela-precificacao .tabela .coluna-marcar { width: 2.5rem; text-align: center; }
+.tela-precificacao .tabela .coluna-marcar input { width: 1.1rem; height: 1.1rem; accent-color: var(--verde); cursor: pointer; }
+.tela-precificacao .tabela tr.linha-marcada > td { background: var(--verde-suave); }

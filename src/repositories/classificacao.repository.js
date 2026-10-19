@@ -57,40 +57,48 @@ async function listar(alvo) {
   }]));
 }
 
-// Grava (ou apaga, com tipo null) a classificação e registra no histórico, tudo de uma vez:
-// se uma parte falhar, nada é gravado (transação).
-async function definir(alvo, codigo, tipo, usuario) {
+// Grava (ou apaga, com tipo null) a classificação de um código e registra no histórico.
+// Roda dentro da transação de quem chamou. Devolve true se mudou alguma coisa.
+async function gravarUm(cliente, alvo, codigo, tipo, usuario) {
+  const atual = await cliente.query(
+    'SELECT tipo FROM precificacao_classificacao WHERE alvo = $1 AND codigo = $2 FOR UPDATE',
+    [alvo, codigo],
+  );
+  const antes = atual.rows[0]?.tipo ?? null;
+  if (antes === tipo) return false;
+  if (tipo === null) {
+    await cliente.query('DELETE FROM precificacao_classificacao WHERE alvo = $1 AND codigo = $2', [alvo, codigo]);
+  } else {
+    await cliente.query(
+      `INSERT INTO precificacao_classificacao (alvo, codigo, tipo, alterado_por, alterado_em)
+       VALUES ($1, $2, $3, $4, now())
+       ON CONFLICT (alvo, codigo)
+       DO UPDATE SET tipo = EXCLUDED.tipo, alterado_por = EXCLUDED.alterado_por, alterado_em = now()`,
+      [alvo, codigo, tipo, usuario],
+    );
+  }
+  await cliente.query(
+    `INSERT INTO precificacao_classificacao_historico (alvo, codigo, antes, depois, alterado_por)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [alvo, codigo, antes, tipo, usuario],
+  );
+  return true;
+}
+
+// Grava o mesmo tipo para um ou vários códigos, tudo de uma vez: se um falhar, nenhum é gravado
+// (transação). Devolve quantos mudaram de fato (os que já tinham esse tipo não contam).
+async function definir(alvo, codigos, tipo, usuario) {
+  const lista = Array.isArray(codigos) ? codigos : [codigos];
   const pool = await conexao();
   const cliente = await pool.connect();
   try {
     await cliente.query('BEGIN');
-    const atual = await cliente.query(
-      'SELECT tipo FROM precificacao_classificacao WHERE alvo = $1 AND codigo = $2 FOR UPDATE',
-      [alvo, codigo],
-    );
-    const antes = atual.rows[0]?.tipo ?? null;
-    if (antes === tipo) {
-      await cliente.query('ROLLBACK');
-      return { mudou: false };
+    let mudaram = 0;
+    for (const codigo of lista) {
+      if (await gravarUm(cliente, alvo, codigo, tipo, usuario)) mudaram += 1;
     }
-    if (tipo === null) {
-      await cliente.query('DELETE FROM precificacao_classificacao WHERE alvo = $1 AND codigo = $2', [alvo, codigo]);
-    } else {
-      await cliente.query(
-        `INSERT INTO precificacao_classificacao (alvo, codigo, tipo, alterado_por, alterado_em)
-         VALUES ($1, $2, $3, $4, now())
-         ON CONFLICT (alvo, codigo)
-         DO UPDATE SET tipo = EXCLUDED.tipo, alterado_por = EXCLUDED.alterado_por, alterado_em = now()`,
-        [alvo, codigo, tipo, usuario],
-      );
-    }
-    await cliente.query(
-      `INSERT INTO precificacao_classificacao_historico (alvo, codigo, antes, depois, alterado_por)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [alvo, codigo, antes, tipo, usuario],
-    );
     await cliente.query('COMMIT');
-    return { mudou: true };
+    return { mudou: mudaram > 0, mudaram };
   } catch (err) {
     await cliente.query('ROLLBACK').catch(() => {});
     throw err;

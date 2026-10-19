@@ -72,19 +72,38 @@
     <section class="bloco" id="bloco-fornecedores" hidden>
       <h2>Fornecedores</h2>
       <p class="bloco__descricao" id="explica-fornecedores">
-        O tipo do fornecedor decide para onde vão as notas dele. A sugestão vem do histórico no PROCFIT
+        O tipo do fornecedor decide para onde vão as notas dele. A sugestão (em itálico) vem do histórico no PROCFIT
         e vale até alguém confirmar. Fornecedor misto manda as duas coisas: cada nota dele é classificada na lista de cima.
+        Os de maior valor no período aparecem primeiro; marque vários para dar o mesmo tipo de uma vez.
       </p>
-      <label class="campo-marcar">
-        <input type="checkbox" id="so-pendentes" checked>
-        Mostrar só os fornecedores ainda não confirmados
-      </label>
+      <div class="fornecedores-opcoes">
+        <label class="campo-marcar">
+          <input type="checkbox" id="so-pendentes" checked>
+          Só os ainda não confirmados
+        </label>
+        <label class="campo-marcar">
+          <input type="checkbox" id="so-periodo" checked>
+          Só os que têm nota no período
+        </label>
+      </div>
+
+      <div class="lote" id="lote" hidden>
+        <span id="lote-texto"></span>
+        <select id="lote-tipo" class="seletor-tipo" aria-label="Tipo para os fornecedores marcados"></select>
+        <button type="button" id="lote-aplicar">Aplicar aos marcados</button>
+        <button type="button" id="lote-limpar" class="botao-secundario">Desmarcar</button>
+      </div>
+
       <div class="tabela-rolagem">
         <table class="tabela" id="tabela-fornecedores">
           <thead>
             <tr>
+              <th scope="col" class="coluna-marcar">
+                <input type="checkbox" id="marcar-todos" aria-label="Marcar todos os fornecedores da lista">
+              </th>
               <th scope="col" class="esquerda">Fornecedor</th>
-              <th scope="col">Notas</th>
+              <th scope="col">No período</th>
+              <th scope="col">Notas (desde o início)</th>
               <th scope="col">Entraram no estoque</th>
               <th scope="col">Última nota</th>
               <th scope="col" class="esquerda">Tipo</th>

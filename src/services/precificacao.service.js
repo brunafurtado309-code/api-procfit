@@ -170,10 +170,23 @@ async function classificarFornecedor(query, params, corpo, usuario) {
   return classificacao.definir('fornecedor', cod, tipo, quem(usuario));
 }
 
+// Vários fornecedores com o mesmo tipo (ex.: todos os de material de construção como uso e consumo)
+const LIMITE_LOTE = 500;
+async function classificarFornecedores(query, params, corpo, usuario) {
+  const lista = corpo?.fornecedores;
+  if (!Array.isArray(lista) || !lista.length) throw new AppError('Escolha ao menos um fornecedor');
+  if (lista.length > LIMITE_LOTE) throw new AppError(`No máximo ${LIMITE_LOTE} fornecedores de uma vez`);
+  const codigos = [...new Set(lista.map((c) => codigo(c, 'do fornecedor')))];
+  const tipo = tipoValido(corpo?.tipo, TIPOS_FORNECEDOR);
+  return classificacao.definir('fornecedor', codigos, tipo, quem(usuario));
+}
+
 async function classificarNota(query, params, corpo, usuario) {
   const cod = codigo(params.nota, 'da nota');
   const tipo = tipoValido(corpo?.tipo, TIPOS_NOTA);
   return classificacao.definir('nota', cod, tipo, quem(usuario));
 }
 
-module.exports = { notas, fornecedores, classificarFornecedor, classificarNota, PERIODOS };
+module.exports = {
+  notas, fornecedores, classificarFornecedor, classificarFornecedores, classificarNota, PERIODOS,
+};
