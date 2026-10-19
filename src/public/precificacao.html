@@ -22,36 +22,47 @@
   </header>
 
   <main class="conteudo conteudo--largo">
-    <section class="barra-filtros" aria-label="Ações">
+    <section class="barra-filtros" aria-label="Filtros">
       <div class="barra-filtros__linha">
-        <p class="bloco__descricao">
-          Custo certo, preço sugerido, margem real, estoque e giro de cada produto.
-          O painel calcula e sugere; o preço continua sendo alterado no PROCFIT.
-        </p>
-        <div class="barra-filtros__acoes">
-          <button id="atualizar" type="button" class="botao-secundario">Atualizar</button>
-        </div>
+        <form id="form-pesquisa" class="pesquisa" role="search">
+          <label class="campo campo--busca">
+            <span class="sr-only">Encontrar nota</span>
+            <input id="pesquisa-termo" type="search" maxlength="60" autocomplete="off"
+                   placeholder="Encontrar por fornecedor ou número da nota">
+          </label>
+          <button id="limpar-pesquisa" type="button" class="botao-secundario" hidden>Limpar</button>
+        </form>
       </div>
+
+      <form id="filtros" class="filtros">
+        <div class="atalhos" id="atalhos" aria-label="Período das notas">
+          <button type="button" class="botao-secundario" data-dias="30">Últimos 30 dias</button>
+          <button type="button" class="botao-secundario" data-dias="60">Últimos 60 dias</button>
+          <button type="button" class="botao-secundario atalho--ativo" data-dias="90">Últimos 90 dias</button>
+          <button type="button" class="botao-secundario" data-dias="180">Últimos 180 dias</button>
+        </div>
+        <button type="submit" class="filtros__aplicar">Atualizar</button>
+      </form>
+
       <p id="status" class="status" role="status" aria-live="polite"></p>
     </section>
 
-    <section class="bloco" id="bloco-cadastro" hidden>
-      <h2>Cadastro de produtos</h2>
-      <p class="bloco__descricao">Lido agora do PROCFIT. As próximas partes da tela entram aqui, uma de cada vez.</p>
-      <dl class="numeros">
-        <div class="numero">
-          <dt>Produtos no cadastro</dt>
-          <dd id="num-produtos">–</dd>
-        </div>
-        <div class="numero">
-          <dt>Marcados como industrializados</dt>
-          <dd id="num-industrializados">–</dd>
-        </div>
-        <div class="numero">
-          <dt>Marcados como insumo</dt>
-          <dd id="num-insumos">–</dd>
-        </div>
-      </dl>
+    <section class="bloco" id="bloco-notas" hidden>
+      <h2>O custo está certo?</h2>
+      <p class="bloco__descricao">
+        Enquanto a nota de compra não entra no estoque, o PROCFIT não atualiza o custo do produto,
+        e o preço é calculado em cima de um custo velho. Clique numa situação para ver as notas.
+      </p>
+      <div class="cartoes" id="situacoes"></div>
+
+      <h3 class="subtitulo" id="titulo-lista">Notas</h3>
+      <p class="bloco__descricao" id="explica-lista"></p>
+      <div class="tabela-rolagem">
+        <table class="tabela" id="tabela-notas">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </section>
   </main>
 </body>
