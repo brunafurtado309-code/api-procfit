@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <script src="/painel/js/sessao.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Precificação | Painel | Belo Norte</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/modulos.js" defer></script>
+  <script src="js/precificacao.js" defer></script>
+</head>
+<body class="tela-precificacao">
+  <header class="topo">
+    <div>
+      <p class="marca">Belo Norte</p>
+      <h1>Painel da precificação</h1>
+    </div>
+    <div class="topo-acoes">
+      <nav id="modulos" class="modulos" aria-label="Módulos do painel" hidden></nav>
+      <button id="trocar-chave" class="botao-texto" type="button">Trocar chave</button>
+    </div>
+  </header>
+
+  <main class="conteudo conteudo--largo">
+    <section class="barra-filtros" aria-label="Ações">
+      <div class="barra-filtros__linha">
+        <p class="bloco__descricao">
+          Custo certo, preço sugerido, margem real, estoque e giro de cada produto.
+          O painel calcula e sugere; o preço continua sendo alterado no PROCFIT.
+        </p>
+        <div class="barra-filtros__acoes">
+          <button id="atualizar" type="button" class="botao-secundario">Atualizar</button>
+        </div>
+      </div>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="bloco" id="bloco-cadastro" hidden>
+      <h2>Cadastro de produtos</h2>
+      <p class="bloco__descricao">Lido agora do PROCFIT. As próximas partes da tela entram aqui, uma de cada vez.</p>
+      <dl class="numeros">
+        <div class="numero">
+          <dt>Produtos no cadastro</dt>
+          <dd id="num-produtos">–</dd>
+        </div>
+        <div class="numero">
+          <dt>Marcados como industrializados</dt>
+          <dd id="num-industrializados">–</dd>
+        </div>
+        <div class="numero">
+          <dt>Marcados como insumo</dt>
+          <dd id="num-insumos">–</dd>
+        </div>
+      </dl>
+    </section>
+  </main>
+</body>
+</html>

@@ -41,7 +41,7 @@
     for (var i = 0; i < itens.length; i++) {
       var texto = itens[i].textContent.trim();
       if (texto.toLowerCase() === 'trocar chave') itens[i].textContent = 'Sair';
-      if (/^(Vendas|Financeiro|Administrativo|Faturamento|Log\u00edstica|Tabela de pre\u00e7os|Entradas e sa\u00eddas)$/.test(texto) && itens[i].tagName === 'A') ultimoDoMenu = itens[i];
+      if (/^(Vendas|Financeiro|Administrativo|Faturamento|Log\u00edstica|Precifica\u00e7\u00e3o|Tabela de pre\u00e7os|Entradas e sa\u00eddas)$/.test(texto) && itens[i].tagName === 'A') ultimoDoMenu = itens[i];
     }
     if (mestre && ultimoDoMenu && !document.getElementById('menu-usuarios')) {
       var novo = ultimoDoMenu.cloneNode(false);
