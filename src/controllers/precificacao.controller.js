@@ -11,5 +11,5 @@ const acao = (fn) => async (req, res, next) => {
 };
 
 module.exports = {
-  inicio: acao(service.inicio),
+  notas: acao(service.notas),
 };

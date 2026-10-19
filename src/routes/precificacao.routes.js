@@ -5,6 +5,7 @@ const controller = require('../controllers/precificacao.controller');
 
 const router = express.Router();
 
-router.get('/inicio', controller.inicio);
+// Notas de compra em quatro situações: parada, chegou e não foi lançada, entrou e sem entrada
+router.get('/notas', controller.notas);
 
 module.exports = router;
