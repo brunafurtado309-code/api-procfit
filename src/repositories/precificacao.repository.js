@@ -31,6 +31,7 @@
 const { sql, getPool } = require('../config/db');
 
 const RAIZ_CNPJ_GRUPO = '35018014';
+const TABELA_VAREJO = 1; // tabela de preço 1 = varejo (mesma regra da Logística)
 const EVENTO_CANCELAMENTO = 110111;
 const LIMITE_LISTA = 1000;
 
@@ -142,4 +143,73 @@ async function fornecedores() {
   return recordset;
 }
 
-module.exports = { notas, fornecedores };
+// Produtos do cadastro com o que a classificação precisa:
+//   vendido no período (quantidade e valor), se vendeu nos últimos 365 dias (para a sugestão),
+//   compras que entraram no estoque (desde o início), preço de varejo e as marcas do PROCFIT
+//   INDUSTRIALIZADO e INSUMO. Venda sem o tipo 20, mesma regra do painel de vendas.
+// Atenção: matéria-prima quase nunca aparece em NF_COMPRA_PRODUTOS (as notas dela não são
+// finalizadas), por isso "insumo" vem da marca INSUMO do PROCFIT, e não das compras.
+async function produtos(filtros) {
+  const pool = await getPool();
+  const { recordset } = await pool
+    .request()
+    .input('dias', sql.Int, filtros.dias)
+    .query(`
+      SET NOCOUNT ON;
+      DECLARE @hoje date = CAST(GETDATE() AS date);
+      DECLARE @desde date = DATEADD(day, -@dias, @hoje);
+      DECLARE @ano date = DATEADD(day, -365, @hoje);
+
+      WITH VENDAS AS (
+        SELECT
+          VA.PRODUTO,
+          SUM(CASE WHEN VA.MOVIMENTO >= @desde THEN VA.QUANTIDADE ELSE 0 END)    AS qtd,
+          SUM(CASE WHEN VA.MOVIMENTO >= @desde THEN VA.VENDA_LIQUIDA ELSE 0 END) AS valor,
+          CONVERT(varchar(10), MAX(VA.MOVIMENTO), 23)                            AS ultima_venda
+        FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
+        WHERE VA.MOVIMENTO >= @ano AND VA.DOCUMENTO_TIPO <> 20
+        GROUP BY VA.PRODUTO
+      ),
+      COMPRAS AS (
+        SELECT P.PRODUTO, COUNT(*) AS compras, CONVERT(varchar(10), MAX(N.EMISSAO), 23) AS ultima_compra
+        FROM NF_COMPRA_PRODUTOS P WITH (NOLOCK)
+        JOIN NF_COMPRA N WITH (NOLOCK) ON N.NF_COMPRA = P.NF_COMPRA
+        WHERE P.PRODUTO IS NOT NULL
+        GROUP BY P.PRODUTO
+      ),
+      PRECOS AS (
+        SELECT PRODUTO, MAX(PRECO_VENDA) AS varejo
+        FROM PRODUTOS_VENDAS WITH (NOLOCK)
+        WHERE GRUPO_PRECO = ${TABELA_VAREJO}
+        GROUP BY PRODUTO
+      )
+      SELECT
+        PR.PRODUTO                                      AS codigo,
+        LTRIM(RTRIM(PR.DESCRICAO))                      AS descricao,
+        LTRIM(RTRIM(PR.UNIDADE_MEDIDA))                 AS unidade,
+        CASE WHEN PR.INDUSTRIALIZADO = 'S' THEN 1 ELSE 0 END AS industrializado,
+        CASE WHEN PR.INSUMO = 'S' THEN 1 ELSE 0 END          AS insumo,
+        ISNULL(V.qtd, 0)                                AS vendido_qtd,
+        ISNULL(V.valor, 0)                              AS vendido_valor,
+        V.ultima_venda,
+        ISNULL(C.compras, 0)                            AS compras,
+        C.ultima_compra,
+        PC.varejo
+      FROM PRODUTOS PR WITH (NOLOCK)
+      LEFT JOIN VENDAS  V  ON V.PRODUTO  = PR.PRODUTO
+      LEFT JOIN COMPRAS C  ON C.PRODUTO  = PR.PRODUTO
+      LEFT JOIN PRECOS  PC ON PC.PRODUTO = PR.PRODUTO;
+    `);
+  return recordset;
+}
+
+// Só código e descrição de todos os produtos (para guardar como estava ao confirmar)
+async function descricoes() {
+  const pool = await getPool();
+  const { recordset } = await pool.request().query(
+    'SELECT PRODUTO AS codigo, LTRIM(RTRIM(DESCRICAO)) AS descricao FROM PRODUTOS WITH (NOLOCK);',
+  );
+  return new Map(recordset.map((r) => [Number(r.codigo), r.descricao ?? '']));
+}
+
+module.exports = { notas, fornecedores, produtos, descricoes };

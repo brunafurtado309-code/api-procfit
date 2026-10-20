@@ -18,4 +18,6 @@ module.exports = {
   classificarFornecedores: acao(service.classificarFornecedores),
   classificarNota: acao(service.classificarNota),
   classificarNfe: acao(service.classificarNfe),
+  produtos: acao(service.produtos),
+  classificarProdutos: acao(service.classificarProdutos),
 };

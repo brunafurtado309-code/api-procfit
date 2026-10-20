@@ -214,6 +214,123 @@ async function classificarNfe(query, params, corpo, usuario) {
   return classificacao.definir('nfe', cod, tipo, quem(usuario));
 }
 
+// ---------- Produtos: tipo e categoria ----------
+
+const TIPOS_PRODUTO = {
+  revenda: 'Revenda',
+  producao: 'Produção própria',
+  insumo: 'Insumo de produção',
+  uso_interno: 'Uso interno',
+};
+const TAMANHO_CATEGORIA = 60;
+
+// Sugestão do tipo pelo cadastro e pelo comportamento no PROCFIT, com o motivo (aparece na tela,
+// para quem confirma saber de onde veio). Vale até alguém confirmar.
+function sugestaoProduto(p) {
+  const vende = Boolean(p.ultima_venda);
+  const compra = Number(p.compras) > 0;
+  if (p.industrializado) return { tipo: 'producao', motivo: 'marcado como industrializado no PROCFIT' };
+  if (p.insumo) return { tipo: 'insumo', motivo: 'marcado como insumo no PROCFIT' };
+  if (vende && compra) return { tipo: 'revenda', motivo: 'é comprado e vendido' };
+  if (vende) return { tipo: 'producao', motivo: 'vende e não tem compra no sistema' };
+  if (compra) return { tipo: 'uso_interno', motivo: 'é comprado e não é vendido' };
+  return { tipo: null, motivo: 'sem compra nem venda no último ano' };
+}
+
+// O que mudou desde a confirmação e merece uma olhada (a classificação NÃO muda sozinha)
+function motivoRevisao(p, confirmado) {
+  if (!confirmado) return null;
+  if (confirmado.referencia != null && confirmado.referencia !== (p.descricao ?? '')) {
+    return `a descrição mudou (era "${confirmado.referencia}")`;
+  }
+  // Venda DEPOIS da confirmação (ou da última revisão): o que já tinha vendido antes, quem confirmou viu
+  const confirmadoEm = confirmado.alterado_em ? new Date(confirmado.alterado_em).toISOString().slice(0, 10) : '';
+  if (['insumo', 'uso_interno'].includes(confirmado.tipo) && p.ultima_venda && p.ultima_venda > confirmadoEm) {
+    return `está como "${TIPOS_PRODUTO[confirmado.tipo]}", mas teve venda em ${p.ultima_venda.split('-').reverse().join('/')}`;
+  }
+  return null;
+}
+
+async function produtos(query) {
+  const filtros = { dias: periodo(query.dias) };
+  const [lista, tipos, categorias] = await Promise.all([
+    repo.produtos(filtros), classificacao.listar('produto'), classificacao.listar('produto_categoria'),
+  ]);
+  const itens = lista.map((p) => {
+    const codigo = Number(p.codigo);
+    const confirmado = tipos.get(codigo);
+    const categoria = categorias.get(codigo);
+    const sugestao = sugestaoProduto(p);
+    return {
+      codigo,
+      descricao: p.descricao,
+      unidade: p.unidade,
+      industrializado: Boolean(p.industrializado),
+      insumo: Boolean(p.insumo),
+      vendido_qtd: Number(p.vendido_qtd) || 0,
+      vendido_valor: Number(p.vendido_valor) || 0,
+      ultima_venda: p.ultima_venda,
+      compras: Number(p.compras) || 0,
+      ultima_compra: p.ultima_compra,
+      varejo: p.varejo == null ? null : Number(p.varejo),
+      sugestao: sugestao.tipo,
+      sugestao_motivo: sugestao.motivo,
+      tipo: confirmado?.tipo ?? null,
+      alterado_por: confirmado?.alterado_por ?? null,
+      alterado_em: confirmado?.alterado_em ?? null,
+      revisar: motivoRevisao(p, confirmado),
+      categoria: categoria?.tipo ?? null,
+    };
+  });
+  // Os que mais venderam no período primeiro
+  itens.sort((a, b) => (b.vendido_valor - a.vendido_valor) || String(a.descricao).localeCompare(String(b.descricao)));
+  const nomesCategorias = [...new Set(itens.map((p) => p.categoria).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  return { dias: filtros.dias, tipos: TIPOS_PRODUTO, categorias: nomesCategorias, produtos: itens };
+}
+
+// Nome da categoria: espaços arrumados; se já existe uma igual (sem diferenciar acento e maiúscula),
+// usa a grafia que já existe, para não nascer "Descartáveis" e "descartaveis" lado a lado.
+const chaveCategoria = (t) => semAcento(t).replace(/\s+/g, ' ').trim();
+async function nomeCategoria(valor) {
+  if (valor === null || valor === undefined) return null;
+  const nome = String(valor).replace(/\s+/g, ' ').trim();
+  if (!nome) return null;
+  if (nome.length > TAMANHO_CATEGORIA) throw new AppError(`A categoria pode ter no máximo ${TAMANHO_CATEGORIA} letras`);
+  const existentes = [...new Set([...(await classificacao.listar('produto_categoria')).values()].map((c) => c.tipo))];
+  return existentes.find((e) => chaveCategoria(e) === chaveCategoria(nome)) ?? nome;
+}
+
+// Um ou vários produtos de uma vez. O corpo pode trazer "tipo", "categoria" ou os dois;
+// o que não vier fica como está. null ou vazio tira a classificação.
+async function classificarProdutos(query, params, corpo, usuario) {
+  const lista = corpo?.produtos;
+  if (!Array.isArray(lista) || !lista.length) throw new AppError('Escolha ao menos um produto');
+  if (lista.length > LIMITE_LOTE) throw new AppError(`No máximo ${LIMITE_LOTE} produtos de uma vez`);
+  const codigos = [...new Set(lista.map((c) => codigo(c, 'do produto')))];
+  const temTipo = Object.prototype.hasOwnProperty.call(corpo, 'tipo');
+  const temCategoria = Object.prototype.hasOwnProperty.call(corpo, 'categoria');
+  if (!temTipo && !temCategoria) throw new AppError('Informe o "tipo" e/ou a "categoria"');
+
+  // Valida tudo antes de gravar qualquer coisa
+  const operacoes = [];
+  if (temTipo) {
+    const tipo = tipoValido(corpo.tipo, TIPOS_PRODUTO);
+    // Guarda a descrição de agora: se ela mudar depois, a tela pede revisão
+    const descricoes = await repo.descricoes();
+    const referencias = new Map(codigos.map((c) => [c, descricoes.get(c) ?? '']));
+    // revisado: alguém clicou "Está certo" no aviso de revisão (grava mesmo sem mudar o tipo)
+    operacoes.push({ alvo: 'produto', codigos, tipo, referencias, forcar: corpo.revisado === true });
+  }
+  if (temCategoria) {
+    operacoes.push({ alvo: 'produto_categoria', codigos, tipo: await nomeCategoria(corpo.categoria) });
+  }
+  // Tipo e categoria juntos: ou grava os dois, ou nenhum
+  return classificacao.definirJuntos(operacoes, quem(usuario));
+}
+
 module.exports = {
+  produtos,
+  classificarProdutos,
   notas, fornecedores, classificarFornecedor, classificarFornecedores, classificarNota, classificarNfe, PERIODOS,
 };

@@ -3,6 +3,7 @@
 // Parte 1 — "O custo está certo?": as notas de compra por situação.
 // Parte 2 — Fornecedores: o tipo de cada um (revenda, produção, uso e consumo ou misto),
 //           um por um ou vários de uma vez (marcando a caixinha da linha).
+// Aba Produtos — tipo e categoria de cada produto: fica em precificacao-produtos.js.
 // A API manda as listas inteiras; trocar de situação ou pesquisar não chama a API de novo.
 // Classificar uma nota ou um fornecedor grava no banco do painel e recarrega as duas partes,
 // porque uma decisão muda a situação das notas.
@@ -26,6 +27,8 @@ let dados = null;
 let fornecedores = null;
 let dias = 90;
 let situacaoAtual = 'parada';
+let abaAtual = 'notas';
+let diasNotas = null; // período das notas que estão na tela (para saber se precisa ler de novo)
 const marcados = new Set(); // códigos dos fornecedores marcados para classificar juntos
 
 // O que cada situação significa, como aparece no cartão e quais colunas a lista mostra
@@ -400,13 +403,40 @@ function mostrarFornecedores() {
 
 // ---------- Carregar e ligar a tela ----------
 
-async function carregar(mensagem) {
+// Lê de novo a aba que está aberta
+const carregar = (mensagem) => (abaAtual === 'produtos' ? produtosTela.carregar(mensagem) : carregarNotas(mensagem));
+
+const PESQUISA = {
+  notas: 'Encontrar por fornecedor ou número da nota',
+  produtos: 'Encontrar por código, nome do produto ou categoria',
+};
+
+// Troca de aba: mostra só os blocos dela e lê os dados se ainda não leu (ou se o período mudou)
+function abrirAba(aba) {
+  abaAtual = aba;
+  for (const botao of el('abas').querySelectorAll('[data-aba]')) {
+    const ativa = botao.dataset.aba === aba;
+    botao.classList.toggle('aba--ativa', ativa);
+    if (ativa) botao.setAttribute('aria-current', 'page');
+    else botao.removeAttribute('aria-current');
+  }
+  el('bloco-notas').hidden = aba !== 'notas' || !dados;
+  el('bloco-fornecedores').hidden = aba !== 'notas' || !dados;
+  el('bloco-produtos').hidden = aba !== 'produtos' || produtosTela.desatualizado();
+  el('pesquisa-termo').placeholder = PESQUISA[aba];
+  if (window.location.hash !== `#${aba}`) window.history.replaceState(null, '', `#${aba}`);
+  if (aba === 'produtos' ? produtosTela.desatualizado() : (!dados || diasNotas !== dias)) carregar();
+  else if (aba === 'produtos') produtosTela.mostrar();
+}
+
+async function carregarNotas(mensagem) {
   mostrarStatus('Lendo as notas no PROCFIT…');
   try {
     [dados, fornecedores] = await Promise.all([
       chamar(`/precificacao/notas?dias=${dias}`),
       chamar('/precificacao/fornecedores'),
     ]);
+    diasNotas = dias;
     if (el('lote-tipo').options.length === 0) {
       el('lote-tipo').append(new Option('Escolha o tipo…', ''));
       for (const [valor, texto] of Object.entries(fornecedores.tipos)) el('lote-tipo').append(new Option(texto, valor));
@@ -447,8 +477,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     carregar();
   });
 
-  // Pesquisa: filtra as notas e os fornecedores na própria tela
+  // Pesquisa: filtra a aba aberta na própria tela
   const repintar = () => {
+    if (abaAtual === 'produtos') {
+      produtosTela.pesquisou();
+      return;
+    }
     if (!dados) return;
     mostrarLista();
     mostrarFornecedores();
@@ -481,5 +515,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     mostrarFornecedores();
   });
 
-  carregar();
+  // Abas: Notas e fornecedores | Produtos (o endereço guarda a aba: precificacao.html#produtos)
+  produtosTela.ligar();
+  el('abas').addEventListener('click', (evento) => {
+    const botao = evento.target.closest('[data-aba]');
+    if (botao) abrirAba(botao.dataset.aba);
+  });
+  abrirAba(window.location.hash === '#produtos' ? 'produtos' : 'notas');
 });

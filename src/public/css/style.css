@@ -2314,3 +2314,13 @@ button.barra:hover { background: var(--verde-suave); color: inherit; }
 .tela-precificacao .tabela .coluna-marcar { width: 2.5rem; text-align: center; }
 .tela-precificacao .tabela .coluna-marcar input { width: 1.1rem; height: 1.1rem; accent-color: var(--verde); cursor: pointer; }
 .tela-precificacao .tabela tr.linha-marcada > td { background: var(--verde-suave); }
+.tela-precificacao .produtos-filtros { margin: 1rem 0 0.75rem; align-items: flex-end; }
+.tela-precificacao .campo-categoria {
+  min-width: 12rem;
+  padding: 0.3rem 0.5rem;
+  font-size: var(--texto-mini);
+}
+.tela-precificacao .campo-categoria--salvando { opacity: 0.6; }
+/* Produto confirmado que mudou depois: aviso em laranja embaixo do tipo */
+.tela-precificacao .aviso-revisar { display: block; margin-top: 0.3rem; font-size: var(--texto-mini); color: var(--alerta); }
+.tela-precificacao .aviso-revisar button { margin-left: 0.4rem; padding: 0.1rem 0.6rem; font-size: var(--texto-mini); }

@@ -7,8 +7,13 @@
 //   fornecedor  código da entidade no PROCFIT (NF_COMPRA.ENTIDADE)
 //   nota        código da nota de compra (NF_COMPRA.NF_COMPRA), para fornecedor que manda as duas coisas
 //   nfe         registro do XML (NFE.Registro) da nota que chegou e não virou nota de compra
-//   produto     (próximo passo) código do produto
+//   produto            código do produto (PRODUTOS.PRODUTO): revenda, produção própria, insumo, uso interno
+//   produto_categoria  código do produto; o "tipo" guardado é o NOME da categoria (ex.: Descartáveis)
 // Toda mudança vira uma linha no histórico: o que era, o que ficou, quem mudou e quando.
+//
+// "referencia" guarda como a coisa estava quando alguém confirmou (no produto: a descrição).
+// Se mudar depois, a tela avisa para revisar. Confirmar de novo o mesmo tipo atualiza a referência
+// e também entra no histórico (antes = depois), para ficar registrado quem revisou.
 
 const { db } = require('../config/usuariosDb');
 
@@ -26,6 +31,7 @@ async function conexao() {
         alterado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
         PRIMARY KEY (alvo, codigo)
       );
+      ALTER TABLE precificacao_classificacao ADD COLUMN IF NOT EXISTS referencia TEXT;
       CREATE TABLE IF NOT EXISTS precificacao_classificacao_historico (
         id          SERIAL PRIMARY KEY,
         alvo        TEXT NOT NULL,
@@ -46,36 +52,41 @@ async function conexao() {
   return pool;
 }
 
-// Todas as classificações de um alvo, num Map: código -> { tipo, alterado_por, alterado_em }
+// Todas as classificações de um alvo, num Map: código -> { tipo, alterado_por, alterado_em, referencia }
 async function listar(alvo) {
   const pool = await conexao();
   const { rows } = await pool.query(
-    'SELECT codigo, tipo, alterado_por, alterado_em FROM precificacao_classificacao WHERE alvo = $1',
+    'SELECT codigo, tipo, alterado_por, alterado_em, referencia FROM precificacao_classificacao WHERE alvo = $1',
     [alvo],
   );
   return new Map(rows.map((r) => [Number(r.codigo), {
-    tipo: r.tipo, alterado_por: r.alterado_por, alterado_em: r.alterado_em,
+    tipo: r.tipo, alterado_por: r.alterado_por, alterado_em: r.alterado_em, referencia: r.referencia,
   }]));
 }
 
 // Grava (ou apaga, com tipo null) a classificação de um código e registra no histórico.
 // Roda dentro da transação de quem chamou. Devolve true se mudou alguma coisa.
-async function gravarUm(cliente, alvo, codigo, tipo, usuario) {
+// Mesmo tipo com referência diferente (ou forcar = alguém clicou "Está certo") = revisão:
+// atualiza a referência e a data, e registra quem revisou.
+async function gravarUm(cliente, alvo, codigo, tipo, usuario, referencia = null, forcar = false) {
   const atual = await cliente.query(
-    'SELECT tipo FROM precificacao_classificacao WHERE alvo = $1 AND codigo = $2 FOR UPDATE',
+    'SELECT tipo, referencia FROM precificacao_classificacao WHERE alvo = $1 AND codigo = $2 FOR UPDATE',
     [alvo, codigo],
   );
   const antes = atual.rows[0]?.tipo ?? null;
-  if (antes === tipo) return false;
+  const revisao = tipo !== null && antes === tipo
+    && (forcar || (referencia !== null && atual.rows[0].referencia !== referencia));
+  if (antes === tipo && !revisao) return false;
   if (tipo === null) {
     await cliente.query('DELETE FROM precificacao_classificacao WHERE alvo = $1 AND codigo = $2', [alvo, codigo]);
   } else {
     await cliente.query(
-      `INSERT INTO precificacao_classificacao (alvo, codigo, tipo, alterado_por, alterado_em)
-       VALUES ($1, $2, $3, $4, now())
+      `INSERT INTO precificacao_classificacao (alvo, codigo, tipo, alterado_por, alterado_em, referencia)
+       VALUES ($1, $2, $3, $4, now(), $5)
        ON CONFLICT (alvo, codigo)
-       DO UPDATE SET tipo = EXCLUDED.tipo, alterado_por = EXCLUDED.alterado_por, alterado_em = now()`,
-      [alvo, codigo, tipo, usuario],
+       DO UPDATE SET tipo = EXCLUDED.tipo, alterado_por = EXCLUDED.alterado_por, alterado_em = now(),
+                     referencia = EXCLUDED.referencia`,
+      [alvo, codigo, tipo, usuario, referencia],
     );
   }
   await cliente.query(
@@ -88,15 +99,22 @@ async function gravarUm(cliente, alvo, codigo, tipo, usuario) {
 
 // Grava o mesmo tipo para um ou vários códigos, tudo de uma vez: se um falhar, nenhum é gravado
 // (transação). Devolve quantos mudaram de fato (os que já tinham esse tipo não contam).
-async function definir(alvo, codigos, tipo, usuario) {
-  const lista = Array.isArray(codigos) ? codigos : [codigos];
+// referencias (opcional): Map código -> como estava na hora de confirmar.
+async function definir(alvo, codigos, tipo, usuario, referencias = null) {
+  return definirJuntos([{ alvo, codigos, tipo, referencias }], usuario);
+}
+
+// Várias gravações (ex.: tipo e categoria do produto) numa transação só: ou grava tudo, ou nada.
+async function definirJuntos(operacoes, usuario) {
   const pool = await conexao();
   const cliente = await pool.connect();
   try {
     await cliente.query('BEGIN');
     let mudaram = 0;
-    for (const codigo of lista) {
-      if (await gravarUm(cliente, alvo, codigo, tipo, usuario)) mudaram += 1;
+    for (const { alvo, codigos, tipo, referencias = null, forcar = false } of operacoes) {
+      for (const codigo of Array.isArray(codigos) ? codigos : [codigos]) {
+        if (await gravarUm(cliente, alvo, codigo, tipo, usuario, referencias?.get(codigo) ?? null, forcar)) mudaram += 1;
+      }
     }
     await cliente.query('COMMIT');
     return { mudou: mudaram > 0, mudaram };
@@ -108,4 +126,4 @@ async function definir(alvo, codigos, tipo, usuario) {
   }
 }
 
-module.exports = { listar, definir };
+module.exports = { listar, definir, definirJuntos };

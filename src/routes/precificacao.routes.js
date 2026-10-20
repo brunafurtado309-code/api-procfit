@@ -15,4 +15,8 @@ router.put('/fornecedores/:fornecedor', controller.classificarFornecedor); // { 
 router.put('/notas/:nota', controller.classificarNota);                   // { tipo } ou { tipo: null }
 router.put('/nfe/:registro', controller.classificarNfe);                  // nota que não virou nota de compra
 
+// Produtos: tipo (revenda, produção própria, insumo, uso interno) e categoria
+router.get('/produtos', controller.produtos);
+router.put('/produtos', controller.classificarProdutos); // { produtos: [códigos], tipo?, categoria?, revisado? }
+
 module.exports = router;
