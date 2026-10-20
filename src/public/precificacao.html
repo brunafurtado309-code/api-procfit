@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="css/style.css">
   <script src="js/modulos.js" defer></script>
   <script src="js/precificacao.js" defer></script>
+  <script src="js/precificacao-produtos.js" defer></script>
 </head>
 <body class="tela-precificacao">
   <header class="topo">
@@ -22,11 +23,16 @@
   </header>
 
   <main class="conteudo conteudo--largo">
+    <nav class="abas" id="abas" aria-label="Partes da precificação">
+      <button class="aba aba--ativa" type="button" data-aba="notas" aria-current="page">Notas e fornecedores</button>
+      <button class="aba" type="button" data-aba="produtos">Produtos</button>
+    </nav>
+
     <section class="barra-filtros" aria-label="Filtros">
       <div class="barra-filtros__linha">
         <form id="form-pesquisa" class="pesquisa" role="search">
           <label class="campo campo--busca">
-            <span class="sr-only">Encontrar nota ou fornecedor</span>
+            <span class="sr-only">Pesquisar</span>
             <input id="pesquisa-termo" type="search" maxlength="60" autocomplete="off"
                    placeholder="Encontrar por fornecedor ou número da nota">
           </label>
@@ -35,7 +41,7 @@
       </div>
 
       <form id="filtros" class="filtros">
-        <div class="atalhos" id="atalhos" aria-label="Período das notas">
+        <div class="atalhos" id="atalhos" aria-label="Período">
           <button type="button" class="botao-secundario" data-dias="30">Últimos 30 dias</button>
           <button type="button" class="botao-secundario" data-dias="60">Últimos 60 dias</button>
           <button type="button" class="botao-secundario atalho--ativo" data-dias="90">Últimos 90 dias</button>
@@ -112,6 +118,64 @@
           </thead>
           <tbody></tbody>
         </table>
+      </div>
+    </section>
+
+    <section class="bloco" id="bloco-produtos" hidden>
+      <h2>Produtos</h2>
+      <p class="bloco__descricao">
+        O tipo decide como o produto entra na precificação: revenda pelo custo da nota de compra, produção própria
+        pela ficha técnica (quando existir), e insumo e uso interno ficam fora das margens. A sugestão (em itálico)
+        vem do cadastro e do que o produto faz no PROCFIT, e vale até alguém confirmar. Os que mais venderam no período
+        aparecem primeiro; marque vários para dar o mesmo tipo ou a mesma categoria de uma vez.
+      </p>
+      <div class="cartoes" id="produtos-situacoes"></div>
+
+      <div class="fornecedores-opcoes produtos-filtros">
+        <label class="campo">
+          <span>Tipo</span>
+          <select id="produtos-tipo"><option value="">Todos</option></select>
+        </label>
+        <label class="campo">
+          <span>Categoria</span>
+          <select id="produtos-categoria"><option value="">Todas</option><option value="__sem">Sem categoria</option></select>
+        </label>
+      </div>
+
+      <div class="lote" id="produtos-lote" hidden>
+        <span id="produtos-lote-texto"></span>
+        <select id="produtos-lote-tipo" class="seletor-tipo" aria-label="Tipo para os produtos marcados"></select>
+        <input id="produtos-lote-categoria" class="campo-categoria" list="lista-categorias" maxlength="60"
+               placeholder="Categoria (opcional)" aria-label="Categoria para os produtos marcados">
+        <button type="button" id="produtos-lote-aplicar">Aplicar aos marcados</button>
+        <button type="button" id="produtos-lote-limpar" class="botao-secundario">Desmarcar</button>
+      </div>
+      <datalist id="lista-categorias"></datalist>
+
+      <h3 class="subtitulo" id="produtos-titulo">Produtos</h3>
+      <div class="tabela-rolagem">
+        <table class="tabela" id="tabela-produtos">
+          <thead>
+            <tr>
+              <th scope="col" class="coluna-marcar">
+                <input type="checkbox" id="produtos-marcar-todos" aria-label="Marcar todos os produtos da lista">
+              </th>
+              <th scope="col" class="esquerda">Produto</th>
+              <th scope="col">Vendido no período</th>
+              <th scope="col">Última compra</th>
+              <th scope="col">Preço varejo</th>
+              <th scope="col" class="esquerda">Tipo</th>
+              <th scope="col" class="esquerda">Categoria</th>
+              <th scope="col" class="esquerda">Confirmado por</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="paginacao" id="produtos-paginacao" hidden>
+        <button type="button" class="botao-secundario" id="produtos-anterior">Anterior</button>
+        <span id="produtos-pagina"></span>
+        <button type="button" class="botao-secundario" id="produtos-proxima">Próxima</button>
       </div>
     </section>
   </main>
