@@ -20,8 +20,9 @@
 //   3. Produtos       cadastro, preço de varejo (tabela 1) e custo médio do PROCFIT
 //                     (PRODUTOS_VENDAS, mesma regra da Logística), e o saldo de estoque
 //                     (ESTOQUE_LANCAMENTOS: entradas - saídas, a coluna de saldo vem vazia).
-//   4. Mudanças de    LOG_PRODUTOS_VENDAS, só a tabela de varejo, com o preço de antes e o de depois
-//      preço          (mesma consulta da Logística). O log começa em mai/2026.
+//   4. Mudanças de    LOG_PRODUTOS_VENDAS, tabelas de varejo (1) e atacado (4), com o preço de antes e o
+//      preço          de depois (mesma consulta da Logística). O log começa em mai/2026.
+//                     As decisões da aba usam só o varejo; a lista e a janela do produto mostram as duas.
 //   5. Custo real     o que foi PAGO nas compras dos últimos DIAS_CUSTO_REAL dias, dividido pelas
 //                     unidades compradas + as bonificadas. Item a item, pelo CFOP (nunca pelo texto
 //                     da nota, que engana: a Carino 200363 é "VENDA/BONIF" com itens das duas coisas):
@@ -38,7 +39,7 @@
 // Nomes curtos nas colunas da venda por dia (p, d, q...) porque são muitas linhas.
 
 const { getPool } = require('../config/db');
-const { MUDANCAS_DE_PRECO, TABELA_VAREJO } = require('./logistica.repository');
+const { MUDANCAS_DE_PRECO, TABELA_VAREJO, TABELA_ATACADO } = require('./logistica.repository');
 
 const DIAS_CUSTO_REAL = 120;
 // Últimos 3 números do CFOP do item, sem ponto ("6.910" e "6910" viram "910")
@@ -102,16 +103,17 @@ async function base() {
     LEFT JOIN PRECOS PC ON PC.PRODUTO = PR.PRODUTO
     LEFT JOIN SALDOS S  ON S.PRODUTO  = PR.PRODUTO;
 
-    -- 4. Mudanças do preço de varejo, da mais antiga para a mais nova
+    -- 4. Mudanças do preço de varejo e de atacado, da mais antiga para a mais nova
     SELECT
       M.produto,
+      M.tabela,
       CONVERT(varchar(16), M.quando, 120) AS quando,
       M.antes,
       M.depois,
       M.quem,
       M.fora_do_sistema
     FROM (${MUDANCAS_DE_PRECO}) M
-    WHERE M.tabela = ${TABELA_VAREJO}
+    WHERE M.tabela IN (${TABELA_VAREJO}, ${TABELA_ATACADO})
       AND M.quando >= @desde
     ORDER BY M.produto, M.quando;
 

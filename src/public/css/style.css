@@ -2773,3 +2773,11 @@ button:hover,
 .produto-analise-tabela { max-height: 22rem; overflow-y: auto; }
 .produto-analise-tabela thead th { position: sticky; top: 0; background: var(--superficie); z-index: 1; }
 .tela-precificacao .produto-analise-tabela tr.linha-marcada > td { background: var(--verde-suave); }
+/* Variações de preço na lista de produtos da Análise (as últimas mudanças, uma por linha) */
+.tela-precificacao .analise-variacoes { min-width: 17rem; }
+.tela-precificacao .analise-variacao { white-space: nowrap; font-size: var(--texto-mini); line-height: 1.6; }
+.tela-precificacao .analise-variacao__data,
+.tela-precificacao .analise-variacao__quem { color: var(--tinta-suave); }
+.tela-precificacao .analise-variacao__baixou { color: var(--verde-vivo); }
+.tela-precificacao .analise-variacao .tabela-preco { padding: 0 0.4rem; font-size: var(--texto-mini); }
+.tela-precificacao .analise-variacao__todas { font-size: var(--texto-mini); color: var(--verde-vivo); }

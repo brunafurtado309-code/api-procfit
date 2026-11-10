@@ -408,6 +408,8 @@ const analiseTela = (() => {
     // Mais abaixo do preço sugerido primeiro (sem margem desejada vai para o fim)
     sugerido: (a, b) => (a.diferenca_preco ?? 9999) - (b.diferenca_preco ?? 9999),
     bonificacao: (a, b) => (b.bonificacao?.parcela ?? -1) - (a.bonificacao?.parcela ?? -1),
+    // Mudança de preço mais recente primeiro (sem mudança vai para o fim)
+    mudou: (a, b) => String(b.mudancas_recentes?.[0]?.quando ?? '').localeCompare(String(a.mudancas_recentes?.[0]?.quando ?? '')),
   };
 
   // Nome do produto que abre a janela dele
@@ -429,6 +431,37 @@ const analiseTela = (() => {
     if (!p) return td;
     const partes = [`código ${p.codigo}`, p.unidade, p.categoria, p.tipo === 'producao' ? 'produção própria' : null].filter(Boolean);
     td.append(span(` ${partes.join(' · ')}`, 'qtd'));
+    return td;
+  }
+
+  // Etiqueta da tabela de preço (Varejo / Atacado), a mesma da Logística
+  const etiquetaTabela = (m) => span(m.nome_tabela ?? 'Varejo',
+    `tabela-preco ${m.tabela === 4 ? 'tabela-preco--atacado' : 'tabela-preco--varejo'}`);
+
+  // Variações de preço do produto: as últimas mudanças (varejo e atacado), uma por linha.
+  // "ver todas" abre a janela do produto, com a análise de cada uma.
+  function celulaVariacoes(p) {
+    const td = celula('', 'esquerda analise-variacoes');
+    if (!p.mudancas_recentes?.length) {
+      td.textContent = '–';
+      return td;
+    }
+    for (const m of p.mudancas_recentes) {
+      const linha = criar('div', 'analise-variacao');
+      const valores = span(` ${dinheiro(m.antes)} → ${dinheiro(m.depois)} `);
+      const pct = span(comSinal(m.var_preco), m.depois > m.antes ? 'negativo' : 'analise-variacao__baixou');
+      // "23/10/2026 09:12" -> "23/10/26"
+      const data = dataBR(m.quando);
+      linha.append(span(`${data.slice(0, 6)}${data.slice(8, 10)}`, 'analise-variacao__data'), ' ', etiquetaTabela(m), valores, pct);
+      if (m.quem) linha.append(span(` · ${String(m.quem).split(' ')[0]}`, 'analise-variacao__quem'));
+      td.append(linha);
+    }
+    if (p.mudancas_total > p.mudancas_recentes.length) {
+      const todas = criar('button', 'analise-produto-link analise-variacao__todas', `ver as ${inteiro(p.mudancas_total)} mudanças`);
+      todas.type = 'button';
+      todas.addEventListener('click', () => abrirProduto(p.codigo));
+      td.append(todas);
+    }
     return td;
   }
 
@@ -552,11 +585,8 @@ const analiseTela = (() => {
       const preco = celula(p.varejo ? dinheiro(p.varejo) : '–', (p.margem_tabela_real ?? p.margem_tabela ?? 0) < 0 ? 'negativo' : '');
       linhaPequena(preco, [p.custo_medio ? `custo ${dinheiro(p.custo_medio)}` : null,
         p.custo_real ? `real ${dinheiro(p.custo_real)}` : null].filter(Boolean).join(' · '));
-      const mudou = p.ultima_mudanca
-        ? `${p.ultima_mudanca.depois > p.ultima_mudanca.antes ? 'subiu' : 'baixou'} ${dataBR(p.ultima_mudanca.quando).slice(0, 5)}`
-        : null;
       linhaPequena(preco, [p.aliquota != null ? `imp. ${porcento(p.aliquota, 0)}` : null,
-        p.bonificacao ? `${Math.round(p.bonificacao.parcela * 100)}% bonif.` : null, mudou].filter(Boolean).join(' · '));
+        p.bonificacao ? `${Math.round(p.bonificacao.parcela * 100)}% bonif.` : null].filter(Boolean).join(' · '));
 
       const giro = linhaPequena(celula(p.vende_a_cada == null ? '–'
         : p.vende_a_cada <= 1 ? 'todo dia' : `a cada ${decimal(p.vende_a_cada)} dias`, 'sem-quebra'),
@@ -566,14 +596,14 @@ const analiseTela = (() => {
         p.dias_sem_venda ? `há ${plural(p.dias_sem_venda, 'dia', 'dias')}` : '',
         (p.dias_sem_venda ?? 0) > dados.dias ? 'qtd negativo' : 'qtd');
 
-      tr.append(celulaProduto(p), curva, vendido, comparado, margem, preco, celulaSugerido(p), giro, ultima,
+      tr.append(celulaProduto(p), curva, vendido, comparado, margem, preco, celulaVariacoes(p), celulaSugerido(p), giro, ultima,
         celula(quantidade(p.saldo, p.unidade), p.saldo < 0 ? 'negativo' : ''));
       return tr;
     });
     if (!linhas.length) {
       const tr = document.createElement('tr');
       const vazio = celula('Nenhum produto nesta lista.', 'vazio');
-      vazio.colSpan = 10;
+      vazio.colSpan = 11;
       tr.append(vazio);
       linhas.push(tr);
     }
@@ -682,8 +712,9 @@ const analiseTela = (() => {
     for (const v of d.variacoes) {
       const tr = criar('tr');
       if (!v.cedo && !v.bom) tr.className = 'linha-vencida';
-      const quando = linhaPequena(celula(dataBR(v.quando), 'esquerda sem-quebra'),
-        [v.quem, v.fora ? 'direto no banco' : null].filter(Boolean).join(' · '));
+      const quando = celula(dataBR(v.quando), 'esquerda sem-quebra');
+      quando.append(' ', etiquetaTabela(v));
+      linhaPequena(quando, [v.quem, v.fora ? 'direto no banco' : null].filter(Boolean).join(' · '));
       const preco = linhaPequena(celula(`${dinheiro(v.antes)} → ${dinheiro(v.depois)}`, 'sem-quebra'),
         comSinal(v.var_preco), v.subiu ? 'qtd negativo' : 'qtd');
       let colunasNumeros;
@@ -778,7 +809,7 @@ const analiseTela = (() => {
   function textoMudancas(lista) {
     if (!lista?.length) return 'Nenhuma mudança de preço perto dessa data.';
     const mostrar = lista.slice(0, 4);
-    return mostrar.map((m) => `${m.descricao ? `${m.descricao}: ` : ''}o preço ${m.subiu ? 'subiu' : 'baixou'} `
+    return mostrar.map((m) => `${m.descricao ? `${m.descricao}: ` : ''}o preço de ${(m.nome_tabela ?? 'varejo').toLowerCase()} ${m.subiu ? 'subiu' : 'baixou'} `
       + `de ${dinheiro(m.antes)} para ${dinheiro(m.depois)} em ${dataBR(m.quando)}${m.quem ? ` (${m.quem})` : ''}`).join('; ')
       + `${lista.length > mostrar.length ? `; e mais ${lista.length - mostrar.length}` : ''}.`;
   }

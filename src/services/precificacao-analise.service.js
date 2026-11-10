@@ -56,6 +56,8 @@ const LIMITE_LOTE = 500;
 
 const TIPOS = { revenda: 'Revenda', producao: 'Produção própria' };
 const FORA_DA_ANALISE = new Set(['insumo', 'uso_interno']);
+const NOMES_TABELAS = { 1: 'Varejo', 4: 'Atacado' };
+const MUDANCAS_NA_LISTA = 3; // quantas mudanças de preço aparecem em cada produto da lista
 const DIAS_SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
@@ -153,13 +155,22 @@ function organizar({ hoje, vendas, produtos, mudancas, custosReais }) {
   }
   for (const linhas of vendasPorProduto.values()) linhas.sort((a, b) => (a.d < b.d ? -1 : 1));
 
+  // Mudanças de preço: todas (varejo e atacado, para mostrar) e só as do varejo (para as decisões)
   const mudancasPorProduto = new Map();
+  const mudancasVarejo = new Map();
   for (const m of mudancas) {
     const codigo = Number(m.produto);
-    if (!mudancasPorProduto.has(codigo)) mudancasPorProduto.set(codigo, []);
-    mudancasPorProduto.get(codigo).push({
+    const tabela = Number(m.tabela) || 1;
+    const mudanca = {
       quando: m.quando, antes: n(m.antes), depois: n(m.depois), quem: m.quem, fora: Boolean(m.fora_do_sistema),
-    });
+      tabela, nome_tabela: NOMES_TABELAS[tabela] ?? `Tabela ${tabela}`,
+    };
+    if (!mudancasPorProduto.has(codigo)) mudancasPorProduto.set(codigo, []);
+    mudancasPorProduto.get(codigo).push(mudanca);
+    if (tabela === 1) {
+      if (!mudancasVarejo.has(codigo)) mudancasVarejo.set(codigo, []);
+      mudancasVarejo.get(codigo).push(mudanca);
+    }
   }
 
   // Custo real só existe com compra no período (só bonificação, sem compra, não dá para dividir)
@@ -181,6 +192,7 @@ function organizar({ hoje, vendas, produtos, mudancas, custosReais }) {
     primeiroDia,
     vendasPorProduto,
     mudancasPorProduto,
+    mudancasVarejo,
     custosReais: custos,
     produtos: new Map(produtos.map((p) => [Number(p.codigo), {
       codigo: Number(p.codigo),
@@ -329,8 +341,21 @@ function efeitoDoPreco(mudancas, linhas, de, hoje, custoEstimado) {
 // Cada mudança de preço de um produto, para a janela dele: venda, quantidade e lucro por dia antes e depois.
 // A janela vai até 28 dias para cada lado, mas para na mudança vizinha (uma não contamina a outra).
 // Com menos de 7 dias de cada lado, é cedo (ou o preço mudou de novo logo): fica marcado e sem resultado.
+// Varejo e atacado são medidos cada um com as suas vizinhas (a do atacado não corta a janela do varejo);
+// a venda comparada é a do produto inteiro.
 function analisarMudancas(mudancas, linhas, hoje, custoEstimado, custoReal) {
-  const validas = (mudancas ?? []).filter((m) => m.antes > 0 && m.depois > 0);
+  const porTabela = new Map();
+  for (const m of (mudancas ?? []).filter((x) => x.antes > 0 && x.depois > 0)) {
+    const t = m.tabela ?? 1;
+    if (!porTabela.has(t)) porTabela.set(t, []);
+    porTabela.get(t).push(m);
+  }
+  return [...porTabela.values()]
+    .flatMap((lista) => analisarTabela(lista, linhas, hoje, custoEstimado, custoReal))
+    .sort((a, b) => (a.quando < b.quando ? -1 : 1));
+}
+
+function analisarTabela(validas, linhas, hoje, custoEstimado, custoReal) {
   return validas.map((m, i) => {
     const dia = m.quando.slice(0, 10);
     const anterior = validas[i - 1]?.quando.slice(0, 10);
@@ -340,6 +365,7 @@ function analisarMudancas(mudancas, linhas, hoje, custoEstimado, custoReal) {
     const janela = Math.min(JANELA_PRECO, diasDepois, diasAntes);
     const base = {
       quando: m.quando, antes: m.antes, depois: m.depois, quem: m.quem, fora: m.fora,
+      tabela: m.tabela ?? 1, nome_tabela: m.nome_tabela ?? 'Varejo',
       produto: m.produto ?? null, descricao: m.descricao ?? null,
       subiu: m.depois > m.antes, var_preco: r4(variacao(m.depois, m.antes)), janela,
     };
@@ -511,7 +537,11 @@ async function analise(query, acesso = {}) {
       ultima_venda: ultimaVenda,
       dias_sem_venda: ultimaVenda ? diasEntre(ultimaVenda, base.hoje) : null,
       vendeu_antes: antesDoPeriodo.q > 0,
-      ultima_mudanca: (base.mudancasPorProduto.get(p.codigo) ?? []).slice(-1)[0] ?? null,
+      ultima_mudanca: (base.mudancasVarejo.get(p.codigo) ?? []).slice(-1)[0] ?? null,
+      // As últimas mudanças de preço (varejo e atacado), a mais nova primeiro
+      mudancas_recentes: (base.mudancasPorProduto.get(p.codigo) ?? []).slice(-MUDANCAS_NA_LISTA).reverse()
+        .map((m) => ({ ...m, var_preco: r4(variacao(m.depois, m.antes)) })),
+      mudancas_total: (base.mudancasPorProduto.get(p.codigo) ?? []).length,
       // Guardados só para as contas abaixo (não vão para a tela)
       _linhas: linhas,
       _atual: atual,
@@ -650,7 +680,7 @@ async function analise(query, acesso = {}) {
     }
 
     // O efeito da última mudança de preço (usado em c, e, f)
-    const efeito = efeitoDoPreco(base.mudancasPorProduto.get(p.codigo), p._linhas, de, base.hoje, p.custo_medio);
+    const efeito = efeitoDoPreco(base.mudancasVarejo.get(p.codigo), p._linhas, de, base.hoje, p.custo_medio);
     // Baixou o preço de propósito e passou a lucrar mais: a margem menor foi escolha, não problema
     const baixouEGanhou = efeito && !efeito.cedo && !efeito.subiu && efeito.lucro_subiu === true;
 
