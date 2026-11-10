@@ -20,6 +20,7 @@ const precificacaoRoutes = require('./routes/precificacao.routes'); // NOVO: Pai
 const movimentosRoutes = require('./routes/movimentos.routes');
 const authRoutes = require('./routes/auth.routes'); // NOVO: cadastro e login
 const usuariosRoutes = require('./routes/usuarios.routes'); // NOVO: liberacao de usuarios
+const lojasRepo = require('./repositories/lojas.repository'); // seletor de loja do painel
 
 const app = express();
 app.use(exigirLoginNaPagina); // NOVO: sem login, as telas do painel vao para o login
@@ -65,6 +66,20 @@ app.get('/health', async (req, res) => {
 
 // Diz ao painel quais setores a chave informada abre (usado na tela de entrada)
 app.get('/acessos', exigirChave(), (req, res) => res.json({ setores: req.setores }));
+
+// Lojas para o seletor de loja do painel (empresas com venda nos últimos 90 dias). Guardada por
+// 10 minutos: a lista quase nunca muda e é pedida em toda tela.
+let lojasGuardadas = null;
+app.get('/lojas', exigirChave(), async (req, res, next) => {
+  try {
+    if (!lojasGuardadas || Date.now() - lojasGuardadas.em > 10 * 60 * 1000) {
+      lojasGuardadas = { em: Date.now(), lista: await lojasRepo.lojas() };
+    }
+    res.json({ lojas: lojasGuardadas.lista });
+  } catch (erro) {
+    next(erro);
+  }
+});
 
 // Rotas protegidas por chave, cada uma no seu setor
 app.use('/vendas', exigirChave('vendas'), vendasRoutes);
