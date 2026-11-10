@@ -4,7 +4,8 @@
 
 const crypto = require('crypto');
 
-const SETORES = ['vendas', 'financeiro', 'admin', 'faturamento', 'logistica', 'precificacao', 'precos', 'movimentos'];
+// precificacao_edita não é uma tela: é a permissão "Edita preço" (margem desejada na Precificação)
+const SETORES = ['vendas', 'financeiro', 'admin', 'faturamento', 'logistica', 'precificacao', 'precificacao_edita', 'precos', 'movimentos'];
 const PREFIXO_SESSAO = 'sess_';
 const COOKIE_SESSAO = 'painel_sessao';
 

@@ -5,6 +5,17 @@ const controller = require('../controllers/precificacao.controller');
 
 const router = express.Router();
 
+// Análise: venda, margem, categorias, giro e as decisões de preço (só leitura)
+// ?dias=30|60|90|180 &tipo=revenda|producao &categoria=Nome (ou __sem) &atualizar=1 (lê o PROCFIT de novo)
+router.get('/analise', controller.analise);
+
+// Margem desejada por produto: só quem tem a permissão "Edita preço" (a pessoa da precificação)
+// { produtos: [códigos], margem: 0.15 } ou { produtos: [...], margem: null } para tirar
+const exigirEdicaoDePreco = (req, res, next) => (controller.podeEditarPreco(req)
+  ? next()
+  : res.status(403).json({ erro: 'Só quem tem a permissão "Edita preço" muda a margem desejada.' }));
+router.put('/margens', exigirEdicaoDePreco, controller.definirMargens);
+
 // Notas de compra por situação: parada, a classificar, chegou e não foi lançada, entrou, produção ou consumo
 router.get('/notas', controller.notas);
 

@@ -29,7 +29,8 @@ const modulos = (() => {
     }
     if (!resposta.ok) throw new Error('Não foi possível conferir o acesso da chave');
     const { setores } = await resposta.json();
-    return setores;
+    // Só as telas: permissões que não são tela (ex.: precificacao_edita) não entram no menu
+    return setores.filter((setor) => PAGINAS[setor]);
   }
 
   function irPara(setor) {

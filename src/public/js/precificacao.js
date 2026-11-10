@@ -3,6 +3,7 @@
 // Parte 1 — "O custo está certo?": as notas de compra por situação.
 // Parte 2 — Fornecedores: o tipo de cada um (revenda, produção, uso e consumo ou misto),
 //           um por um ou vários de uma vez (marcando a caixinha da linha).
+// Aba Análise — venda, margem, categorias, giro e decisões de preço: fica em precificacao-analise.js.
 // Aba Produtos — tipo e categoria de cada produto: fica em precificacao-produtos.js.
 // A API manda as listas inteiras; trocar de situação ou pesquisar não chama a API de novo.
 // Classificar uma nota ou um fornecedor grava no banco do painel e recarrega as duas partes,
@@ -27,7 +28,7 @@ let dados = null;
 let fornecedores = null;
 let dias = 90;
 let situacaoAtual = 'parada';
-let abaAtual = 'notas';
+let abaAtual = 'analise';
 let diasNotas = null; // período das notas que estão na tela (para saber se precisa ler de novo)
 const marcados = new Set(); // códigos dos fornecedores marcados para classificar juntos
 
@@ -403,10 +404,23 @@ function mostrarFornecedores() {
 
 // ---------- Carregar e ligar a tela ----------
 
-// Lê de novo a aba que está aberta
-const carregar = (mensagem) => (abaAtual === 'produtos' ? produtosTela.carregar(mensagem) : carregarNotas(mensagem));
+// Lê de novo a aba que está aberta (forcar: a Análise lê o PROCFIT na hora, sem usar a leitura guardada)
+const ABAS = ['analise', 'notas', 'produtos'];
+function carregar(mensagem, forcar = false) {
+  if (abaAtual === 'analise') return analiseTela.carregar(mensagem, forcar);
+  if (abaAtual === 'produtos') return produtosTela.carregar(mensagem);
+  return carregarNotas(mensagem);
+}
+
+// Precisa ler a aba de novo? (nunca leu, ou mudou o período ou outro filtro dela)
+function abaDesatualizada(aba) {
+  if (aba === 'analise') return analiseTela.desatualizado();
+  if (aba === 'produtos') return produtosTela.desatualizado();
+  return !dados || diasNotas !== dias;
+}
 
 const PESQUISA = {
+  analise: 'Encontrar produto por código, nome ou categoria',
   notas: 'Encontrar por fornecedor ou número da nota',
   produtos: 'Encontrar por código, nome do produto ou categoria',
 };
@@ -420,13 +434,15 @@ function abrirAba(aba) {
     if (ativa) botao.setAttribute('aria-current', 'page');
     else botao.removeAttribute('aria-current');
   }
+  el('aba-analise').hidden = aba !== 'analise' || analiseTela.desatualizado();
   el('bloco-notas').hidden = aba !== 'notas' || !dados;
   el('bloco-fornecedores').hidden = aba !== 'notas' || !dados;
   el('bloco-produtos').hidden = aba !== 'produtos' || produtosTela.desatualizado();
   el('pesquisa-termo').placeholder = PESQUISA[aba];
   if (window.location.hash !== `#${aba}`) window.history.replaceState(null, '', `#${aba}`);
-  if (aba === 'produtos' ? produtosTela.desatualizado() : (!dados || diasNotas !== dias)) carregar();
+  if (abaDesatualizada(aba)) carregar();
   else if (aba === 'produtos') produtosTela.mostrar();
+  else if (aba === 'analise') analiseTela.mostrar();
 }
 
 async function carregarNotas(mensagem) {
@@ -474,13 +490,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   el('filtros').addEventListener('submit', (evento) => {
     evento.preventDefault();
-    carregar();
+    carregar(undefined, true); // Atualizar: lê o PROCFIT na hora
   });
 
   // Pesquisa: filtra a aba aberta na própria tela
   const repintar = () => {
     if (abaAtual === 'produtos') {
       produtosTela.pesquisou();
+      return;
+    }
+    if (abaAtual === 'analise') {
+      analiseTela.pesquisou();
       return;
     }
     if (!dados) return;
@@ -515,11 +535,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     mostrarFornecedores();
   });
 
-  // Abas: Notas e fornecedores | Produtos (o endereço guarda a aba: precificacao.html#produtos)
+  // Abas: Análise | Notas e fornecedores | Produtos (o endereço guarda a aba: precificacao.html#produtos)
+  analiseTela.ligar();
   produtosTela.ligar();
   el('abas').addEventListener('click', (evento) => {
     const botao = evento.target.closest('[data-aba]');
     if (botao) abrirAba(botao.dataset.aba);
   });
-  abrirAba(window.location.hash === '#produtos' ? 'produtos' : 'notas');
+  const abaDoEndereco = window.location.hash.slice(1);
+  abrirAba(ABAS.includes(abaDoEndereco) ? abaDoEndereco : 'analise');
 });

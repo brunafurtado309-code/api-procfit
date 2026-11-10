@@ -2324,3 +2324,54 @@ button.barra:hover { background: var(--verde-suave); color: inherit; }
 /* Produto confirmado que mudou depois: aviso em laranja embaixo do tipo */
 .tela-precificacao .aviso-revisar { display: block; margin-top: 0.3rem; font-size: var(--texto-mini); color: var(--alerta); }
 .tela-precificacao .aviso-revisar button { margin-left: 0.4rem; padding: 0.1rem 0.6rem; font-size: var(--texto-mini); }
+
+/* --- Precificação, aba Análise --- */
+.tela-precificacao .analise-filtros { margin: 0 0 1rem; }
+/* Nome da categoria: botão com cara de link (clicar filtra a aba) */
+.tela-precificacao .analise-categoria {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--verde);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.tela-precificacao .analise-categoria:hover { color: var(--verde-escuro); text-decoration: underline; background: none; }
+.tela-precificacao .bloco-topo .analise-ordem { display: flex; align-items: center; gap: 0.5rem; }
+/* "O que fazer": texto de leitura, sem esmagar */
+.tela-precificacao .tabela td.analise-acao { min-width: 18rem; max-width: 30rem; white-space: normal; line-height: 1.4; }
+/* Letra da curva ABC: pílula verde (A mais forte, C mais clara) */
+.tela-precificacao .analise-curva {
+  display: inline-block;
+  min-width: 1.6rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: var(--texto-mini);
+  font-weight: 700;
+  text-align: center;
+}
+.tela-precificacao .analise-curva--a { background: var(--verde); color: #fff; }
+.tela-precificacao .analise-curva--b { background: var(--verde-claro); color: var(--verde-escuro); }
+.tela-precificacao .analise-curva--c { background: var(--fundo); color: var(--tinta-suave); border: 1px solid var(--linha-forte); }
+/* Margem desejada dentro da célula do preço sugerido (campo pequeno, só para quem edita preço) */
+.tela-precificacao .analise-desejada {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.3rem;
+  font-size: var(--texto-mini);
+  color: var(--tinta-suave);
+  white-space: nowrap;
+}
+.tela-precificacao .analise-desejada input {
+  width: 4.2rem;
+  padding: 0.15rem 0.35rem;
+  font-size: var(--texto-mini);
+  text-align: right;
+}
+.tela-precificacao .analise-desejada input:disabled { opacity: 0.6; cursor: progress; }
+@media (max-width: 720px) {
+  .tela-precificacao .bloco-topo { flex-wrap: wrap; }
+}

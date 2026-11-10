@@ -7,7 +7,9 @@
   <title>Precificação | Painel | Belo Norte</title>
   <link rel="stylesheet" href="css/style.css">
   <script src="js/modulos.js" defer></script>
+  <script src="js/graficos.js" defer></script>
   <script src="js/precificacao.js" defer></script>
+  <script src="js/precificacao-analise.js" defer></script>
   <script src="js/precificacao-produtos.js" defer></script>
 </head>
 <body class="tela-precificacao">
@@ -24,7 +26,8 @@
 
   <main class="conteudo conteudo--largo">
     <nav class="abas" id="abas" aria-label="Partes da precificação">
-      <button class="aba aba--ativa" type="button" data-aba="notas" aria-current="page">Notas e fornecedores</button>
+      <button class="aba aba--ativa" type="button" data-aba="analise" aria-current="page">Análise</button>
+      <button class="aba" type="button" data-aba="notas">Notas e fornecedores</button>
       <button class="aba" type="button" data-aba="produtos">Produtos</button>
     </nav>
 
@@ -52,6 +55,172 @@
 
       <p id="status" class="status" role="status" aria-live="polite"></p>
     </section>
+
+    <!-- ===== Aba Análise (js/precificacao-analise.js) ===== -->
+    <div id="aba-analise" hidden>
+      <div class="fornecedores-opcoes produtos-filtros analise-filtros">
+        <label class="campo">
+          <span>Categoria</span>
+          <select id="analise-categoria"><option value="">Todas</option><option value="__sem">Sem categoria</option></select>
+        </label>
+        <label class="campo">
+          <span>Tipo</span>
+          <select id="analise-tipo">
+            <option value="">Revenda e produção própria</option>
+            <option value="revenda">Só revenda</option>
+            <option value="producao">Só produção própria</option>
+          </select>
+        </label>
+      </div>
+
+      <section class="destaque">
+        <div class="painel-topo">
+          <div>
+            <h2 id="analise-titulo-venda">Venda no período</h2>
+            <p id="analise-venda" class="valor-grande">—</p>
+            <p id="analise-venda-explica" class="explica"></p>
+          </div>
+          <dl class="indicadores">
+            <dt>Lucro bruto</dt>
+            <dd id="analise-lucro">—</dd>
+            <dt>Margem (PROCFIT)</dt>
+            <dd id="analise-margem">—</dd>
+            <dt>Margem real (com bonificação)</dt>
+            <dd id="analise-margem-real">—</dd>
+            <dt>Dia que mais vende</dt>
+            <dd id="analise-melhor-dia">—</dd>
+          </dl>
+        </div>
+      </section>
+
+      <section class="bloco" id="bloco-decisoes">
+        <h2>Decisões para tomar</h2>
+        <p class="bloco__descricao">
+          O que a análise encontrou e pede uma ação. Clique numa linha para ver os produtos e o que fazer com cada um.
+          O painel só sugere: o preço continua sendo mudado no PROCFIT, por quem decide.
+        </p>
+        <div class="atencao" id="analise-decisoes"></div>
+        <div id="analise-decisao-lista" hidden>
+          <h3 class="subtitulo" id="analise-decisao-titulo"></h3>
+          <p class="bloco__descricao" id="analise-decisao-explica"></p>
+          <div class="tabela-rolagem">
+            <table class="tabela" id="tabela-decisao">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="bloco">
+        <div class="bloco-topo">
+          <h2>Venda no tempo</h2>
+          <div class="atalhos" id="analise-agrupar" aria-label="Agrupar por">
+            <button type="button" class="botao-secundario atalho--ativo" data-agrupar="dia">Dia</button>
+            <button type="button" class="botao-secundario" data-agrupar="semana">Semana</button>
+            <button type="button" class="botao-secundario" data-agrupar="mes">Mês</button>
+            <button type="button" class="botao-secundario" data-agrupar="ano">Ano</button>
+          </div>
+        </div>
+        <p class="bloco__descricao" id="analise-tempo-explica"></p>
+        <div id="grafico-analise-tempo"></div>
+        <h3 class="subtitulo">Média de venda por dia da semana</h3>
+        <div class="barras" id="analise-dia-semana"></div>
+      </section>
+
+      <section class="bloco">
+        <h2>Categorias</h2>
+        <p class="bloco__descricao">
+          Quanto cada categoria vende e quanto sobra dela. Clique no nome para ver a aba inteira só daquela categoria
+          (clique de novo para voltar a todas). A categoria de cada produto é dada na aba Produtos.
+        </p>
+        <div class="tabela-rolagem">
+          <table class="tabela" id="tabela-categorias">
+            <thead>
+              <tr>
+                <th scope="col" class="esquerda">Categoria</th>
+                <th scope="col">Venda</th>
+                <th scope="col">Participação</th>
+                <th scope="col">vs período anterior</th>
+                <th scope="col">Lucro bruto</th>
+                <th scope="col">Margem</th>
+                <th scope="col">Margem real</th>
+                <th scope="col">Produtos vendidos</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="duas-colunas">
+        <section class="bloco">
+          <h2>Mais vendidos</h2>
+          <p class="bloco__descricao">Os 10 de maior venda no período: preço e estoque deles pedem mais cuidado.</p>
+          <div class="barras" id="analise-mais-vendidos"></div>
+        </section>
+        <section class="bloco">
+          <h2>Menos vendidos</h2>
+          <p class="bloco__descricao">Os 10 de menor venda entre os que venderam. Os que não venderam nada estão em "Sem venda".</p>
+          <div class="barras" id="analise-menos-vendidos"></div>
+        </section>
+      </div>
+
+      <section class="bloco">
+        <div class="bloco-topo">
+          <h2>Todos os produtos</h2>
+          <label class="campo analise-ordem">
+            <span>Ordenar por</span>
+            <select id="analise-ordem">
+              <option value="venda">Mais vendidos</option>
+              <option value="venda_menor">Menos vendidos</option>
+              <option value="margem">Maior margem</option>
+              <option value="margem_menor">Menor margem</option>
+              <option value="cresceu">Mais cresceram</option>
+              <option value="caiu">Mais caíram</option>
+              <option value="giro">Giram mais rápido</option>
+              <option value="parado">Parados há mais tempo</option>
+              <option value="sugerido">Mais abaixo do preço sugerido</option>
+              <option value="bonificacao">Mais bonificados</option>
+            </select>
+          </label>
+        </div>
+        <p class="bloco__descricao">
+          Curva ABC pela venda do período. Margem igual à do PROCFIT: (venda − imposto − custo) ÷ (venda − imposto); na venda
+          por nota, que vem sem custo, o custo é estimado. Margem real: com o custo real, que desconta as unidades
+          bonificadas (pago nas compras ÷ unidades recebidas, últimos 120 dias). Preço sugerido: custo real ÷
+          (1 − imposto − margem desejada), com a margem desejada de cada produto, que só a precificação define.
+          Giro: de quantos em quantos dias o produto vende.
+        </p>
+        <div class="cartoes cartoes--cinco" id="analise-curvas"></div>
+
+        <h3 class="subtitulo" id="analise-produtos-titulo">Produtos</h3>
+        <div class="tabela-rolagem">
+          <table class="tabela" id="tabela-analise-produtos">
+            <thead>
+              <tr>
+                <th scope="col" class="esquerda">Produto</th>
+                <th scope="col">Curva</th>
+                <th scope="col">Vendido no período</th>
+                <th scope="col">vs período anterior</th>
+                <th scope="col">Margem</th>
+                <th scope="col">Preço e custo</th>
+                <th scope="col">Preço sugerido</th>
+                <th scope="col">Giro</th>
+                <th scope="col">Última venda</th>
+                <th scope="col">Estoque</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="paginacao" id="analise-paginacao" hidden>
+          <button type="button" class="botao-secundario" id="analise-anterior">Anterior</button>
+          <span id="analise-pagina"></span>
+          <button type="button" class="botao-secundario" id="analise-proxima">Próxima</button>
+        </div>
+      </section>
+    </div>
 
     <section class="bloco" id="bloco-notas" hidden>
       <h2>O custo está certo?</h2>

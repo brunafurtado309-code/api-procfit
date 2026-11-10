@@ -1,6 +1,7 @@
 // Recebe os pedidos do módulo precificação e devolve JSON.
 
 const service = require('../services/precificacao.service');
+const analise = require('../services/precificacao-analise.service');
 
 // Toda ação recebe o mesmo: filtros da URL, partes do caminho, corpo enviado e quem está logado
 const acao = (fn) => async (req, res, next) => {
@@ -11,7 +12,20 @@ const acao = (fn) => async (req, res, next) => {
   }
 };
 
+// Quem pode mudar a margem desejada (permissão "Edita preço", liberada na tela de Usuários)
+const podeEditarPreco = (req) => (req.setores ?? []).includes('precificacao_edita');
+
 module.exports = {
+  // Análise: além dos filtros, avisa a tela se quem está logado pode editar a margem desejada
+  analise: async (req, res, next) => {
+    try {
+      res.json(await analise.analise(req.query, { podeEditar: podeEditarPreco(req) }));
+    } catch (err) {
+      next(err);
+    }
+  },
+  definirMargens: acao(analise.definirMargens),
+  podeEditarPreco,
   notas: acao(service.notas),
   fornecedores: acao(service.fornecedores),
   classificarFornecedor: acao(service.classificarFornecedor),
