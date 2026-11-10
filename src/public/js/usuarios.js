@@ -116,5 +116,11 @@
     }
   }
 
+  // Menu da esquerda, igual ao das outras telas. Espera a página carregar: o modulos.js
+  // é "defer" e só roda depois deste arquivo.
+  document.addEventListener('DOMContentLoaded', () => {
+    if (typeof modulos === 'undefined') return;
+    modulos.setoresDaChave().then((setores) => modulos.desenharMenu(setores, 'usuarios')).catch(() => {});
+  });
   carregar();
 })();

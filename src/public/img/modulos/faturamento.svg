@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 140" role="img" aria-label="Caminho do pedido: orçamento, nota e pagamento">
+  <rect width="240" height="140" rx="12" fill="#13201A"/>
+  <path d="M46 70h148" stroke="#2E9E62" stroke-width="4" stroke-dasharray="2 8" stroke-linecap="round"/>
+  <g><rect x="22" y="40" width="48" height="60" rx="5" fill="#1E3B2C"/><rect x="30" y="52" width="30" height="4" rx="2" fill="#5FCB8E"/><rect x="30" y="62" width="24" height="4" rx="2" fill="#5FCB8E"/><rect x="30" y="72" width="28" height="4" rx="2" fill="#5FCB8E"/></g>
+  <g><rect x="96" y="34" width="48" height="66" rx="5" fill="#2E9E62"/><path d="M128 34v12h16" fill="none" stroke="#13201A" stroke-width="3"/><rect x="104" y="58" width="30" height="4" rx="2" fill="#9EE0B8"/><rect x="104" y="68" width="24" height="4" rx="2" fill="#9EE0B8"/><rect x="104" y="78" width="30" height="4" rx="2" fill="#9EE0B8"/></g>
+  <circle cx="194" cy="70" r="26" fill="#5FCB8E"/><path d="m182 70 9 9 16-18" fill="none" stroke="#13201A" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="46" y="118" font-family="Segoe UI, sans-serif" font-size="10" fill="#9EE0B8" text-anchor="middle">pedido</text>
+  <text x="120" y="118" font-family="Segoe UI, sans-serif" font-size="10" fill="#9EE0B8" text-anchor="middle">nota</text>
+  <text x="194" y="118" font-family="Segoe UI, sans-serif" font-size="10" fill="#9EE0B8" text-anchor="middle">pago</text>
+</svg>

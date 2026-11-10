@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 140" role="img" aria-label="Etiqueta de preço com gráfico de margem subindo">
+  <rect width="240" height="140" rx="12" fill="#13201A"/>
+  <g transform="rotate(-12 80 70)"><path d="M30 46h72l28 24-28 24H30z" fill="#5FCB8E"/><circle cx="104" cy="70" r="5" fill="#13201A"/><text x="64" y="78" font-family="Segoe UI, sans-serif" font-size="22" font-weight="700" fill="#13201A" text-anchor="middle">%</text></g>
+  <rect x="144" y="86" width="14" height="28" rx="2" fill="#1E3B2C"/><rect x="164" y="72" width="14" height="42" rx="2" fill="#2E9E62"/><rect x="184" y="52" width="14" height="62" rx="2" fill="#5FCB8E"/><rect x="204" y="62" width="14" height="52" rx="2" fill="#EE8A4A"/>
+  <path d="M140 80 170 60l20-16 18 8" fill="none" stroke="#9EE0B8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="208" cy="52" r="4" fill="#9EE0B8"/>
+</svg>

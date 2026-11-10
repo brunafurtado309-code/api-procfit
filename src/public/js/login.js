@@ -54,7 +54,7 @@
       mostrar('Entrando...');
       const r = await enviar('/auth/login', { email: $('entrar-email').value, senha: $('entrar-senha').value });
       guardarToken(r.token);
-      window.location.href = './';
+      window.location.href = 'inicio.html'; // tela inicial com os cartões de cada módulo
     });
   });
 

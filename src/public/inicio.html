@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <script src="/painel/js/sessao.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Início | Painel | Belo Norte</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/modulos.js" defer></script>
+  <script src="js/inicio.js" defer></script>
+</head>
+<body class="tela-inicio">
+  <header class="topo">
+    <div>
+      <p class="marca">Belo Norte</p>
+      <h1>Painel de gestão</h1>
+    </div>
+    <div class="topo-acoes">
+      <nav id="modulos" class="modulos" aria-label="Módulos do painel" hidden></nav>
+      <button id="trocar-chave" class="botao-texto" type="button">Trocar chave</button>
+    </div>
+  </header>
+
+  <main class="conteudo">
+    <section class="inicio-boas-vindas">
+      <h2 id="inicio-saudacao">Bem-vinda ao painel</h2>
+      <p class="bloco__descricao">Escolha uma tela. Você vê aqui só as telas liberadas para o seu acesso.</p>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </section>
+    <section class="inicio-cartoes" id="inicio-cartoes" aria-label="Telas do painel"></section>
+  </main>
+</body>
+</html>

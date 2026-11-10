@@ -11,9 +11,12 @@ cor nem tamanho próprio: usa as variáveis.
    respiro (`--respiro-secao`). Nada de cartão branco com sombra em volta de cada bloco.
 2. **Caixa só onde se clica.** Os únicos elementos com borda em volta são os cartões que
    filtram (`.cartao`), a tela de entrada e as janelas (`.detalhe`).
-3. **Só verdes.** Uma família de cor: `--verde-escuro`, `--verde`, `--verde-medio`,
-   `--verde-vivo`, `--verde-claro`, `--verde-suave`. Quando precisar de duas séries num
-   gráfico, use `--verde` e `--verde-vivo`.
+3. **Preto com verde** (tema escuro, nov/2026). Fundo quase preto, texto claro, e uma família
+   de cor para os destaques: `--verde-escuro`, `--verde`, `--verde-medio`, `--verde-vivo`,
+   `--verde-claro`, `--verde-suave`. No escuro, `--verde-escuro` é o verde CLARO (número grande,
+   item ativo) e `--verde-claro`/`--verde-suave` são fundos verdes discretos. As cores do escuro
+   ficam na seção 26 do style.css; faixas e janelas usam `--painel-escuro`. Cor nova escrita
+   direto no CSS ou no JS (ex.: `#145634`) não pode: sempre `var(--...)`.
 4. **Laranja é só alerta.** `--alerta` aparece apenas para atraso, valor negativo e desconto.
 5. **Compacto, como um ERP** (nov/2026). Corpo em 14px (`--texto`), tabelas e descrições em
    13px (`--texto-pequeno`), notas e rótulos em 12px (`--texto-mini`, o mínimo), título de seção
@@ -25,10 +28,20 @@ cor nem tamanho próprio: usa as variáveis.
    com " · " (ex.: "custo R$ 19,69 · real R$ 16,07"). A classe `.qtd` já quebra a linha:
    não coloque `<br>` antes dela.
 
+## Menu e tela inicial
+
+- **Menu na coluna da esquerda** (`js/modulos.js`, seção 25 do style.css): Início, os módulos
+  liberados e Usuários (só a conta principal). Cada tela continua chamando
+  `modulos.desenharMenu(setores, 'setor')`. O botão « recolhe a coluna só nos ícones.
+  Tela nova: entra em `modulos.PAGINAS` (título, página e descrição) e ganha um ícone em `ICONES`.
+- **Tela inicial** (`inicio.html`): um cartão por tela liberada, com o desenho do assunto em
+  `img/modulos/<setor>.svg` (desenho próprio, nas cores do tema) e a descrição de `modulos.PAGINAS`.
+  É para lá que o login leva.
+
 ## Estrutura de uma tela
 
 ```
-<header class="topo">          faixa verde fina: marca, título, módulos, trocar chave
+<header class="topo">          faixa escura fina: marca, título e Sair (o menu fica na coluna da esquerda)
 <main class="conteudo">
   <nav class="abas">           (opcional) abas da tela
   <form class="filtros">       barra de ferramentas: campos + botão principal

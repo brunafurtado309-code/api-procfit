@@ -2561,3 +2561,211 @@ input, select { font-size: var(--texto-pequeno); padding: 0.32rem 0.55rem; }
 .produto-analise-precificacao .indicadores { margin-top: 0.4rem; }
 .produto-analise-lote { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.6rem; font-size: var(--texto-pequeno); }
 .produto-analise-lote input { width: 5rem; }
+
+/* ==========================================================
+   25. Menu na coluna da esquerda (js/modulos.js) e tela inicial (inicio.html)
+   O menu sai do topo e vira uma coluna fixa: o topo fica só com o título e Sair,
+   e a página ganha altura. O botão « recolhe a coluna só nos ícones.
+   ========================================================== */
+:root { --lateral: 12.5rem; --lateral-recolhida: 3.4rem; }
+body.com-lateral { padding-left: var(--lateral); }
+body.com-lateral.lateral-recolhida { padding-left: var(--lateral-recolhida); }
+body.com-lateral #modulos { display: none !important; }
+
+.lateral {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  width: var(--lateral);
+  background: var(--painel-escuro, var(--verde-escuro));
+  border-right: 1px solid var(--linha);
+  overflow-y: auto;
+}
+.lateral-recolhida .lateral { width: var(--lateral-recolhida); }
+.lateral__topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+  min-height: 2.6rem;
+  padding: 0 0.4rem 0 0.9rem;
+  border-bottom: 1px solid var(--linha);
+}
+.lateral__marca {
+  font-size: var(--texto-mini);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--verde-vivo);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.lateral__recolher,
+.lateral__recolher:hover {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tinta-suave);
+}
+.lateral__recolher:hover { color: var(--tinta); }
+.lateral-recolhida .lateral__marca { display: none; }
+.lateral-recolhida .lateral__topo { justify-content: center; padding: 0; }
+.lateral-recolhida .lateral__recolher svg { transform: scaleX(-1); }
+
+.lateral__lista { display: grid; gap: 0.1rem; padding: 0.5rem 0.4rem; }
+.lateral__item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--raio);
+  color: var(--tinta-suave);
+  font-size: var(--texto-pequeno);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.lateral__item:hover { background: var(--verde-suave); color: var(--tinta); }
+.lateral__item--ativo { background: var(--verde-suave); color: var(--verde-escuro); box-shadow: inset 3px 0 0 var(--verde); }
+.lateral__icone {
+  flex: 0 0 auto;
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.lateral-recolhida .lateral__item { justify-content: center; padding: 0.5rem 0; }
+.lateral-recolhida .lateral__texto { display: none; }
+@media (max-width: 720px) {
+  body.com-lateral { padding-left: var(--lateral-recolhida); }
+  .lateral { width: var(--lateral-recolhida); }
+  .lateral__marca, .lateral__texto { display: none; }
+  .lateral__topo { justify-content: center; padding: 0; }
+  .lateral__item { justify-content: center; padding: 0.5rem 0; }
+}
+
+/* --- Tela inicial: cartões com o desenho do assunto de cada tela --- */
+.inicio-boas-vindas { padding: 1rem 0 0.25rem; }
+.inicio-boas-vindas h2 { margin: 0; font-family: var(--fonte-titulo); font-size: 1.35rem; }
+.inicio-cartoes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.75rem;
+  padding: 0.5rem 0 1rem;
+}
+.inicio-cartao {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.7rem;
+  border: 1px solid var(--linha);
+  border-radius: var(--raio-cartao);
+  background: var(--fundo);
+  color: var(--tinta);
+  text-decoration: none;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.inicio-cartao:hover, .inicio-cartao:focus-visible { border-color: var(--verde); transform: translateY(-2px); }
+.inicio-cartao__imagem { width: 100%; aspect-ratio: 12 / 7; border-radius: 8px; display: block; }
+.inicio-cartao h3 { margin: 0.35rem 0 0; font-family: var(--fonte-titulo); font-size: 1rem; }
+.inicio-cartao p { margin: 0; flex: 1; font-size: var(--texto-pequeno); color: var(--tinta-suave); line-height: 1.4; }
+.inicio-cartao .ver-detalhes { margin-top: 0.3rem; font-size: var(--texto-pequeno); font-weight: 600; color: var(--verde-vivo); }
+
+/* ==========================================================
+   26. Tema escuro (nov/2026): o painel inteiro em preto, com o verde nos destaques
+   As variáveis da seção 1 são trocadas pelas do escuro. Os papéis continuam os mesmos:
+     --superficie = fundo da página (quase preto)   --fundo = campos e áreas de apoio
+     --tinta / --tinta-suave = texto claro           --linha = divisórias discretas
+     --verde-escuro = VERDE CLARO de destaque (número grande, item ativo): no escuro, destaque é claro
+     --verde-claro / --verde-suave = fundos verdes discretos (etiqueta, passar o mouse)
+     --painel-escuro = faixas e janelas (topo, menu da esquerda, topo das janelas)
+   Para voltar ao claro, é só apagar esta seção.
+   ========================================================== */
+:root {
+  color-scheme: dark;
+  --superficie: #0E1110;
+  --fundo: #161B18;
+  --tinta: #E4EBE6;
+  --tinta-suave: #98A69E;
+  --linha: #232A26;
+  --linha-forte: #36423B;
+  --verde-escuro: #9EE0B8;
+  --verde: #2E9E62;
+  --verde-medio: #3DB877;
+  --verde-vivo: #5FCB8E;
+  --verde-claro: #24513A;
+  --verde-suave: #16241D;
+  --acai: var(--verde-vivo);
+  --acai-claro: #1B3326;
+  --outros: #6F7A73;
+  --outros-claro: #262C29;
+  --alerta: #EE8A4A;
+  --alerta-claro: #33221A;
+  --painel-escuro: #070908;
+}
+
+/* Faixas: topo da página, tela de entrada, topo das janelas */
+.topo,
+.detalhe__topo,
+.login__marca { background: var(--painel-escuro); border-bottom: 1px solid var(--linha); }
+.detalhe { box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6); border: 1px solid var(--linha); }
+.detalhe::backdrop { background: rgba(0, 0, 0, 0.65); }
+.detalhe__topo #detalhe-baixar { background: var(--verde); color: #fff; border-color: var(--verde); }
+.detalhe__topo #detalhe-baixar:hover { background: var(--verde-medio); }
+.login__texto { color: var(--tinta-suave); }
+
+/* Botões: no escuro, passar o mouse clareia (antes escurecia) */
+button:hover,
+.atalho--ativo:hover { background: var(--verde-medio); }
+.botao-secundario:hover { color: var(--tinta); }
+.barra--ativa .barra-preenchida { background: var(--verde-vivo); }
+
+/* Etiquetas com cor de texto escrita direto (feitas para fundo claro) */
+.situacao--faturada,
+.tipo-documento--nota,
+.tipo-documento--cupom,
+.tabela-preco--atacado,
+.tela-conciliacao .selo-ok,
+.tela-conciliacao .conf-alta { color: #CFEFDB; }
+.situacao--cancelada,
+.tabela-preco { color: var(--tinta); }
+.situacao--devolucao,
+.tela-conciliacao .selo-alerta,
+.tela-conciliacao .conf-media,
+.tela-conciliacao .acoes .recusar:hover { color: #F6C9A8; }
+
+/* Avisos laranja: texto claro sobre o fundo laranja escuro */
+.aviso-alerta,
+.tela-usuarios .mensagem.erro,
+.tela-conciliacao .aviso.erro { color: #F6C9A8; }
+
+/* Item com desconto (janela da nota) */
+.item-com-desconto,
+.tabela--itens tbody tr.item-com-desconto:hover { background: var(--alerta-claro); }
+
+/* Janela do operador (caixas por dia) e atalhos da tela de vendas: tinham cores claras próprias */
+.detalhe__caixas { border-bottom-color: var(--verde); }
+.caixas__dica, .caixas__cartao span, .caixas__cartao small { color: var(--tinta-suave); }
+.caixas__linha:hover td, .caixas__linha:focus td { background: var(--verde-suave); }
+.caixas__linha:focus { outline-color: var(--verde); }
+.caixas__abrir { color: var(--verde-vivo); }
+.caixas__cartao { border-color: var(--linha); background: var(--fundo); }
+.caixas__cartao--destaque { background: var(--verde-suave); border-color: var(--verde); }
+.secoes a { border-color: var(--linha-forte); background: var(--fundo); color: var(--tinta); }
+.secoes a:hover, .secoes a:focus-visible { background: var(--verde-suave); border-color: var(--verde); }
+
+/* Conciliação: topo da ficha e sombra */
+.tela-conciliacao { --verde-noite: var(--painel-escuro); }
+.tela-conciliacao .ficha { box-shadow: -16px 0 50px rgba(0, 0, 0, 0.6); }
+
+/* Gráficos: o pico (verde-escuro) agora é o verde mais claro, que é o destaque no escuro */
+.grafico-grade { stroke: var(--linha-forte); }

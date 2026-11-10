@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 140" role="img" aria-label="Lista de produtos com preço">
+  <rect width="240" height="140" rx="12" fill="#13201A"/>
+  <rect x="40" y="18" width="160" height="104" rx="8" fill="#1E3B2C"/>
+  <g font-family="Segoe UI, sans-serif" font-size="10">
+    <rect x="54" y="32" width="10" height="10" rx="2" fill="#5FCB8E"/><rect x="72" y="35" width="70" height="4" rx="2" fill="#9EE0B8"/><text x="186" y="41" fill="#9EE0B8" text-anchor="end">R$ 26,90</text>
+    <rect x="54" y="54" width="10" height="10" rx="2" fill="#2E9E62"/><rect x="72" y="57" width="56" height="4" rx="2" fill="#9EE0B8"/><text x="186" y="63" fill="#9EE0B8" text-anchor="end">R$ 14,30</text>
+    <rect x="54" y="76" width="10" height="10" rx="2" fill="#5FCB8E"/><rect x="72" y="79" width="64" height="4" rx="2" fill="#9EE0B8"/><text x="186" y="85" fill="#9EE0B8" text-anchor="end">R$ 99,00</text>
+    <rect x="54" y="98" width="10" height="10" rx="2" fill="#EE8A4A"/><rect x="72" y="101" width="48" height="4" rx="2" fill="#9EE0B8"/><text x="186" y="107" fill="#9EE0B8" text-anchor="end">R$ 8,99</text>
+  </g>
+</svg>

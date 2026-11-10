@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 140" role="img" aria-label="Moedas, cédulas e boleto">
+  <rect width="240" height="140" rx="12" fill="#13201A"/>
+  <rect x="26" y="40" width="96" height="54" rx="6" fill="#2E9E62" transform="rotate(-8 74 67)"/>
+  <rect x="34" y="46" width="96" height="54" rx="6" fill="#5FCB8E"/>
+  <circle cx="82" cy="73" r="14" fill="#2E9E62"/><text x="82" y="78" font-family="Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#9EE0B8" text-anchor="middle">$</text>
+  <rect x="140" y="28" width="74" height="88" rx="5" fill="#1E3B2C"/>
+  <rect x="150" y="40" width="44" height="5" rx="2" fill="#9EE0B8"/>
+  <rect x="150" y="52" width="54" height="4" rx="2" fill="#5FCB8E"/><rect x="150" y="62" width="40" height="4" rx="2" fill="#5FCB8E"/>
+  <g fill="#9EE0B8"><rect x="150" y="86" width="2" height="18"/><rect x="155" y="86" width="4" height="18"/><rect x="162" y="86" width="2" height="18"/><rect x="167" y="86" width="5" height="18"/><rect x="175" y="86" width="2" height="18"/><rect x="180" y="86" width="3" height="18"/><rect x="186" y="86" width="2" height="18"/><rect x="191" y="86" width="5" height="18"/><rect x="199" y="86" width="3" height="18"/></g>
+  <ellipse cx="60" cy="112" rx="16" ry="5" fill="#EE8A4A"/><ellipse cx="60" cy="107" rx="16" ry="5" fill="#F3A976"/><ellipse cx="90" cy="114" rx="13" ry="4" fill="#EE8A4A"/>
+</svg>
