@@ -2918,3 +2918,7 @@ button:hover,
 #tabela-notas td.esquerda:nth-child(2) { white-space: normal; }
 #tabela-fornecedores .seletor-tipo,
 #tabela-notas .seletor-tipo { padding-top: 0.15rem; padding-bottom: 0.15rem; font-size: var(--texto-mini); }
+
+/* Título do topo de todas as telas em caixa alta, como a marca "BELO NORTE" (nov/2026) */
+.topo h1,
+.login__titulo { text-transform: uppercase; letter-spacing: 0.04em; }
