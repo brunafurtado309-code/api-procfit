@@ -2907,3 +2907,14 @@ button:hover,
   color: var(--tinta-suave);
 }
 @media (max-width: 720px) { .tela-precificacao .analise-matriz { grid-template-columns: minmax(0, 1fr); } }
+
+/* Precificação > Notas e fornecedores: linhas de uma só linha (código e nº de notas ao lado,
+   não embaixo) e seletor de tipo mais baixo, para caber mais fornecedores e notas na tela */
+#tabela-fornecedores .qtd,
+#tabela-notas .qtd { display: inline; margin-left: 0.25rem; }
+#tabela-fornecedores td,
+#tabela-notas td { padding-top: 0.3rem; padding-bottom: 0.3rem; vertical-align: middle; white-space: nowrap; }
+#tabela-fornecedores td.esquerda:nth-child(2),
+#tabela-notas td.esquerda:nth-child(2) { white-space: normal; }
+#tabela-fornecedores .seletor-tipo,
+#tabela-notas .seletor-tipo { padding-top: 0.15rem; padding-bottom: 0.15rem; font-size: var(--texto-mini); }

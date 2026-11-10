@@ -31,6 +31,31 @@ let situacaoAtual = 'parada';
 let abaAtual = 'analise';
 let diasNotas = null; // período das notas que estão na tela (para saber se precisa ler de novo)
 const marcados = new Set(); // códigos dos fornecedores marcados para classificar juntos
+// Paginação das listas de notas e de fornecedores (padrão ERP; linhas por página ficam guardadas)
+const paginas = {
+  notas: { pagina: 1, porPagina: paginacao.lembrar('precificacao-notas', 20) },
+  fornecedores: { pagina: 1, porPagina: paginacao.lembrar('precificacao-fornecedores', 20) },
+};
+// Só as linhas da página atual + o paginador desenhado em cima da tabela
+function paginar(nome, itens, redesenhar) {
+  const p = paginas[nome];
+  p.pagina = Math.min(p.pagina, Math.max(1, Math.ceil(itens.length / p.porPagina)));
+  paginacao.desenhar(el(`${nome}-paginador`), {
+    total: itens.length,
+    pagina: p.pagina,
+    porPagina: p.porPagina,
+    aoMudar: (escolha) => {
+      p.pagina = escolha.pagina;
+      if (escolha.porPagina !== p.porPagina) {
+        p.porPagina = escolha.porPagina;
+        paginacao.guardar(`precificacao-${nome}`, p.porPagina);
+      }
+      redesenhar();
+    },
+  });
+  return itens.slice((p.pagina - 1) * p.porPagina, p.pagina * p.porPagina);
+}
+const voltarParaPrimeira = () => { paginas.notas.pagina = 1; paginas.fornecedores.pagina = 1; };
 
 // O que cada situação significa, como aparece no cartão e quais colunas a lista mostra
 const SITUACOES = {
@@ -153,6 +178,7 @@ function mostrarSituacoes() {
     botao.append(titulo, valor, nota);
     botao.addEventListener('click', () => {
       situacaoAtual = id;
+      paginas.notas.pagina = 1;
       mostrarSituacoes();
       mostrarLista();
     });
@@ -224,7 +250,7 @@ function mostrarLista() {
       ...(s.classifica ? [['Tipo da nota', true]] : [])];
   cabecalho('tabela-notas', colunas);
 
-  const linhas = itens.map((n) => {
+  const linhas = paginar('notas', itens, mostrarLista).map((n) => {
     const tr = document.createElement('tr');
     if (n.atrasada) tr.className = 'linha-vencida';
     const diasNota = celula(inteiro(n.dias), n.atrasada ? 'atraso' : '');
@@ -345,7 +371,8 @@ function mostrarFornecedores() {
   const codigosVisiveis = new Set(visiveis.map((f) => f.codigo));
   for (const cod of [...marcados]) if (!codigosVisiveis.has(cod)) marcados.delete(cod);
 
-  const linhas = visiveis.map((f) => {
+  // "Marcar todos" continua valendo para a lista inteira; a tabela mostra só a página
+  const linhas = paginar('fornecedores', visiveis, mostrarFornecedores).map((f) => {
     const tr = document.createElement('tr');
     if (marcados.has(f.codigo)) tr.className = 'linha-marcada';
 
@@ -504,6 +531,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     if (!dados) return;
+    voltarParaPrimeira(); // pesquisa nova começa da página 1
     mostrarLista();
     mostrarFornecedores();
   };
@@ -517,8 +545,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     el('limpar-pesquisa').hidden = true;
     repintar();
   });
-  el('so-pendentes').addEventListener('change', () => fornecedores && mostrarFornecedores());
-  el('so-periodo').addEventListener('change', () => fornecedores && mostrarFornecedores());
+  el('so-pendentes').addEventListener('change', () => { paginas.fornecedores.pagina = 1; if (fornecedores) mostrarFornecedores(); });
+  el('so-periodo').addEventListener('change', () => { paginas.fornecedores.pagina = 1; if (fornecedores) mostrarFornecedores(); });
 
   // Marcar vários fornecedores e dar o mesmo tipo a todos
   el('marcar-todos').addEventListener('change', () => {
