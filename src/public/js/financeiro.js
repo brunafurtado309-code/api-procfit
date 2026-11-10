@@ -34,6 +34,8 @@ async function buscar(rota, parametros = {}) {
     if (valor !== null && valor !== undefined && valor !== '') url.searchParams.set(nome, valor);
   }
 
+  if (typeof modulos !== 'undefined') modulos.marcarLoja(url); // loja do menu
+
   const resposta = await fetch(url, { headers: { 'x-api-key': chave.ler() ?? '' } });
 
   if (resposta.status === 401) throw new ChaveInvalida();
@@ -1017,6 +1019,7 @@ function desenharListasDaFicha() {
 async function baixarArquivo(url, nomePadrao, botao) {
   if (botao) botao.disabled = true;
   try {
+    if (typeof modulos !== 'undefined') modulos.marcarLoja(url); // loja do menu
     const resposta = await fetch(url, { headers: { 'x-api-key': chave.ler() ?? '' } });
     if (!resposta.ok) {
       const corpo = await resposta.json().catch(() => ({}));
@@ -1305,6 +1308,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (visaoExcel) url.searchParams.set('visao', visaoExcel);
 
       // Busca com a chave no cabeçalho e salva o arquivo: a chave não aparece na URL
+      if (typeof modulos !== 'undefined') modulos.marcarLoja(url); // loja do menu
       const resposta = await fetch(url, { headers: { 'x-api-key': chave.ler() ?? '' } });
       if (!resposta.ok) {
         const corpo = await resposta.json().catch(() => ({}));

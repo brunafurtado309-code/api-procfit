@@ -150,8 +150,8 @@ const ORIGENS_TEXTO = Object.fromEntries(
 );
 
 function filtrosRecebimentos(query) {
-  const { inicio, fim, busca } = montarFiltros(query);
-  const filtros = { inicio, fim, busca };
+  const { inicio, fim, busca, empresa } = montarFiltros(query);
+  const filtros = { inicio, fim, busca, empresa };
   if (query.origem) {
     const origem = Number(query.origem);
     if (!ORIGENS_TEXTO[String(origem)]) throw new AppError('"origem" não é uma tela conhecida');
@@ -243,7 +243,8 @@ function fichaCliente(query, params) {
     }
   }
 
-  return repo.fichaCliente(entidade, { meses });
+  // Loja escolhida no menu da esquerda (vazio = o cliente em todas as lojas)
+  return repo.fichaCliente(entidade, { meses, empresa: numeroOpcional(query.empresa, 'empresa') });
 }
 
 module.exports = {

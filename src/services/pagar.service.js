@@ -17,6 +17,14 @@ function data(valor, nome) {
   return valor;
 }
 
+// Loja (empresa) escolhida no menu da esquerda; vazio = todas
+function empresaOpcional(valor) {
+  if (valor === undefined || valor === null || valor === '') return null;
+  const empresa = Number(valor);
+  if (!Number.isInteger(empresa) || empresa <= 0) throw new AppError('"empresa" deve ser um número');
+  return empresa;
+}
+
 function montarFiltros(query) {
   const situacao = query.situacao ? String(query.situacao) : 'aberto';
   if (!repo.FILTRO_SITUACAO[situacao]) {
@@ -32,6 +40,7 @@ function montarFiltros(query) {
     inicio: data(query.inicio, 'inicio'),
     fim: data(query.fim, 'fim'),
     busca: (query.busca ?? '').trim().slice(0, 60) || null,
+    empresa: empresaOpcional(query.empresa),
     situacao,
     ordem,
     direcao,
@@ -98,8 +107,9 @@ async function pagamentos(query) {
   const dias = Math.round((new Date(`${fim}T12:00:00Z`) - new Date(`${inicio}T12:00:00Z`)) / UM_DIA) + 1;
   if (dias > 366) throw new AppError('Escolha um período de no máximo 1 ano');
   const busca = (query.busca ?? '').trim().slice(0, 60) || null;
+  const empresa = empresaOpcional(query.empresa);
   const [lista, pessoas, entradas] = await Promise.all([
-    repo.pagamentos({ inicio, fim, busca }), repo.pessoasPagamento(), repo.entradasCaixa({ inicio, fim }),
+    repo.pagamentos({ inicio, fim, busca, empresa }), repo.pessoasPagamento(), repo.entradasCaixa({ inicio, fim, empresa }),
   ]);
   return { inicio, fim, pagamentos: lista, entradas, pessoas };
 }

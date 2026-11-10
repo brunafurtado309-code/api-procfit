@@ -76,6 +76,7 @@ const SALDOS = `
       JOIN PAGAMENTOS_ESCRITURAIS PE WITH (NOLOCK) ON PE.PAGAMENTO_ESCRITURAL = ET.PAGAMENTO_ESCRITURAL
       GROUP BY ET.TITULO_PAGAR
     ) EB ON EB.TITULO_PAGAR = T.TITULO_PAGAR
+    WHERE (@empresa IS NULL OR T.EMPRESA = @empresa) -- loja escolhida no menu (vazio = todas)
   )`;
 
 // Filtro de período (vencimento) e pesquisa: valem para tudo na tela
@@ -122,7 +123,8 @@ function criarRequest(pool, filtros) {
     .request()
     .input('inicio', sql.VarChar(10), filtros.inicio ?? null)
     .input('fim', sql.VarChar(10), filtros.fim ?? null)
-    .input('busca', sql.VarChar(60), filtros.busca ?? null);
+    .input('busca', sql.VarChar(60), filtros.busca ?? null)
+    .input('empresa', sql.Int, filtros.empresa ?? null);
 }
 
 async function painel(filtros) {
@@ -287,6 +289,7 @@ async function pagamentos(filtros) {
     .input('inicio', sql.VarChar(10), filtros.inicio)
     .input('fim', sql.VarChar(10), filtros.fim)
     .input('busca', sql.VarChar(60), filtros.busca ?? null)
+    .input('empresa', sql.Int, filtros.empresa ?? null)
     .query(`
       SELECT
         TX.TITULO_PAGAR                                         AS id,
@@ -341,6 +344,7 @@ async function pagamentos(filtros) {
       WHERE TX.TRANSACAO_FINANCEIRA = 11
         AND TX.DATA >= CAST(@inicio AS date)
         AND TX.DATA <  DATEADD(day, 1, CAST(@fim AS date))
+        AND (@empresa IS NULL OR T.EMPRESA = @empresa)
         AND (@busca IS NULL
           OR T.TITULO LIKE '%' + @busca + '%'
           OR CAST(T.ENTIDADE AS varchar(20)) = @busca
@@ -403,6 +407,7 @@ async function pagamentos(filtros) {
         AND SP.PENDENTE > 0.009
         AND EB.DATA_PAGAMENTO >= CAST(@inicio AS date)
         AND EB.DATA_PAGAMENTO <  DATEADD(day, 1, CAST(@fim AS date))
+        AND (@empresa IS NULL OR T.EMPRESA = @empresa)
         AND (@busca IS NULL
           OR T.TITULO LIKE '%' + @busca + '%'
           OR CAST(T.ENTIDADE AS varchar(20)) = @busca
@@ -479,6 +484,7 @@ async function entradasCaixa(filtros) {
     .request()
     .input('inicio', sql.VarChar(10), filtros.inicio)
     .input('fim', sql.VarChar(10), filtros.fim)
+    .input('empresa', sql.Int, filtros.empresa ?? null)
     .query(`
       SELECT
         'Recebimento de título'                                           AS origem,
@@ -501,6 +507,7 @@ async function entradasCaixa(filtros) {
         AND ISNULL(TX.DEBITO, 0) > 0
         AND COALESCE(RB.DATA_RECEBIMENTO, RB.MOVIMENTO, TX.DATA) >= CAST(@inicio AS date)
         AND COALESCE(RB.DATA_RECEBIMENTO, RB.MOVIMENTO, TX.DATA) <  DATEADD(day, 1, CAST(@fim AS date))
+        AND (@empresa IS NULL OR T.EMPRESA = @empresa)
 
       UNION ALL
 
@@ -520,7 +527,10 @@ async function entradasCaixa(filtros) {
         ON DT.RECEBIMENTO_FATURAMENTO_DESPACHO = R.RECEBIMENTO_FATURAMENTO_DESPACHO
       LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = R.USUARIO_LOGADO
       LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = DT.ENTIDADE
+      -- a loja do retorno é a da carga (FATURAMENTO_DESPACHO)
+      LEFT JOIN FATURAMENTO_DESPACHO FD WITH (NOLOCK) ON FD.FATURAMENTO_DESPACHO = R.FATURAMENTO_DESPACHO_FILTRO
       WHERE ISNULL(DT.VALOR_PAGAMENTO, 0) > 0
+        AND (@empresa IS NULL OR FD.EMPRESA = @empresa)
         AND COALESCE(R.DATA_RECEBIMENTO, R.DATA_HORA) >= CAST(@inicio AS date)
         AND COALESCE(R.DATA_RECEBIMENTO, R.DATA_HORA) <  DATEADD(day, 1, CAST(@fim AS date))
 

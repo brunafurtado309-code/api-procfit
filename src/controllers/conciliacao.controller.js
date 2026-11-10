@@ -10,6 +10,18 @@ function lerMes(req, res) {
   return mes;
 }
 
+// Loja escolhida no menu da esquerda (vazio = todas). Devolve undefined se for inválida.
+function lerEmpresa(req, res) {
+  const valor = req.query.empresa;
+  if (valor === undefined || valor === '') return null;
+  const empresa = Number(valor);
+  if (!Number.isInteger(empresa) || empresa <= 0) {
+    res.status(400).json({ erro: '"empresa" deve ser um número.' });
+    return undefined;
+  }
+  return empresa;
+}
+
 function responder(res, resultado) {
   if (resultado.naoConfigurado) return res.status(501).json({ erro: resultado.mensagem });
   return res.json(resultado.dados);
@@ -19,7 +31,9 @@ async function titulos(req, res, next) {
   try {
     const mes = lerMes(req, res);
     if (!mes) return;
-    responder(res, await service.listarTitulos(mes));
+    const empresa = lerEmpresa(req, res);
+    if (empresa === undefined) return;
+    responder(res, await service.listarTitulos(mes, empresa));
   } catch (err) {
     next(err);
   }
@@ -29,7 +43,9 @@ async function pedidosSemNota(req, res, next) {
   try {
     const mes = lerMes(req, res);
     if (!mes) return;
-    responder(res, await service.listarPedidosSemNota(mes));
+    const empresa = lerEmpresa(req, res);
+    if (empresa === undefined) return;
+    responder(res, await service.listarPedidosSemNota(mes, empresa));
   } catch (err) {
     next(err);
   }

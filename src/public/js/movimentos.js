@@ -733,6 +733,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   el('inicio').value = periodo.inicio;
   el('fim').value = periodo.fim;
   await carregarEmpresas();
+  // Loja escolhida no menu da esquerda manda no filtro de empresa da tela
+  if (typeof modulos !== 'undefined') modulos.lojaNoFiltro(el('filtro-empresa'));
   marcarAtalho();
   mostrarAba();
 

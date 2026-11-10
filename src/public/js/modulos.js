@@ -13,6 +13,9 @@
 //   modulos.lojaAtual()       código da loja escolhida, ou '' para todas
 //   modulos.aoMudarLoja(fn)   a tela atualiza sozinha quando a loja muda; sem isso, a tela recarrega
 //   modulos.seletorDeLoja()   cria mais um seletor ligado ao mesmo valor (usado na tela inicial)
+//   modulos.marcarLoja(url)   põe ?empresa=<loja> na busca (telas do financeiro e administrativo)
+//   modulos.lojaNoFiltro(sel) telas com filtro de empresa próprio (Logística, Entradas e saídas)
+//                             começam na loja do menu
 // modulos.PAGINAS também é usado pela tela inicial (inicio.js) para montar os cartões.
 
 const modulos = (() => {
@@ -92,6 +95,25 @@ const modulos = (() => {
   }
 
   const aoMudarLoja = (fn) => { avisar.add(fn); };
+
+  // Põe a loja escolhida no endereço da busca (URL ou URLSearchParams). Se a tela já mandou
+  // uma empresa, vale a da tela. Sem loja escolhida (todas), não muda nada.
+  function marcarLoja(alvo) {
+    if (!lojaGuardada || !alvo) return alvo;
+    const parametros = alvo instanceof URL ? alvo.searchParams : alvo;
+    if (!parametros.get('empresa')) parametros.set('empresa', lojaGuardada);
+    return alvo;
+  }
+
+  // Para telas que têm o próprio filtro de empresa (inclui CD e galpão, por causa do estoque):
+  // com uma loja escolhida no menu, o filtro da tela vai para ela.
+  function lojaNoFiltro(select) {
+    if (!lojaGuardada || !select) return;
+    if (![...select.options].some((o) => o.value === lojaGuardada)) {
+      select.append(new Option(`Empresa ${lojaGuardada}`, lojaGuardada));
+    }
+    select.value = lojaGuardada;
+  }
 
   // Um <select> com "Todas as lojas" + as lojas que venderam. Todos os seletores andam juntos.
   function seletorDeLoja(classe = 'seletor-loja') {
@@ -228,5 +250,5 @@ const modulos = (() => {
   }
 
   return { setoresDaChave, irPara, desenharMenu, PAGINAS,
-    lojaAtual, escolherLoja, aoMudarLoja, seletorDeLoja, lerLojas, nomeDaLoja };
+    lojaAtual, escolherLoja, aoMudarLoja, seletorDeLoja, lerLojas, nomeDaLoja, marcarLoja, lojaNoFiltro };
 })();

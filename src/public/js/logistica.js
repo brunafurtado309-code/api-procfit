@@ -582,6 +582,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const guardado = estado.aplicarCampos('logistica', {
     inicio: 'inicio', fim: 'fim', busca: 'pesquisa-termo', empresa: 'filtro-empresa',
   });
+  // Loja escolhida no menu da esquerda manda no filtro de empresa da tela
+  if (typeof modulos !== 'undefined') modulos.lojaNoFiltro(el('filtro-empresa'));
   if (guardado.alerta && ALERTAS[guardado.alerta]) alertaAtual = guardado.alerta;
   el('limpar-pesquisa').hidden = !el('pesquisa-termo').value.trim();
   marcarAtalho();

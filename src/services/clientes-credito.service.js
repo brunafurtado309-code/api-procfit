@@ -65,7 +65,7 @@ function resumir(clientes) {
 }
 
 async function analise(query) {
-  const filtros = financeiro.montarFiltros({ busca: query.busca });
+  const filtros = financeiro.montarFiltros({ busca: query.busca, empresa: query.empresa }); // + loja do menu
   const clientes = enriquecer(await repo.analiseClientes(filtros));
   return { resumo: resumir(clientes), clientes };
 }

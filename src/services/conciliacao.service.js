@@ -11,14 +11,14 @@ function periodoDoMes(mes) {
   };
 }
 
-async function listarTitulos(mes) {
+async function listarTitulos(mes, empresa = null) {
   const { inicio, fim } = periodoDoMes(mes);
-  return repository.executarConsulta('conciliacao-titulos.sql', inicio, fim);
+  return repository.executarConsulta('conciliacao-titulos.sql', inicio, fim, empresa);
 }
 
-async function listarPedidosSemNota(mes) {
+async function listarPedidosSemNota(mes, empresa = null) {
   const { inicio, fim } = periodoDoMes(mes);
-  return repository.executarConsulta('conciliacao-pedidos-sem-nota.sql', inicio, fim);
+  return repository.executarConsulta('conciliacao-pedidos-sem-nota.sql', inicio, fim, empresa);
 }
 
 module.exports = { listarTitulos, listarPedidosSemNota };

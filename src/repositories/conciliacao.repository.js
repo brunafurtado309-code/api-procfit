@@ -37,7 +37,8 @@ async function expressaoDocumento(pool) {
   return partes.length === 1 ? partes[0] : `COALESCE(${partes.join(', ')})`;
 }
 
-async function executarConsulta(arquivo, inicio, fim) {
+// empresa = loja escolhida no menu da esquerda (null = todas)
+async function executarConsulta(arquivo, inicio, fim, empresa = null) {
   let consulta = fs.readFileSync(path.join(PASTA_SQL, arquivo), 'utf8');
 
   // Olha só o código SQL (sem os comentários) para saber se ainda falta preencher
@@ -57,6 +58,7 @@ async function executarConsulta(arquivo, inicio, fim) {
   const resultado = await pool.request()
     .input('inicio', sql.Date, inicio)
     .input('fim', sql.Date, fim)
+    .input('empresa', sql.Int, empresa)
     .query(consulta);
 
   return { dados: resultado.recordset };

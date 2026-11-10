@@ -39,6 +39,7 @@ async function buscar(rota, parametros = {}) {
   for (const [nome, valor] of Object.entries(parametros)) {
     if (valor !== null && valor !== undefined && valor !== '') url.searchParams.set(nome, valor);
   }
+  if (typeof modulos !== 'undefined') modulos.marcarLoja(url); // loja do menu
   const resposta = await fetch(url, { headers: { 'x-api-key': chave.ler() ?? '' } });
   if (resposta.status === 401) {
     chave.apagar();
@@ -304,6 +305,7 @@ async function baixarExcel() {
     if (termo) url.searchParams.set('busca', termo);
     if (filtroClasse) url.searchParams.set('classe', filtroClasse);
     if (soRisco) url.searchParams.set('risco', 'atrasado_comprando');
+    if (typeof modulos !== 'undefined') modulos.marcarLoja(url); // loja do menu
     const resposta = await fetch(url, { headers: { 'x-api-key': chave.ler() ?? '' } });
     if (!resposta.ok) {
       const corpo = await resposta.json().catch(() => ({}));

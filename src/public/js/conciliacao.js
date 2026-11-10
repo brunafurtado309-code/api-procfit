@@ -68,6 +68,12 @@
   function guardarAcesso() { try { sessionStorage.setItem(CHAVE_SESSAO, JSON.stringify(Acesso)); } catch (e) {} }
   function lerAcesso() { try { return JSON.parse(sessionStorage.getItem(CHAVE_SESSAO)); } catch (e) { return null; } }
 
+  // Loja escolhida no menu da esquerda (vazio = todas)
+  const comLoja = (caminho) => {
+    const loja = typeof modulos !== 'undefined' ? modulos.lojaAtual() : '';
+    return loja ? caminho + (caminho.includes('?') ? '&' : '?') + 'empresa=' + encodeURIComponent(loja) : caminho;
+  };
+
   async function api(caminho) {
     const { url, opcoes } = montar(caminho, MODOS[Acesso.modo], Acesso.chave);
     const r = await fetch(url, opcoes);
@@ -306,7 +312,7 @@
     aviso('Buscando os títulos do mês no banco…');
     const mes = $('mes').value;
     try {
-      estado.titulos = (await api('/conciliacao/titulos?mes=' + mes)).map(montarTitulo).filter(t => t.venc);
+      estado.titulos = (await api(comLoja('/conciliacao/titulos?mes=' + mes))).map(montarTitulo).filter(t => t.venc);
       aviso('');
     } catch (err) {
       if (err.message === 'acesso') return;
@@ -315,7 +321,7 @@
     }
     await carregarExtratosGuardados();
     try {
-      estado.pedidosBanco = (await api('/conciliacao/pedidos-sem-nota?mes=' + mes)).map(p => ({
+      estado.pedidosBanco = (await api(comLoja('/conciliacao/pedidos-sem-nota?mes=' + mes))).map(p => ({
         pedido: p.pedido, data: lerData(p.data_pedido), cod: p.cod_cliente ?? '', nome: p.nome_cliente ?? '',
         doc: p.cpf_cnpj ?? '', valor: lerValor(p.valor), pago: lerValor(p.valor_pago),
         situacao: p.situacao ?? '', vendedor: p.vendedor ?? ''

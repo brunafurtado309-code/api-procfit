@@ -33,7 +33,15 @@ function montarFiltros(query) {
     fim: porNumero ? null : data(query.fim, 'fim'),
     busca,
     situacao,
+    empresa: empresaOpcional(query.empresa), // loja escolhida no menu (vale também na pesquisa por número)
   };
+}
+
+function empresaOpcional(valor) {
+  if (valor === undefined || valor === null || valor === '') return null;
+  const empresa = Number(valor);
+  if (!Number.isInteger(empresa) || empresa <= 0) throw new AppError('"empresa" deve ser um número');
+  return empresa;
 }
 
 // Indicadores sobre a lista inteira do período (antes do filtro de situação)

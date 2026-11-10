@@ -230,6 +230,7 @@ async function lista(filtros) {
     .input('inicio', sql.VarChar(10), filtros.inicio ?? null)
     .input('fim', sql.VarChar(10), filtros.fim ?? null)
     .input('busca', sql.VarChar(60), filtros.busca || null)
+    .input('empresa', sql.Int, filtros.empresa ?? null)
     .query(`
       SELECT TOP 2000 ${CAMPOS_DO_ACERTO}
       FROM ${D} R WITH (NOLOCK)
@@ -237,6 +238,7 @@ async function lista(filtros) {
       ${TOTAIS_DO_ACERTO}
       WHERE (@inicio IS NULL OR COALESCE(R.DATA_RECEBIMENTO, R.DATA_HORA) >= CAST(@inicio AS date))
         AND (@fim IS NULL OR COALESCE(R.DATA_RECEBIMENTO, R.DATA_HORA) < DATEADD(day, 1, CAST(@fim AS date)))
+        AND (@empresa IS NULL OR FD.EMPRESA = @empresa) -- loja da carga (vazio = todas)
         AND (@busca IS NULL
           OR CAST(R.RECEBIMENTO_FATURAMENTO_DESPACHO AS varchar(20)) = @busca
           OR CAST(R.FATURAMENTO_DESPACHO_FILTRO AS varchar(20)) = @busca
@@ -607,6 +609,7 @@ async function cargas(filtros) {
     .input('inicio', sql.VarChar(10), filtros.inicio ?? null)
     .input('fim', sql.VarChar(10), filtros.fim ?? null)
     .input('busca', sql.VarChar(60), filtros.busca ?? null)
+    .input('empresa', sql.Int, filtros.empresa ?? null)
     .query(`
       ${CARGAS}
       SELECT
@@ -621,7 +624,8 @@ async function cargas(filtros) {
         SUM(CASE WHEN acertos_sem_processar > 0 THEN 1 ELSE 0 END)        AS nao_processados,
         SUM(informado)                                                    AS informado
       FROM CARGAS
-      WHERE (@inicio IS NULL OR saida >= @inicio)
+      WHERE (@empresa IS NULL OR empresa = @empresa)
+        AND (@inicio IS NULL OR saida >= @inicio)
         AND (@fim IS NULL OR saida <= @fim)
         AND (@busca IS NULL
           OR CAST(carga AS varchar(20)) = @busca
@@ -632,7 +636,8 @@ async function cargas(filtros) {
       ${CARGAS}
       SELECT TOP 2000 *
       FROM CARGAS
-      WHERE (@inicio IS NULL OR saida >= @inicio)
+      WHERE (@empresa IS NULL OR empresa = @empresa)
+        AND (@inicio IS NULL OR saida >= @inicio)
         AND (@fim IS NULL OR saida <= @fim)
         AND (@busca IS NULL
           OR CAST(carga AS varchar(20)) = @busca
@@ -736,11 +741,13 @@ async function pendentes(filtros) {
     .request()
     .input('fim', sql.VarChar(10), filtros.fim ?? null)
     .input('busca', sql.VarChar(60), filtros.busca ?? null)
+    .input('empresa', sql.Int, filtros.empresa ?? null)
     .query(`
       ${CARGAS}
       SELECT TOP 2000 *
       FROM CARGAS
       WHERE situacao = 'EM_ROTA'
+        AND (@empresa IS NULL OR empresa = @empresa)
         AND (@fim IS NULL OR saida <= @fim)
         AND (@busca IS NULL
           OR CAST(carga AS varchar(20)) = @busca

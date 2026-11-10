@@ -379,14 +379,14 @@ async function porCliente(filtros) {
 // Ficha do cliente: quem é, o que deve e o que compra.
 // Junta o financeiro (TITULOS_RECEBER) com as vendas (VENDAS_ANALITICAS),
 // que já usamos no painel de vendas. O tipo 20 (importação de demanda) fica fora.
-async function fichaCliente(entidade, { meses = 12 } = {}) {
+async function fichaCliente(entidade, { meses = 12, empresa = null } = {}) {
   const pool = await getPool();
   const request = pool
     .request()
     .input('entidade', sql.Int, entidade)
     .input('desde', sql.Int, meses)
-    // A ficha mostra o cliente inteiro, sem os filtros da tela
-    .input('empresa', sql.Int, null)
+    // A ficha mostra o cliente inteiro, sem os filtros da tela — só a loja escolhida no menu vale
+    .input('empresa', sql.Int, empresa ?? null)
     .input('inicio', sql.VarChar(10), null)
     .input('fim', sql.VarChar(10), null)
     .input('modalidade', sql.Int, null)
@@ -424,6 +424,7 @@ async function fichaCliente(entidade, { meses = 12 } = {}) {
     FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
     WHERE VA.CLIENTE = @entidade
       AND VA.DOCUMENTO_TIPO <> 20
+      AND (@empresa IS NULL OR VA.EMPRESA = @empresa)
       AND VA.MOVIMENTO >= DATEADD(month, -@desde, CAST(GETDATE() AS date));
 
     -- 4. Produtos que mais compra
@@ -436,6 +437,7 @@ async function fichaCliente(entidade, { meses = 12 } = {}) {
     LEFT JOIN PRODUTOS P WITH (NOLOCK) ON P.PRODUTO = VA.PRODUTO
     WHERE VA.CLIENTE = @entidade
       AND VA.DOCUMENTO_TIPO <> 20
+      AND (@empresa IS NULL OR VA.EMPRESA = @empresa)
       AND VA.MOVIMENTO >= DATEADD(month, -@desde, CAST(GETDATE() AS date))
     GROUP BY VA.PRODUTO, P.DESCRICAO
     HAVING SUM(VA.QUANTIDADE) > 0
@@ -522,6 +524,7 @@ async function fichaCliente(entidade, { meses = 12 } = {}) {
       WHERE TR.PEDIDO_PREVENDA = P.PEDIDO_PREVENDA
     ) TIT
     WHERE P.CLIENTE = @entidade
+      AND (@empresa IS NULL OR P.EMPRESA = @empresa)
       AND P.DATA_HORA >= DATEADD(month, -@desde, CAST(GETDATE() AS date))
     ORDER BY P.DATA_HORA DESC;
 
@@ -530,6 +533,7 @@ async function fichaCliente(entidade, { meses = 12 } = {}) {
     WHERE TX.TRANSACAO_FINANCEIRA = 12
       AND ISNULL(TX.DEBITO, 0) > 0
       AND T.ENTIDADE = @entidade
+      AND (@empresa IS NULL OR T.EMPRESA = @empresa)
       AND TX.DATA >= DATEADD(month, -@desde, CAST(GETDATE() AS date))
     ORDER BY TX.DATA DESC;
   `);
@@ -735,7 +739,8 @@ async function recebimentos(filtros) {
     .input('busca', sql.VarChar(60), filtros.busca ?? null)
     .input('origem', sql.Int, filtros.origem ?? null)
     .input('usuario', sql.Int, filtros.usuario ?? null)
-    .input('forma', sql.Int, filtros.forma ?? null);
+    .input('forma', sql.Int, filtros.forma ?? null)
+    .input('empresa', sql.Int, filtros.empresa ?? null); // loja escolhida no menu (vazio = todas)
   // A data que manda no período: a do recebimento informado ou a do lançamento no PROCFIT
   const dataDoPeriodo = filtros.base === 'lancamento'
     ? 'COALESCE(RB.DATA_HORA, RC.DATA_HORA, CF.DATA_HORA, RD.DATA_HORA, TX.DATA)'
@@ -748,6 +753,7 @@ async function recebimentos(filtros) {
       AND ${dataDoPeriodo} >= CAST(@inicio AS date)
       AND ${dataDoPeriodo} <  DATEADD(day, 1, CAST(@fim AS date))
       AND (@origem IS NULL OR TX.TAB_MASTER_ORIGEM = @origem)
+      AND (@empresa IS NULL OR T.EMPRESA = @empresa)
       AND (@usuario IS NULL
         OR COALESCE(RB.USUARIO_LOGADO, RC.USUARIO_LOGADO, CF.USUARIO_LOGADO, RD.USUARIO_LOGADO) = @usuario)
       AND (@forma IS NULL

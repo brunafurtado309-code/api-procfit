@@ -52,6 +52,7 @@ async function buscar(rota, parametros = {}) {
   for (const [nome, valor] of Object.entries(parametros)) {
     if (valor !== null && valor !== undefined && valor !== '') url.searchParams.set(nome, valor);
   }
+  if (typeof modulos !== 'undefined') modulos.marcarLoja(url); // loja do menu
   const resposta = await fetch(url, { headers: { 'x-api-key': chave.ler() ?? '' } });
   if (resposta.status === 401) {
     chave.apagar();
@@ -583,6 +584,7 @@ async function baixarExcelFornecedores() {
   try {
     const url = new URL('/financeiro/pagar/fornecedores/excel', window.location.origin);
     for (const [nome, valor] of Object.entries(filtrosAtuais())) if (valor) url.searchParams.set(nome, valor);
+    if (typeof modulos !== 'undefined') modulos.marcarLoja(url); // loja do menu
     const resposta = await fetch(url, { headers: { 'x-api-key': chave.ler() ?? '' } });
     if (!resposta.ok) {
       const corpo = await resposta.json().catch(() => ({}));
@@ -979,6 +981,7 @@ async function baixarExcel() {
     for (const [nome, valor] of Object.entries({ ...filtrosAtuais(), ordem: ordem.coluna, direcao: ordem.direcao })) {
       if (valor) url.searchParams.set(nome, valor);
     }
+    if (typeof modulos !== 'undefined') modulos.marcarLoja(url); // loja do menu
     const resposta = await fetch(url, { headers: { 'x-api-key': chave.ler() ?? '' } });
     if (!resposta.ok) {
       const corpo = await resposta.json().catch(() => ({}));
