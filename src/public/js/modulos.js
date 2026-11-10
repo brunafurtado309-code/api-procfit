@@ -6,6 +6,13 @@
 // no navegador.
 //
 // Cada tela chama modulos.desenharMenu(setores, 'setor-da-tela'), como antes.
+//
+// LOJA (nov/2026): o painel todo é visto por loja. O seletor fica no menu da esquerda e na tela
+// inicial; a escolha fica guardada no navegador e vale para todas as telas. As lojas vêm de /lojas
+// (empresas com venda nos últimos 90 dias), então uma loja nova aparece sozinha. Vazio = todas.
+//   modulos.lojaAtual()       código da loja escolhida, ou '' para todas
+//   modulos.aoMudarLoja(fn)   a tela atualiza sozinha quando a loja muda; sem isso, a tela recarrega
+//   modulos.seletorDeLoja()   cria mais um seletor ligado ao mesmo valor (usado na tela inicial)
 // modulos.PAGINAS também é usado pela tela inicial (inicio.js) para montar os cartões.
 
 const modulos = (() => {
@@ -44,6 +51,58 @@ const modulos = (() => {
       descricao: 'Ações registradas no PROCFIT: quem fez o quê, por dia e por usuário.' },
   };
   const RECOLHIDO = 'menu-lateral-recolhido';
+  const LOJA = 'painel-loja';
+
+  // ---------- Loja escolhida ----------
+  let lojaGuardada = (() => { try { return localStorage.getItem(LOJA) ?? ''; } catch (_) { return ''; } })();
+  let listaDeLojas = null; // pedido a /lojas, feito uma vez por tela
+  const seletores = new Set();
+  const avisar = new Set();
+
+  const lojaAtual = () => lojaGuardada;
+
+  function lerLojas() {
+    listaDeLojas ??= fetch('/lojas', { headers: { 'x-api-key': lerChave() } })
+      .then((r) => (r.ok ? r.json() : { lojas: [] }))
+      .then((corpo) => corpo.lojas ?? [])
+      .catch(() => []);
+    return listaDeLojas;
+  }
+
+  const nomeDaLoja = async (codigo = lojaGuardada) =>
+    (codigo ? (await lerLojas()).find((l) => String(l.codigo) === String(codigo))?.nome : null) ?? null;
+
+  function escolherLoja(codigo) {
+    const valor = codigo == null ? '' : String(codigo);
+    if (valor === lojaGuardada) return;
+    lojaGuardada = valor;
+    try { localStorage.setItem(LOJA, valor); } catch (_) { /* fica só nesta tela */ }
+    for (const s of seletores) s.value = valor;
+    if (avisar.size) for (const fn of avisar) fn(valor);
+    else window.location.reload(); // tela que não se atualiza sozinha: lê tudo de novo já com a loja
+  }
+
+  const aoMudarLoja = (fn) => { avisar.add(fn); };
+
+  // Um <select> com "Todas as lojas" + as lojas que venderam. Todos os seletores andam juntos.
+  function seletorDeLoja(classe = 'seletor-loja') {
+    const select = document.createElement('select');
+    select.className = classe;
+    select.setAttribute('aria-label', 'Loja');
+    select.title = 'Loja: vale para todas as telas do painel';
+    select.append(new Option('Todas as lojas', ''));
+    select.value = '';
+    seletores.add(select);
+    lerLojas().then((lojas) => {
+      select.replaceChildren(new Option('Todas as lojas', ''),
+        ...lojas.map((l) => new Option(l.nome || `Empresa ${l.codigo}`, String(l.codigo))));
+      // Loja guardada que parou de vender: some do seletor e o painel volta para todas
+      if (lojaGuardada && !lojas.some((l) => String(l.codigo) === lojaGuardada)) escolherLoja('');
+      select.value = lojaGuardada;
+    });
+    select.addEventListener('change', () => escolherLoja(select.value));
+    return select;
+  }
 
   const lerChave = () => sessionStorage.getItem('apiKey') ?? '';
 
@@ -135,7 +194,13 @@ const modulos = (() => {
     usuarios.hidden = true;
     lista.append(usuarios);
 
-    menu.append(topo, lista);
+    const loja = document.createElement('label');
+    loja.className = 'lateral__loja';
+    const rotulo = document.createElement('span');
+    rotulo.textContent = 'Loja';
+    loja.append(rotulo, seletorDeLoja());
+
+    menu.append(topo, loja, lista);
     document.body.prepend(menu);
     document.body.classList.add('com-lateral');
     aplicar(lerRecolhido());
@@ -146,5 +211,6 @@ const modulos = (() => {
       .catch(() => {});
   }
 
-  return { setoresDaChave, irPara, desenharMenu, PAGINAS };
+  return { setoresDaChave, irPara, desenharMenu, PAGINAS,
+    lojaAtual, escolherLoja, aoMudarLoja, seletorDeLoja, lerLojas, nomeDaLoja };
 })();

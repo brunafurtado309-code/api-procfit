@@ -270,7 +270,8 @@ const montarBase = (ondePedidos) => `
 const PEDIDOS_DO_PERIODO = `
       (@inicio IS NULL OR P.DATA_HORA >= CAST(@inicio AS date))
   AND (@fim IS NULL OR P.DATA_HORA < DATEADD(day, 1, CAST(@fim AS date)))
-  AND (@vendedor IS NULL OR P.VENDEDOR = @vendedor)`;
+  AND (@vendedor IS NULL OR P.VENDEDOR = @vendedor)
+  AND (@empresa IS NULL OR P.EMPRESA = @empresa)`; // loja escolhida no menu (vazio = todas)
 
 // Filtros da lista: por etapa do funil ou por divergência encontrada
 const FILTROS = {
@@ -309,7 +310,8 @@ const criarRequest = (pool, filtros) => pool
   .input('inicio', sql.VarChar(10), filtros.inicio ?? null)
   .input('fim', sql.VarChar(10), filtros.fim ?? null)
   .input('busca', sql.VarChar(60), filtros.busca ?? null)
-  .input('vendedor', sql.Int, filtros.vendedor ?? null);
+  .input('vendedor', sql.Int, filtros.vendedor ?? null)
+  .input('empresa', sql.Int, filtros.empresa ?? null);
 
 // Funil do período, divergências e a lista de pedidos
 async function analise(filtros) {

@@ -89,6 +89,8 @@ const filtrosAtuais = () => ({
   fim: el('fim').value || null,
   busca: el('pesquisa-termo').value.trim() || null,
   vendedor: el('filtro-vendedor').value || null,
+  // loja escolhida no menu da esquerda (vazio = todas)
+  empresa: (typeof modulos !== 'undefined' ? modulos.lojaAtual() : '') || null,
 });
 
 function mostrarStatus(texto, erro = false) {

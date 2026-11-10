@@ -2619,6 +2619,39 @@ body.com-lateral #modulos { display: none !important; }
 .lateral-recolhida .lateral__recolher svg { transform: scaleX(-1); }
 
 .lateral__lista { display: grid; gap: 0.1rem; padding: 0.5rem 0.4rem; }
+
+/* Loja do painel: vale para todas as telas (modulos.js) */
+.lateral__loja {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.55rem 0.6rem;
+  border-bottom: 1px solid var(--linha);
+}
+.lateral__loja > span {
+  font-size: var(--texto-mini);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tinta-suave);
+}
+.lateral__loja .seletor-loja { width: 100%; font-size: var(--texto-mini); }
+.lateral-recolhida .lateral__loja { display: none; }
+
+.inicio-loja {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.8rem;
+  margin-top: 0.8rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--linha);
+  border-left: 3px solid var(--verde);
+  border-radius: var(--raio);
+  background: var(--superficie);
+}
+.inicio-loja__rotulo { font-weight: 700; }
+.seletor-loja--grande { min-width: 16rem; font-size: var(--texto); }
+.inicio-loja__nota { margin: 0; font-size: var(--texto-pequeno); color: var(--tinta-suave); }
 .lateral__item {
   display: flex;
   align-items: center;
@@ -2781,3 +2814,27 @@ button:hover,
 .tela-precificacao .analise-variacao__baixou { color: var(--verde-vivo); }
 .tela-precificacao .analise-variacao .tabela-preco { padding: 0 0.4rem; font-size: var(--texto-mini); }
 .tela-precificacao .analise-variacao__todas { font-size: var(--texto-mini); color: var(--verde-vivo); }
+
+/* --- Precificação: matriz giro x margem (papel de cada produto) --- */
+.tela-precificacao .analise-matriz {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  max-width: 64rem;
+  margin-top: 0.6rem;
+}
+.tela-precificacao .analise-papel { text-align: left; }
+.tela-precificacao .analise-papel .cartao-nota { line-height: 1.4; }
+.tela-precificacao .analise-papel--estrela { box-shadow: inset 3px 0 0 var(--verde-vivo); }
+.tela-precificacao .analise-papel--puxador { box-shadow: inset 3px 0 0 var(--verde); }
+.tela-precificacao .analise-papel--oportunidade { box-shadow: inset 3px 0 0 var(--verde-claro); }
+.tela-precificacao .analise-papel--peso_morto { box-shadow: inset 3px 0 0 var(--alerta); }
+.tela-precificacao .analise-matriz-eixos {
+  display: flex;
+  justify-content: space-between;
+  max-width: 64rem;
+  margin-top: 0.3rem;
+  font-size: var(--texto-mini);
+  color: var(--tinta-suave);
+}
+@media (max-width: 720px) { .tela-precificacao .analise-matriz { grid-template-columns: minmax(0, 1fr); } }

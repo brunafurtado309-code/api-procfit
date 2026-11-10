@@ -46,6 +46,12 @@ function montarFiltros(query) {
     if (!Number.isInteger(vendedor)) throw new AppError('"vendedor" deve ser um número');
     filtros.vendedor = vendedor;
   }
+  // Loja (empresa) escolhida no menu da esquerda; vazio = todas
+  if (query.empresa !== undefined && query.empresa !== '') {
+    const empresa = Number(query.empresa);
+    if (!Number.isInteger(empresa) || empresa <= 0) throw new AppError('"empresa" deve ser um número');
+    filtros.empresa = empresa;
+  }
   if (query.filtro) {
     if (!repo.FILTROS[query.filtro]) {
       throw new AppError(`"filtro" deve ser: ${Object.keys(repo.FILTROS).join(', ')}`);

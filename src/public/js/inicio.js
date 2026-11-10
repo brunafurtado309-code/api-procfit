@@ -33,10 +33,23 @@ function cartao(setor, pagina) {
   return link;
 }
 
+// Seletor de loja grande na tela inicial: o mesmo do menu da esquerda (andam juntos)
+async function mostrarLoja() {
+  const nota = el('inicio-loja-nota');
+  const escrever = async () => {
+    const nome = await modulos.nomeDaLoja();
+    nota.textContent = nome ? `Todas as telas mostram só ${nome}.` : 'Todas as lojas somadas.';
+  };
+  el('inicio-loja').insertBefore(modulos.seletorDeLoja('seletor-loja seletor-loja--grande'), nota);
+  modulos.aoMudarLoja(escrever); // aqui não precisa recarregar: só muda o aviso
+  await escrever();
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     const setores = await modulos.setoresDaChave();
     modulos.desenharMenu(setores, 'inicio');
+    mostrarLoja();
     el('inicio-cartoes').replaceChildren(...setores.map((s) => cartao(s, modulos.PAGINAS[s])));
     if (!setores.length) el('status').textContent = 'Nenhuma tela liberada ainda. Fale com a administradora do painel.';
   } catch (erro) {

@@ -52,9 +52,10 @@ const analiseTela = (() => {
 
   function mostrarResumo() {
     const r = dados.resumo;
-    el('analise-titulo-venda').textContent = dados.filtros.categoria
+    const nomeLoja = dados.filtros.loja == null ? '' : ` · ${dados.lojas.find((l) => l.codigo === dados.filtros.loja)?.nome ?? ''}`;
+    el('analise-titulo-venda').textContent = (dados.filtros.categoria
       ? `Venda de ${dados.filtros.categoria === '__sem' ? 'produtos sem categoria' : dados.filtros.categoria} nos últimos ${dados.dias} dias`
-      : `Venda nos últimos ${dados.dias} dias`;
+      : `Venda nos últimos ${dados.dias} dias`) + nomeLoja;
     el('analise-venda').textContent = dinheiro(r.venda);
     const comparado = r.var_venda == null
       ? 'Sem venda no período anterior para comparar.'
@@ -66,9 +67,12 @@ const analiseTela = (() => {
       span(`depois de ${dinheiro(r.imposto)} de imposto`
         + `${r.estimado ? ` · ${porcento(r.estimado, 0)} da venda com custo estimado (nota)` : ''}`));
     const margem = el('analise-margem');
+    const c = r.canais;
     margem.replaceChildren(porcento(r.margem),
       span([r.margem_anterior == null ? null : `era ${porcento(r.margem_anterior)}`,
-        r.margem_sobre_venda == null ? null : `${porcento(r.margem_sobre_venda)} sobre a venda`].filter(Boolean).join(' · ')));
+        r.margem_sobre_venda == null ? null : `${porcento(r.margem_sobre_venda)} sobre a venda`].filter(Boolean).join(' · ')),
+      // Por canal: no balcão o custo é o de cada venda; no atacado (nota) o custo é estimado com o de hoje
+      span(`balcão ${porcento(c?.balcao?.margem)} · atacado ${porcento(c?.atacado?.margem)} (estimada)`));
     margem.classList.toggle('negativo', (r.margem ?? 0) < 0
       || (r.margem != null && r.margem_anterior != null && r.margem < r.margem_anterior));
     const real = el('analise-margem-real');
@@ -148,9 +152,9 @@ const analiseTela = (() => {
     },
     subiu_vendeu_menos: {
       titulo: 'Subiu o preço e vende menos',
-      explica: (dd) => `O preço de varejo subiu no período e a venda caiu ${porcento(dd.reguas.efeito_qtd, 0)} ou mais. `
-        + `Compara a média por dia de até ${dd.reguas.janela_preco} dias antes e depois da mudança `
-        + `(só depois de ${dd.reguas.dias_minimos_depois} dias com o preço novo).`,
+      explica: (dd) => `O preço de varejo subiu no período e a venda caiu ${porcento(dd.reguas.efeito_qtd, 0)} ou mais, `
+        + 'já descontado o que a categoria variou nas mesmas datas. Compara semanas inteiras '
+        + `(até ${dd.reguas.janela_preco} dias) antes e depois da mudança, com ao menos ${dd.reguas.unidades_minimas} unidades.`,
       alerta: true,
       valor: (itens) => itens.reduce((t, d) => t + Math.max(0, d.valor ?? 0), 0),
       rotuloValor: 'de venda a menos',
@@ -159,29 +163,72 @@ const analiseTela = (() => {
     },
     baixou_vendeu_mais: {
       titulo: 'Baixou o preço e vende mais',
-      explica: (dd) => `O preço de varejo baixou no período e a venda subiu ${porcento(dd.reguas.efeito_qtd, 0)} ou mais. `
-        + 'Olhe o lucro por dia: vender mais só vale se sobrar mais.',
+      explica: (dd) => `O preço de varejo baixou no período e a venda subiu ${porcento(dd.reguas.efeito_qtd, 0)} ou mais, `
+        + 'já descontada a categoria. Olhe o lucro por dia: vender mais só vale se sobrar mais.',
       alerta: false,
       valor: (itens) => itens.reduce((t, d) => t + Math.max(0, d.valor ?? 0), 0),
       rotuloValor: 'de venda a mais',
       colunas: ['Mudou em', 'Preço', 'Vende por dia', 'Lucro por dia'],
       celulas: (d, p) => celulasMudanca(d, p),
     },
+    estoque_alto: {
+      titulo: 'Estoque alto para o giro',
+      explica: (dd) => `O estoque de hoje dá para mais de ${dd.reguas.cobertura_alta} dias de venda: dinheiro parado. `
+        + `O valor é o que passa de uns ${dd.reguas.cobertura_boa} dias, no custo.`,
+      alerta: true,
+      valor: (itens) => itens.reduce((t, d) => t + (d.excesso ?? 0), 0),
+      rotuloValor: 'a mais no estoque',
+      colunas: ['Estoque', 'Dá para', 'No custo', 'GMROI'],
+      celulas: (d, p) => [
+        celula(quantidade(p.saldo, p.unidade)),
+        celula(`${inteiro(p.cobertura)} dias`, 'negativo'),
+        celula(dinheiro(p.estoque_custo)),
+        celula(p.gmroi == null ? '–' : decimal(p.gmroi)),
+      ],
+    },
+    embalagem: {
+      titulo: 'Embalagem maior mais cara por kg',
+      explica: 'A embalagem maior do mesmo produto sai mais cara por kg (ou litro) que a menor: o cliente compra '
+        + 'a pequena ou vai ao concorrente. O nome e o tamanho vêm da descrição do produto.',
+      alerta: true,
+      valor: (itens) => itens.reduce((t, d) => t + (produto(d.codigo)?.venda ?? 0), 0),
+      rotuloValor: 'vendidos da maior',
+      colunas: ['Preço', 'Por kg/L', 'A menor', 'Preço máximo'],
+      celulas: (d, p) => {
+        const menor = produto(d.menor);
+        return [
+          celula(dinheiro(p.varejo)),
+          celula(`${dinheiro(d.por_medida)}/${d.medida}`, 'negativo'),
+          linhaPequena(celula(`${dinheiro(d.por_medida_menor)}/${d.medida}`), menor?.descricao ?? ''),
+          celula(dinheiro(d.preco_maximo)),
+        ];
+      },
+    },
     parados: {
       titulo: 'Sem venda no período',
       explica: 'Produtos que vendiam antes, ou que têm estoque e preço, e não venderam nada no período.',
       alerta: true,
-      valor: (itens) => itens.reduce((t, d) => t + (d.valor_estoque ?? 0), 0),
-      rotuloValor: 'parados no estoque',
-      colunas: ['Última venda', 'Estoque', 'Valor no estoque', 'Preço varejo'],
+      valor: (itens) => itens.reduce((t, d) => t + (d.valor_estoque ?? d.valor ?? 0), 0),
+      // Sem estoque conferido, o valor é o que o produto vendia no ano antes do período (não o estoque parado)
+      get rotuloValor() { return dados?.reguas?.estoque_conferido ? 'parados no estoque' : 'vendidos no ano antes do período'; },
+      colunas: ['Última venda', 'Estoque (sistema)', 'Vendia antes', 'Preço varejo'],
       celulas: (d, p) => [
         linhaPequena(celula(dataBR(p.ultima_venda)), p.dias_sem_venda != null ? `há ${plural(p.dias_sem_venda, 'dia', 'dias')}` : ''),
         celula(quantidade(p.saldo, p.unidade)),
-        celula(d.valor_estoque ? dinheiro(d.valor_estoque) : '–'),
+        celula(d.valor_estoque ? dinheiro(d.valor_estoque) : (d.valor ? dinheiro(d.valor) : '–')),
         celula(p.varejo ? dinheiro(p.varejo) : '–'),
       ],
     },
   };
+
+  // "−47,2% (categoria −5,0%) · elasticidade −2,4 · 28 dias de cada lado"
+  function textoEfeito(v) {
+    return [
+      `${comSinal(v.var_qtd)}${v.var_categoria != null ? ` (categoria ${comSinal(v.var_categoria)})` : ''}`,
+      v.elasticidade != null ? `elasticidade ${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(v.elasticidade)}` : null,
+      `${plural(v.janela, 'dia', 'dias')} de cada lado`,
+    ].filter(Boolean).join(' · ');
+  }
 
   function celulasMudanca(d, p) {
     const lucroAntes = d.antes_por_dia.lucro;
@@ -191,7 +238,7 @@ const analiseTela = (() => {
       linhaPequena(celula(dataBR(d.dia)), d.quem ? `por ${d.quem}` : ''),
       linhaPequena(celula(`${dinheiro(d.antes)} → ${dinheiro(d.depois)}`), comSinal(d.var_preco)),
       linhaPequena(celula(`${quantidade(d.antes_por_dia.qtd)} → ${quantidade(d.depois_por_dia.qtd, p.unidade)}`),
-        `${comSinal(d.var_qtd)} · ${plural(d.janela, 'dia', 'dias')} antes e depois`),
+        textoEfeito(d)),
       linhaPequena(celula(lucroAntes == null ? '–' : `${dinheiro(lucroAntes)} → ${dinheiro(lucroDepois)}`, caiu ? 'negativo' : ''),
         d.var_lucro == null ? '' : comSinal(d.var_lucro)),
     ];
@@ -355,6 +402,44 @@ const analiseTela = (() => {
     el('tabela-categorias').tBodies[0].replaceChildren(...linhas);
   }
 
+  // ---------- 4b. Lojas ----------
+
+  function mostrarLojas() {
+    const atual = dados.filtros.loja == null ? null : String(dados.filtros.loja);
+    const linhas = dados.por_loja.map((l) => {
+      const valor = String(l.codigo);
+      const tr = document.createElement('tr');
+      if (atual === valor) tr.className = 'linha-marcada';
+      const nome = document.createElement('button');
+      nome.type = 'button';
+      nome.className = 'analise-categoria';
+      nome.textContent = l.nome;
+      nome.title = atual === valor ? 'Mostrar todas as lojas' : 'Ver só esta loja';
+      nome.addEventListener('click', () => {
+        pagina = 1;
+        modulos.escolherLoja(atual === valor ? '' : valor); // muda a loja do painel todo
+      });
+      tr.append(
+        celula(nome, 'esquerda'),
+        celula(dinheiro(l.venda)),
+        celula(porcento(l.participacao)),
+        celula(comSinal(l.var_venda), (l.var_venda ?? 0) < 0 ? 'negativo' : ''),
+        celula(dinheiro(l.lucro)),
+        celula(porcento(l.margem), (l.margem ?? 0) < 0 ? 'negativo' : ''),
+        celula(inteiro(l.vendidos)),
+      );
+      return tr;
+    });
+    if (!linhas.length) {
+      const tr = document.createElement('tr');
+      const vazio = celula('Nenhuma loja com venda no período.', 'vazio');
+      vazio.colSpan = 7;
+      tr.append(vazio);
+      linhas.push(tr);
+    }
+    el('tabela-lojas').tBodies[0].replaceChildren(...linhas);
+  }
+
   // ---------- 5. Mais e menos vendidos ----------
 
   function barras(alvo, codigos, vazio) {
@@ -388,6 +473,41 @@ const analiseTela = (() => {
 
   // ---------- 6. Todos os produtos ----------
 
+  // Papel de cada produto (matriz giro x margem): o que fazer com o preço de cada um
+  const PAPEIS = {
+    estrela: { titulo: 'Estrela', explica: 'Gira muito e tem margem. Proteger: nunca faltar e mexer no preço com cuidado.' },
+    puxador: { titulo: 'Puxador de venda', explica: 'Gira muito com pouca margem. Traz o cliente: preço competitivo de propósito, ganhar no resto da compra.' },
+    oportunidade: { titulo: 'Oportunidade', explica: 'Margem boa e pouco giro. Dar visibilidade: exposição, oferecer junto, campanha.' },
+    peso_morto: { titulo: 'Peso morto', explica: 'Nem gira nem tem margem. Rever preço e custo, ou tirar de linha.' },
+  };
+  let papelAtual = null;
+
+  function mostrarMatriz() {
+    const r = dados.resumo;
+    el('analise-matriz-explica').textContent = r.mediana_margem == null ? 'Sem produtos vendidos no período.'
+      : `Giro alto = curva A ou B. Margem alta = ${porcento(r.mediana_margem)} ou mais (a mediana dos vendidos; `
+        + 'margem real, quando tem). Clique num quadrante para ver os produtos dele na lista.';
+    // Ordem de leitura da matriz: em cima o giro alto (estrela | puxador), embaixo o baixo (oportunidade | peso morto)
+    el('analise-matriz').replaceChildren(...['estrela', 'puxador', 'oportunidade', 'peso_morto'].map((id) => {
+      const def = PAPEIS[id];
+      const info = r.papeis?.[id] ?? { produtos: 0, venda: 0 };
+      const ativo = papelAtual === id;
+      const botao = criar('button', `cartao analise-papel analise-papel--${id}${ativo ? ' cartao--ativo' : ''}`);
+      botao.type = 'button';
+      botao.setAttribute('aria-pressed', String(ativo));
+      botao.append(criar('h3', null, def.titulo), criar('p', 'cartao-valor', plural(info.produtos, 'produto', 'produtos')),
+        criar('p', 'cartao-nota', `${dinheiro(info.venda)} · ${def.explica}`));
+      botao.addEventListener('click', () => {
+        papelAtual = ativo ? null : id;
+        pagina = 1;
+        mostrarMatriz();
+        mostrarProdutos();
+        if (papelAtual) el('analise-produtos-titulo').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      return botao;
+    }));
+  }
+
   const CURVAS = {
     todas: { titulo: 'Todos', filtro: () => true, nota: () => 'com venda ou estoque' },
     A: { titulo: 'Curva A', filtro: (p) => p.curva === 'A', nota: (dd) => `somam ${porcento(dd.reguas.curva_a, 0)} da venda: nunca pode faltar` },
@@ -408,6 +528,8 @@ const analiseTela = (() => {
     // Mais abaixo do preço sugerido primeiro (sem margem desejada vai para o fim)
     sugerido: (a, b) => (a.diferenca_preco ?? 9999) - (b.diferenca_preco ?? 9999),
     bonificacao: (a, b) => (b.bonificacao?.parcela ?? -1) - (a.bonificacao?.parcela ?? -1),
+    gmroi: (a, b) => (b.gmroi ?? -999) - (a.gmroi ?? -999),
+    cobertura: (a, b) => (b.cobertura ?? -1) - (a.cobertura ?? -1),
     // Mudança de preço mais recente primeiro (sem mudança vai para o fim)
     mudou: (a, b) => String(b.mudancas_recentes?.[0]?.quando ?? '').localeCompare(String(a.mudancas_recentes?.[0]?.quando ?? '')),
   };
@@ -521,7 +643,7 @@ const analiseTela = (() => {
   function visiveis() {
     const termo = normalizar(el('pesquisa-termo').value.trim());
     return dados.produtos
-      .filter((p) => CURVAS[curvaAtual].filtro(p)
+      .filter((p) => CURVAS[curvaAtual].filtro(p) && (!papelAtual || p.papel === papelAtual)
         && (!termo || String(p.codigo) === termo || normalizar(p.descricao).includes(termo)
           || normalizar(p.categoria).includes(termo)))
       .sort(ORDENS[el('analise-ordem').value] ?? ORDENS.venda);
@@ -560,12 +682,14 @@ const analiseTela = (() => {
     const paginas = Math.max(1, Math.ceil(itens.length / porPagina));
     pagina = Math.min(pagina, paginas);
     const primeiro = (pagina - 1) * porPagina;
-    el('analise-produtos-titulo').textContent = `${CURVAS[curvaAtual].titulo === 'Todos' ? 'Produtos' : CURVAS[curvaAtual].titulo} (${inteiro(itens.length)})`;
+    el('analise-produtos-titulo').textContent = `${CURVAS[curvaAtual].titulo === 'Todos' ? 'Produtos' : CURVAS[curvaAtual].titulo}`
+      + `${papelAtual ? ` · ${PAPEIS[papelAtual].titulo}` : ''} (${inteiro(itens.length)})`;
 
     const linhas = itens.slice(primeiro, primeiro + porPagina).map((p) => {
       const tr = document.createElement('tr');
       const curva = celula(p.curva ?? '–');
       if (p.curva) curva.firstChild.replaceWith(span(p.curva, `analise-curva analise-curva--${p.curva.toLowerCase()}`));
+      if (p.papel) linhaPequena(curva, PAPEIS[p.papel].titulo.toLowerCase());
 
       const vendido = linhaPequena(celula(p.venda ? dinheiro(p.venda) : '–'), p.qtd ? quantidade(p.qtd, p.unidade) : '');
       const comparado = linhaPequena(celula(comSinal(p.var_venda), (p.var_venda ?? 0) < 0 ? 'negativo' : ''),
@@ -591,6 +715,13 @@ const analiseTela = (() => {
       const giro = linhaPequena(celula(p.vende_a_cada == null ? '–'
         : p.vende_a_cada <= 1 ? 'todo dia' : `a cada ${decimal(p.vende_a_cada)} dias`, 'sem-quebra'),
       p.melhor_dia ? `mais na ${p.melhor_dia.toLowerCase()}` : '');
+      // Cobertura e GMROI dependem do saldo: só aparecem com o estoque conferido
+      if (dados.reguas.estoque_conferido) {
+        linhaPequena(giro, [p.cobertura != null ? `estoque p/ ${inteiro(p.cobertura)} dias` : null,
+          p.gmroi != null ? `GMROI ${decimal(p.gmroi)}` : null].filter(Boolean).join(' · '),
+        p.cobertura != null && p.cobertura > (dados.reguas.cobertura_alta ?? 90) ? 'qtd negativo' : 'qtd');
+      }
+      if (dados.reguas.estoque_conferido && p.gmroi != null) giro.title = 'GMROI: lucro bruto do ano ÷ estoque de hoje no custo. Acima de 1, o estoque se paga no ano.';
 
       const ultima = linhaPequena(celula(dataBR(p.ultima_venda)),
         p.dias_sem_venda ? `há ${plural(p.dias_sem_venda, 'dia', 'dias')}` : '',
@@ -684,7 +815,8 @@ const analiseTela = (() => {
     el('produto-analise-status').textContent = 'Lendo a venda do produto…';
     if (!dialogo.open) dialogo.showModal();
     try {
-      detalhe = await chamar(`/precificacao/analise/produto/${codigo}`);
+      const loja = lojaDoPainel();
+      detalhe = await chamar(`/precificacao/analise/produto/${codigo}${loja ? `?loja=${encodeURIComponent(loja)}` : ''}`);
       el('produto-analise-status').textContent = '';
       mostrarProduto();
     } catch (erro) {
@@ -727,7 +859,7 @@ const analiseTela = (() => {
         const lucroB = v.depois_por_dia.lucro_real ?? v.depois_por_dia.lucro;
         colunasNumeros = [
           linhaPequena(celula(`${quantidade(v.antes_por_dia.qtd)} → ${quantidade(v.depois_por_dia.qtd)}`, 'sem-quebra'),
-            `${comSinal(v.var_qtd)} · ${plural(v.janela, 'dia', 'dias')} de cada lado`, (v.var_qtd ?? 0) < 0 ? 'qtd negativo' : 'qtd'),
+            textoEfeito(v), (v.var_qtd ?? 0) < 0 ? 'qtd negativo' : 'qtd'),
           linhaPequena(celula(`${dinheiro(v.antes_por_dia.venda)} → ${dinheiro(v.depois_por_dia.venda)}`, 'sem-quebra'),
             comSinal(v.var_venda), (v.var_venda ?? 0) < 0 ? 'qtd negativo' : 'qtd'),
           linhaPequena(celula(lucroA == null ? '–' : `${dinheiro(lucroA)} → ${dinheiro(lucroB)}`, 'sem-quebra'),
@@ -797,6 +929,7 @@ const analiseTela = (() => {
     try {
       const parametros = new URLSearchParams({ nome: valor, dias });
       if (el('analise-tipo').value) parametros.set('tipo', el('analise-tipo').value);
+      if (lojaDoPainel()) parametros.set('loja', lojaDoPainel());
       detalhe = await chamar(`/precificacao/analise/categoria?${parametros}`);
       el('produto-analise-status').textContent = mensagem && mensagem.endsWith('…') ? '' : (mensagem ?? '');
       mostrarProduto();
@@ -935,7 +1068,7 @@ const analiseTela = (() => {
       ? `${plural(d.produtos.length, 'produto', 'produtos')} · venda de ${dinheiro(d.categoria.venda)} nos últimos ${d.dias} dias`
       : [`código ${p.codigo}`, p.varejo ? `varejo ${dinheiro(p.varejo)}` : null,
         p.custo_medio ? `custo ${dinheiro(p.custo_medio)}` : null, p.custo_real ? `real ${dinheiro(p.custo_real)}` : null,
-        `estoque ${quantidade(p.saldo, p.unidade)}`].filter(Boolean).join(' · ');
+        `estoque no sistema ${quantidade(p.saldo, p.unidade)}`].filter(Boolean).join(' · ');
 
     // Indicadores: tendência, pico e queda
     const indicadores = criar('dl', 'indicadores produto-analise-numeros');
@@ -1032,6 +1165,17 @@ const analiseTela = (() => {
 
   // ---------- Ler, mostrar e ligar ----------
 
+  // Lojas que já venderam (hoje uma; as novas entram sozinhas)
+  function preencherLojas() {
+    const atual = dados.filtros.loja == null ? '' : String(dados.filtros.loja);
+    el('analise-loja').replaceChildren(new Option('Todas as lojas', ''),
+      ...dados.lojas.map((l) => new Option(l.nome, String(l.codigo))));
+    el('analise-loja').value = atual;
+  }
+
+  // Loja do painel (menu da esquerda / tela inicial): vale para todas as telas
+  const lojaDoPainel = () => modulos.lojaAtual();
+
   function preencherCategorias() {
     const atual = dados.filtros.categoria ?? '';
     el('analise-categoria').replaceChildren(new Option('Todas', ''), new Option('Sem categoria', '__sem'),
@@ -1045,18 +1189,21 @@ const analiseTela = (() => {
     mostrarDecisoes();
     mostrarTempo();
     mostrarCategorias();
+    mostrarLojas();
     barras('analise-mais-vendidos', dados.mais_vendidos, 'Nenhum produto vendido no período.');
     barras('analise-menos-vendidos', dados.menos_vendidos, 'Nenhum produto vendido no período.');
+    mostrarMatriz();
     mostrarCurvas();
     mostrarProdutos();
   }
 
-  const filtrosAtuais = () => `${dias}|${el('analise-categoria').value}|${el('analise-tipo').value}`;
+  const filtrosAtuais = () => `${dias}|${lojaDoPainel()}|${el('analise-categoria').value}|${el('analise-tipo').value}`;
 
   async function carregar(mensagem, atualizar = false) {
     mostrarStatus('Lendo as vendas no PROCFIT…');
     try {
       const parametros = new URLSearchParams({ dias });
+      if (lojaDoPainel()) parametros.set('loja', lojaDoPainel());
       if (el('analise-categoria').value) parametros.set('categoria', el('analise-categoria').value);
       if (el('analise-tipo').value) parametros.set('tipo', el('analise-tipo').value);
       if (atualizar) parametros.set('atualizar', '1');
@@ -1064,6 +1211,12 @@ const analiseTela = (() => {
       lidoCom = filtrosAtuais();
       porCodigo = new Map(dados.produtos.map((p) => [p.codigo, p]));
       preencherCategorias();
+      preencherLojas();
+      // Sem estoque conferido, as ordens que dependem do saldo saem da lista
+      for (const valor of ['gmroi', 'cobertura']) {
+        const opcao = el('analise-ordem').querySelector(`option[value="${valor}"]`);
+        if (opcao) opcao.hidden = !dados.reguas.estoque_conferido;
+      }
       el('aba-analise').hidden = false;
       mostrar();
       const lido = new Date(dados.lido_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -1082,6 +1235,12 @@ const analiseTela = (() => {
 
   function ligar() {
     el('analise-categoria').addEventListener('change', () => escolherCategoria(el('analise-categoria').value));
+    // O seletor da aba e o do menu são a mesma escolha
+    el('analise-loja').addEventListener('change', () => { pagina = 1; modulos.escolherLoja(el('analise-loja').value); });
+    modulos.aoMudarLoja(() => {
+      pagina = 1;
+      if (!el('aba-analise').hidden) carregar(); // nas outras abas, lê de novo ao voltar (desatualizado)
+    });
     el('analise-tipo').addEventListener('change', () => { pagina = 1; carregar(); });
     el('analise-agrupar').addEventListener('click', (evento) => {
       const botao = evento.target.closest('[data-agrupar]');

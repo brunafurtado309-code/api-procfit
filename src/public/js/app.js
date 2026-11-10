@@ -127,7 +127,11 @@ function pedirChaveDeNovo() {
   alert('Chave de acesso inválida. Informe a chave novamente.');
 }
 
-const filtrosAtuais = () => ({ inicio: el('inicio').value, fim: el('fim').value });
+// Período da tela + a loja escolhida no menu da esquerda (sem loja = todas; a API já filtra por empresa)
+const filtrosAtuais = () => {
+  const loja = typeof modulos !== 'undefined' ? modulos.lojaAtual() : '';
+  return { inicio: el('inicio').value, fim: el('fim').value, ...(loja ? { empresa: loja } : {}) };
+};
 
 function mostrarStatus(texto, erro = false) {
   el('status').textContent = texto;
