@@ -10,6 +10,9 @@ const router = express.Router();
 router.get('/analise', controller.analise);
 // Um produto: venda por dia, semana e mês, com o pico, a maior queda e as mudanças de preço perto deles
 router.get('/analise/produto/:codigo', controller.produtoAnalise);
+// Uma categoria: o mesmo gráfico, quem puxou o pico e a queda, e a precificação dos produtos dela
+// ?nome=Descartáveis (ou __sem) &dias &tipo
+router.get('/analise/categoria', controller.categoriaAnalise);
 
 // Margem desejada por produto: só quem tem a permissão "Edita preço" (a pessoa da precificação)
 // { produtos: [códigos], margem: 0.15 } ou { produtos: [...], margem: null } para tirar

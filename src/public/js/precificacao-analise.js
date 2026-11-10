@@ -13,6 +13,8 @@
 // (bonificação descontada). Margem desejada: só quem tem "Edita preço" muda (a API diz em pode_editar).
 // Clicar no nome de um produto (em qualquer lista da aba) abre a janela dele: venda por dia, semana e mês,
 // com o pico e a maior queda marcados e as mudanças de preço que aconteceram perto.
+// "Ver picos e precificação" na tabela de categorias abre a mesma janela para a categoria inteira, com os
+// produtos que fizeram o pico e os que derrubaram a queda, e a precificação de cada produto dela.
 // A API manda tudo de uma vez; trocar de decisão, gráfico, ordem ou página não chama a API de novo.
 // Trocar período, categoria ou tipo chama (a API guarda a leitura do PROCFIT por 10 minutos).
 
@@ -325,6 +327,11 @@ const analiseTela = (() => {
         || (c.margem != null && c.margem_anterior != null && c.margem < c.margem_anterior) ? 'negativo' : '');
       linhaPequena(margem, c.margem_anterior == null ? '' : `era ${porcento(c.margem_anterior)}`);
       const margemReal = celula(porcento(c.margem_real), (c.margem_real ?? 0) < 0 ? 'negativo' : '');
+      const ver = document.createElement('button');
+      ver.type = 'button';
+      ver.className = 'analise-categoria';
+      ver.textContent = 'Picos e precificação →';
+      ver.addEventListener('click', () => abrirCategoria(valor));
       tr.append(
         tdNome,
         celula(dinheiro(c.venda)),
@@ -334,13 +341,14 @@ const analiseTela = (() => {
         margem,
         margemReal,
         celula(`${inteiro(c.vendidos)} de ${inteiro(c.produtos)}`),
+        celula(ver),
       );
       return tr;
     });
     if (!linhas.length) {
       const tr = document.createElement('tr');
       const vazio = celula('Nenhum produto vendido no período.', 'vazio');
-      vazio.colSpan = 8;
+      vazio.colSpan = 9;
       tr.append(vazio);
       linhas.push(tr);
     }
@@ -425,7 +433,7 @@ const analiseTela = (() => {
   }
 
   // Preço sugerido: margem desejada (campo para quem edita, texto para os outros) e o preço que ela pede
-  function celulaSugerido(p) {
+  function celulaSugerido(p, origem = dados) {
     const td = celula(p.preco_sugerido ? dinheiro(p.preco_sugerido) : '–',
       p.diferenca_preco != null && p.diferenca_preco < 0 ? 'negativo' : '');
     const diferenca = p.preco_sugerido && p.diferenca_preco
@@ -438,11 +446,11 @@ const analiseTela = (() => {
     const linha = document.createElement('label');
     linha.className = 'analise-desejada';
     linha.append(span('desejada '));
-    if (dados.pode_editar) {
+    if (origem.pode_editar) {
       const campo = document.createElement('input');
       campo.type = 'number';
       campo.min = '0';
-      campo.max = String((dados.reguas.margem_desejada_maxima ?? 0.6) * 100);
+      campo.max = String((origem.reguas.margem_desejada_maxima ?? 0.6) * 100);
       campo.step = '0.5';
       campo.inputMode = 'decimal';
       campo.placeholder = '–';
@@ -455,7 +463,7 @@ const analiseTela = (() => {
     } else {
       linha.append(span(p.margem_desejada == null ? 'não definida' : porcento(p.margem_desejada)));
     }
-    td.append(document.createElement('br'), linha);
+    td.append(linha); // a linha é um bloco (flex): já desce sozinha, sem <br>
     return td;
   }
 
@@ -467,7 +475,10 @@ const analiseTela = (() => {
     campo.disabled = true;
     try {
       await chamar('/precificacao/margens', { method: 'PUT', body: JSON.stringify({ produtos: [p.codigo], margem }) });
-      await carregar(`${p.descricao}: margem desejada ${margem === null ? 'tirada' : `de ${porcento(margem)} gravada`}`);
+      const texto = `${p.descricao}: margem desejada ${margem === null ? 'tirada' : `de ${porcento(margem)} gravada`}`;
+      const janela = document.getElementById('janela-produto-analise');
+      if (janela?.open && modo === 'categoria') await abrirCategoria(categoriaAberta, `${texto}.`);
+      await carregar(texto);
     } catch (erro) {
       mostrarStatus(erro.message, true);
       campo.disabled = false;
@@ -585,7 +596,9 @@ const analiseTela = (() => {
 
   // ---------- Janela do produto: picos e quedas ----------
 
-  let detalhe = null;       // o que a API mandou do produto aberto
+  let detalhe = null;       // o que a API mandou do produto (ou da categoria) aberto
+  let modo = 'produto';     // produto ou categoria
+  let categoriaAberta = null;
   let agruparProduto = 'semana';
   const AGRUPAR_PRODUTO = { dia: 'Dia (90 dias)', semana: 'Semana', mes: 'Mês' };
   const NOME_PONTO = { dia: 'o dia', semana: 'a semana', mes: 'o mês' };
@@ -632,6 +645,7 @@ const analiseTela = (() => {
   }
 
   async function abrirProduto(codigo) {
+    modo = 'produto';
     const dialogo = janelaProduto();
     const p = produto(codigo);
     el('produto-analise-titulo').textContent = p?.descricao ?? `Produto ${codigo}`;
@@ -648,22 +662,158 @@ const analiseTela = (() => {
     }
   }
 
-  // Frase das mudanças de preço perto de um pico ou de uma queda
+  // Categoria: valor do filtro ("Descartáveis" ou "__sem" para os sem categoria)
+  async function abrirCategoria(valor, mensagem) {
+    modo = 'categoria';
+    categoriaAberta = valor;
+    const dialogo = janelaProduto();
+    el('produto-analise-titulo').textContent = valor === '__sem' ? 'Produtos sem categoria' : `Categoria ${valor}`;
+    el('produto-analise-resumo').textContent = `últimos ${dias} dias`;
+    if (!mensagem) el('produto-analise-corpo').replaceChildren();
+    el('produto-analise-status').textContent = mensagem ?? 'Lendo a venda da categoria…';
+    if (!dialogo.open) dialogo.showModal();
+    try {
+      const parametros = new URLSearchParams({ nome: valor, dias });
+      if (el('analise-tipo').value) parametros.set('tipo', el('analise-tipo').value);
+      detalhe = await chamar(`/precificacao/analise/categoria?${parametros}`);
+      el('produto-analise-status').textContent = mensagem && mensagem.endsWith('…') ? '' : (mensagem ?? '');
+      mostrarProduto();
+    } catch (erro) {
+      el('produto-analise-status').textContent = erro.message;
+    }
+  }
+
+  // Frase das mudanças de preço perto de um pico ou de uma queda (na categoria, com o nome do produto)
   function textoMudancas(lista) {
     if (!lista?.length) return 'Nenhuma mudança de preço perto dessa data.';
-    return lista.map((m) => `o preço ${m.subiu ? 'subiu' : 'baixou'} de ${dinheiro(m.antes)} para ${dinheiro(m.depois)} `
-      + `em ${dataBR(m.quando)}${m.quem ? ` (${m.quem})` : ''}`).join('; ') + '.';
+    const mostrar = lista.slice(0, 4);
+    return mostrar.map((m) => `${m.descricao ? `${m.descricao}: ` : ''}o preço ${m.subiu ? 'subiu' : 'baixou'} `
+      + `de ${dinheiro(m.antes)} para ${dinheiro(m.depois)} em ${dataBR(m.quando)}${m.quem ? ` (${m.quem})` : ''}`).join('; ')
+      + `${lista.length > mostrar.length ? `; e mais ${lista.length - mostrar.length}` : ''}.`;
+  }
+
+  // Lista curta dos produtos que fizeram o pico ou derrubaram a queda (só na categoria)
+  function listaDestaques(titulo, itens, texto, classe) {
+    const bloco = criar('div', 'produto-analise-destaque');
+    bloco.append(criar('h4', null, titulo));
+    const ul = criar('ul');
+    for (const item of itens) {
+      const li = criar('li');
+      li.append(nomeClicavel(item), span(` ${texto(item)}`, classe));
+      ul.append(li);
+    }
+    bloco.append(ul);
+    return bloco;
+  }
+
+  // Precificação da categoria: números, aplicar margem a todos e a tabela de produtos
+  function precificacaoCategoria(d) {
+    const pr = d.precificacao;
+    const area = criar('div', 'produto-analise-precificacao');
+    area.append(criar('h3', 'subtitulo', 'Precificação da categoria'));
+
+    const numeros = criar('dl', 'indicadores');
+    const numero = (rotulo, valor, nota, alerta) => {
+      const dd = criar('dd', alerta ? 'negativo' : '', valor);
+      if (nota) dd.append(span(nota));
+      numeros.append(criar('dt', null, rotulo), dd);
+    };
+    const c = d.categoria;
+    numero('Margem (PROCFIT)', porcento(c.margem), c.margem_anterior == null ? '' : `era ${porcento(c.margem_anterior)}`,
+      (c.margem ?? 0) < 0);
+    numero('Margem real', porcento(c.margem_real), `${plural(c.com_bonificacao, 'produto bonificado', 'produtos bonificados')}`,
+      (c.margem_real ?? 0) < 0);
+    numero('Com margem desejada', `${inteiro(pr.com_margem_desejada)} de ${inteiro(pr.produtos)}`,
+      pr.margem_unica != null ? `todos com ${porcento(pr.margem_unica)}` : 'definida por produto');
+    numero('Abaixo da desejada', inteiro(pr.abaixo_da_desejada),
+      pr.preco_nao_paga_custo ? `${plural(pr.preco_nao_paga_custo, 'preço não paga', 'preços não pagam')} o custo` : '',
+      pr.abaixo_da_desejada > 0 || pr.preco_nao_paga_custo > 0);
+    area.append(numeros);
+
+    // Aplicar a mesma margem desejada a todos os produtos da categoria (só quem edita preço)
+    if (d.pode_editar && d.produtos.length) {
+      const lote = criar('div', 'lote produto-analise-lote');
+      const campo = criar('input');
+      campo.type = 'number';
+      campo.min = '0';
+      campo.max = String((d.reguas.margem_desejada_maxima ?? 0.6) * 100);
+      campo.step = '0.5';
+      campo.placeholder = '%';
+      campo.setAttribute('aria-label', 'Margem desejada para todos os produtos da categoria (%)');
+      if (pr.margem_unica != null) campo.value = String(Math.round(pr.margem_unica * 1000) / 10);
+      const aplicar = criar('button', null, `Aplicar aos ${inteiro(d.produtos.length)} produtos`);
+      aplicar.type = 'button';
+      aplicar.addEventListener('click', async () => {
+        const texto = campo.value.trim().replace(',', '.');
+        if (texto === '') return;
+        const margem = Number(texto) / 100;
+        if (!Number.isFinite(margem)) return;
+        if (!window.confirm(`Margem desejada de ${porcento(margem)} para os ${inteiro(d.produtos.length)} produtos desta categoria? `
+          + 'A margem que cada um tinha é substituída (fica no histórico).')) return;
+        aplicar.disabled = true;
+        try {
+          const codigos = d.produtos.map((p) => p.codigo);
+          for (let i = 0; i < codigos.length; i += 500) {
+            await chamar('/precificacao/margens', { method: 'PUT', body: JSON.stringify({ produtos: codigos.slice(i, i + 500), margem }) });
+          }
+          await abrirCategoria(categoriaAberta, `Margem desejada de ${porcento(margem)} gravada em ${plural(codigos.length, 'produto', 'produtos')}.`);
+          carregar(); // a aba de trás também muda (preço sugerido e decisões)
+        } catch (erro) {
+          el('produto-analise-status').textContent = erro.message;
+          aplicar.disabled = false;
+        }
+      });
+      lote.append(span('Margem desejada para todos:'), campo, span('%'), aplicar);
+      area.append(lote);
+    }
+
+    // Produtos da categoria, do que mais vende para o que menos vende
+    const rolagem = criar('div', 'tabela-rolagem');
+    const tabela = criar('table', 'tabela');
+    const cabeca = criar('tr');
+    for (const [texto, esquerda] of [['Produto', true], ['Curva', false], ['Vendido', false], ['Margem', false],
+      ['Preço e custo', false], ['Preço sugerido', false]]) {
+      const th = criar('th', esquerda ? 'esquerda' : '', texto);
+      th.scope = 'col';
+      cabeca.append(th);
+    }
+    tabela.createTHead().append(cabeca);
+    const corpoTabela = tabela.createTBody();
+    for (const p of d.produtos) {
+      const tr = criar('tr');
+      const margem = linhaPequena(celula(porcento(p.margem), (p.margem ?? 0) < 0 ? 'negativo' : ''),
+        [p.margem_anterior != null ? `era ${porcento(p.margem_anterior)}` : null,
+          p.custo_real && p.margem_real != null ? `real ${porcento(p.margem_real)}` : null].filter(Boolean).join(' · '));
+      const preco = linhaPequena(celula(p.varejo ? dinheiro(p.varejo) : '–'),
+        [p.custo_medio ? `custo ${dinheiro(p.custo_medio)}` : null, p.custo_real ? `real ${dinheiro(p.custo_real)}` : null]
+          .filter(Boolean).join(' · '));
+      const curva = celula(p.curva ?? '–');
+      if (p.curva) curva.firstChild.replaceWith(span(p.curva, `analise-curva analise-curva--${p.curva.toLowerCase()}`));
+      tr.append(celula(nomeClicavel(p), 'esquerda'), curva,
+        linhaPequena(celula(p.venda ? dinheiro(p.venda) : '–'), p.var_venda != null ? comSinal(p.var_venda) : ''),
+        margem, preco, celulaSugerido(p, { pode_editar: d.pode_editar, reguas: d.reguas }));
+      corpoTabela.append(tr);
+    }
+    tabela.append(corpoTabela);
+    rolagem.append(tabela);
+    area.append(rolagem);
+    return area;
   }
 
   function mostrarProduto() {
     const d = detalhe;
-    const p = d.produto;
+    const ehCategoria = modo === 'categoria';
+    // Na categoria não existe "um produto": unidade e quantidade não se somam (KG + UN), então não aparecem
+    const p = ehCategoria ? { descricao: el('produto-analise-titulo').textContent } : d.produto;
+    const qtdTexto = (ponto) => (ehCategoria ? '' : ` (${quantidade(ponto.qtd, p.unidade)})`);
     const serie = d.series[agruparProduto];
     const corpo = el('produto-analise-corpo');
 
-    el('produto-analise-resumo').textContent = [`código ${p.codigo}`, p.varejo ? `varejo ${dinheiro(p.varejo)}` : null,
-      p.custo_medio ? `custo ${dinheiro(p.custo_medio)}` : null, p.custo_real ? `real ${dinheiro(p.custo_real)}` : null,
-      `estoque ${quantidade(p.saldo, p.unidade)}`].filter(Boolean).join(' · ');
+    el('produto-analise-resumo').textContent = ehCategoria
+      ? `${plural(d.produtos.length, 'produto', 'produtos')} · venda de ${dinheiro(d.categoria.venda)} nos últimos ${d.dias} dias`
+      : [`código ${p.codigo}`, p.varejo ? `varejo ${dinheiro(p.varejo)}` : null,
+        p.custo_medio ? `custo ${dinheiro(p.custo_medio)}` : null, p.custo_real ? `real ${dinheiro(p.custo_real)}` : null,
+        `estoque ${quantidade(p.saldo, p.unidade)}`].filter(Boolean).join(' · ');
 
     // Indicadores: tendência, pico e queda
     const indicadores = criar('dl', 'indicadores produto-analise-numeros');
@@ -677,7 +827,7 @@ const analiseTela = (() => {
       t.variacao == null ? 'sem as 4 semanas de antes para comparar' : `${comSinal(t.variacao)} contra as 4 de antes`,
       (t.variacao ?? 0) < -0.1);
     numero(`Pico (${AGRUPAR_PRODUTO[agruparProduto].toLowerCase()})`, serie.pico ? dinheiro(serie.pico.venda) : '–',
-      serie.pico ? `${serie.pico.rotulo} · ${quantidade(serie.pico.qtd, p.unidade)}` : 'sem venda');
+      serie.pico ? `${serie.pico.rotulo}${ehCategoria ? '' : ` · ${quantidade(serie.pico.qtd, p.unidade)}`}` : 'sem venda');
     numero('Maior queda', serie.queda ? comSinal(serie.queda.variacao) : '–',
       serie.queda ? `${serie.queda.rotulo}: ${dinheiro(serie.queda.venda)} (antes ${dinheiro(serie.queda.anterior)})` : 'nenhuma queda',
       Boolean(serie.queda));
@@ -713,7 +863,7 @@ const analiseTela = (() => {
     };
     if (serie.pico) {
       frase('pico', 'Pico:', `${NOME_PONTO[agruparProduto]} ${serie.pico.rotulo.replace('sem. ', 'de ')} vendeu `
-        + `${dinheiro(serie.pico.venda)} (${quantidade(serie.pico.qtd, p.unidade)}). ${textoMudancas(serie.pico.mudancas)}`);
+        + `${dinheiro(serie.pico.venda)}${qtdTexto(serie.pico)}. ${textoMudancas(serie.pico.mudancas)}`);
     }
     if (serie.queda) {
       frase('queda', 'Maior queda:', `${NOME_PONTO[agruparProduto]} ${serie.queda.rotulo.replace('sem. ', 'de ')} vendeu `
@@ -723,6 +873,16 @@ const analiseTela = (() => {
     frase('correndo', 'Último ponto:', `${NOME_PONTO[agruparProduto]} atual ainda está correndo (vai até hoje), `
       + 'por isso aparece mais claro e não conta como queda.');
 
+    // Categoria: quem fez o pico e quem derrubou a queda (clicar abre o produto)
+    const destaques = criar('div', 'produto-analise-destaques');
+    if (ehCategoria && serie.pico?.produtos?.length) {
+      destaques.append(listaDestaques('Quem fez o pico', serie.pico.produtos, (x) => dinheiro(x.venda), 'qtd'));
+    }
+    if (ehCategoria && serie.queda?.produtos?.length) {
+      destaques.append(listaDestaques('Quem derrubou a queda', serie.queda.produtos,
+        (x) => `${dinheiro(x.antes)} → ${dinheiro(x.depois)} (−${dinheiro(x.perdeu)})`, 'qtd negativo'));
+    }
+
     // Mudanças de preço do produto
     const tituloMudancas = criar('h3', 'subtitulo', `Mudanças do preço de varejo (${inteiro(d.mudancas.length)})`);
     let mudancas;
@@ -730,7 +890,9 @@ const analiseTela = (() => {
       mudancas = criar('div', 'tabela-rolagem');
       const tabela = criar('table', 'tabela');
       const cabeca = criar('tr');
-      for (const [texto, esquerda] of [['Quando', true], ['Antes', false], ['Depois', false], ['Mudança', false], ['Quem', true]]) {
+      const colunas = [['Quando', true], ...(ehCategoria ? [['Produto', true]] : []), ['Antes', false], ['Depois', false],
+        ['Mudança', false], ['Quem', true]];
+      for (const [texto, esquerda] of colunas) {
         const th = criar('th', esquerda ? 'esquerda' : '', texto);
         th.scope = 'col';
         cabeca.append(th);
@@ -740,7 +902,9 @@ const analiseTela = (() => {
       for (const m of d.mudancas) {
         const tr = criar('tr');
         const v = m.antes > 0 ? (m.depois - m.antes) / m.antes : null;
-        tr.append(celula(dataBR(m.quando), 'esquerda'), celula(dinheiro(m.antes)), celula(dinheiro(m.depois)),
+        tr.append(celula(dataBR(m.quando), 'esquerda'),
+          ...(ehCategoria ? [celula(nomeClicavel({ codigo: m.produto, descricao: m.descricao }), 'esquerda')] : []),
+          celula(dinheiro(m.antes)), celula(dinheiro(m.depois)),
           celula(comSinal(v), (v ?? 0) > 0 ? 'negativo' : ''),
           linhaPequena(celula(m.quem ?? '–', 'esquerda'), m.fora ? 'direto no banco, fora do PROCFIT' : ''));
         corpoTabela.append(tr);
@@ -750,7 +914,8 @@ const analiseTela = (() => {
       mudancas = criar('p', 'explica', 'O preço de varejo não mudou desde que o PROCFIT começou a guardar o histórico (mai/2026).');
     }
 
-    corpo.replaceChildren(indicadores, botoes, grafico, explica, tituloMudancas, mudancas);
+    corpo.replaceChildren(indicadores, botoes, grafico, explica, destaques,
+      ...(ehCategoria ? [precificacaoCategoria(d)] : []), tituloMudancas, mudancas);
     graficos.colunas(grafico, {
       titulo: `Venda de ${p.descricao}`,
       rotulos: serie.pontos.map((x) => x.rotulo),

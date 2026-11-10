@@ -741,43 +741,56 @@ async function analise(query, acesso = {}) {
   };
 }
 
-// ---------- Um produto: picos e quedas da venda no tempo ----------
+// ---------- Picos e quedas da venda no tempo (um produto ou uma categoria) ----------
 //
-// Abre ao clicar no produto. Mostra a venda por dia (últimos 90 dias), por semana e por mês (toda a base),
-// marcando:
+// Abre ao clicar no produto ou na categoria. Mostra a venda por dia (últimos 90 dias), por semana e por
+// mês (toda a base), marcando:
 //   pico  = o ponto de maior venda;
 //   queda = a maior queda em relação ao ponto anterior (só entre pontos completos: a semana e o mês
 //           de hoje ainda estão correndo e sempre pareceriam uma queda);
 // e, perto de cada um, as mudanças do preço de varejo (até 14 dias antes), que quase sempre explicam.
+// Na categoria, mostra também QUAIS PRODUTOS fizeram o pico e quais derrubaram a venda na queda,
+// e a precificação dos produtos dela.
 
 const DIAS_GRAFICO_DIA = 90;
+const DIAS_MOTIVO = 14;
+const PRODUTOS_NO_DESTAQUE = 5;
 // "2026-12" -> "2027-01"
 const proximoMes = (m) => {
   const [a, b] = [Number(m.slice(0, 4)), Number(m.slice(5, 7))];
   return b === 12 ? `${a + 1}-01` : `${a}-${String(b + 1).padStart(2, '0')}`;
 };
-const DIAS_MOTIVO = 14;
 
-function produtoPontos(linhas, chave, rotulo, de, ate, custoEstimado) {
+// Cada linha de venda já com a venda sem imposto (base) e o custo (estimado na venda por nota)
+function prepararLinhas(linhas, custoEstimado, codigo) {
+  return linhas.map((l) => {
+    const r = resultado(l, custoEstimado);
+    return { d: l.d, q: l.q, v: l.v, base: r.base, custo: r.custo, p: codigo };
+  });
+}
+
+// Agrupa as linhas por dia, semana ou mês, guardando quanto cada produto vendeu em cada ponto
+function agrupar(linhas, chave) {
   const grupos = new Map();
   for (const l of linhas) {
-    if (l.d < de || l.d > ate) continue;
     const k = chave(l.d);
-    if (!grupos.has(k)) grupos.set(k, { q: 0, v: 0, i: 0, qc: 0, vc: 0, ic: 0, c: 0 });
+    if (!grupos.has(k)) grupos.set(k, { q: 0, v: 0, base: 0, custo: 0, produtos: new Map() });
     const t = grupos.get(k);
-    t.q += l.q; t.v += l.v; t.i += l.i; t.qc += l.qc; t.vc += l.vc; t.ic += l.ic; t.c += l.c;
+    t.q += l.q; t.v += l.v; t.base += l.base; t.custo += l.custo;
+    t.produtos.set(l.p, (t.produtos.get(l.p) ?? 0) + l.v);
   }
-  return { grupos, ponto: (k, inicio, fim) => {
-    const t = grupos.get(k) ?? { q: 0, v: 0, i: 0, qc: 0, vc: 0, ic: 0, c: 0 };
-    const r = resultado(t, custoEstimado);
-    return { rotulo: rotulo(k), inicio, fim, venda: r2(t.v), qtd: r4(t.q), lucro: r2(r.base ? lucroDe(r) : null) };
-  } };
+  return (k, rotulo, inicio, fim) => {
+    const t = grupos.get(k) ?? { q: 0, v: 0, base: 0, custo: 0, produtos: new Map() };
+    return {
+      rotulo, inicio, fim, venda: r2(t.v), qtd: r4(t.q), lucro: r2(t.base ? t.base - t.custo : null), _produtos: t.produtos,
+    };
+  };
 }
 
 // Pico, maior queda e as mudanças de preço que aconteceram perto deles.
 // soComVenda (dia): compara só os dias que tiveram venda, cada um com o dia com venda anterior.
 // Sem isso, todo dia fechado (domingo, feriado) viraria uma "queda de 100%".
-function marcar(pontos, completos, mudancas, soComVenda = false) {
+function marcar(pontos, completos, mudancas, soComVenda, nomes) {
   if (!pontos.length) return { pico: null, queda: null };
   let pico = 0;
   pontos.forEach((p, i) => { if (p.venda > pontos[pico].venda) pico = i; });
@@ -800,43 +813,61 @@ function marcar(pontos, completos, mudancas, soComVenda = false) {
   const perto = (p) => mudancas
     .filter((m) => m.quando.slice(0, 10) >= somarDias(p.inicio, -DIAS_MOTIVO) && m.quando.slice(0, 10) <= p.fim)
     .map((m) => ({ ...m, subiu: m.depois > m.antes }));
-  return {
-    pico: pontos[pico].venda > 0 ? { indice: pico, ...pontos[pico], mudancas: perto(pontos[pico]) } : null,
-    queda: queda ? {
-      indice: queda.indice, ...pontos[queda.indice], variacao: r4(queda.variacao),
-      anterior: pontos[queda.anterior].venda, mudancas: perto(pontos[queda.indice]),
-    } : null,
-  };
+  const limpo = ({ _produtos, ...resto }) => resto;
+  const nome = (codigo) => nomes?.get(codigo) ?? `Produto ${codigo}`;
+
+  const resposta = { pico: null, queda: null };
+  if (pontos[pico].venda > 0) {
+    const p = pontos[pico];
+    resposta.pico = {
+      indice: pico, ...limpo(p), mudancas: perto(p),
+      // Quem mais vendeu no pico (só faz sentido com mais de um produto)
+      produtos: nomes ? [...p._produtos].sort((a, b) => b[1] - a[1]).slice(0, PRODUTOS_NO_DESTAQUE)
+        .map(([codigo, venda]) => ({ codigo, descricao: nome(codigo), venda: r2(venda) })) : [],
+    };
+  }
+  if (queda) {
+    const p = pontos[queda.indice];
+    const a = pontos[queda.anterior];
+    // Quem mais perdeu venda de um ponto para o outro
+    const perdas = [];
+    if (nomes) {
+      for (const codigo of new Set([...a._produtos.keys(), ...p._produtos.keys()])) {
+        const antes = a._produtos.get(codigo) ?? 0;
+        const depois = p._produtos.get(codigo) ?? 0;
+        if (depois < antes) perdas.push({ codigo, descricao: nome(codigo), antes: r2(antes), depois: r2(depois), perdeu: r2(antes - depois) });
+      }
+      perdas.sort((x, y) => y.perdeu - x.perdeu);
+    }
+    resposta.queda = {
+      indice: queda.indice, ...limpo(p), variacao: r4(queda.variacao), anterior: a.venda,
+      mudancas: perto(p), produtos: perdas.slice(0, PRODUTOS_NO_DESTAQUE),
+    };
+  }
+  return resposta;
 }
 
-async function produto(query, params) {
-  const codigo = Number(params.codigo);
-  if (!Number.isInteger(codigo) || codigo <= 0) throw new AppError('Código do produto inválido');
-  const [base, margens] = await Promise.all([lerBase(query.atualizar === '1'), classificacao.listar(ALVO_MARGEM)]);
-  const cadastro = base.produtos.get(codigo);
-  if (!cadastro) throw new AppError('Produto não encontrado', 404);
-  const linhas = base.vendasPorProduto.get(codigo) ?? [];
-  const mudancas = base.mudancasPorProduto.get(codigo) ?? [];
-  const custo = cadastro.custo_medio;
-  const hoje = base.hoje;
+// Séries, pico, queda, tendência e dia da semana de um conjunto de linhas preparadas
+function montarDetalhe(linhas, mudancas, hoje, nomes = null) {
+  const limpar = (pontos) => pontos.map(({ _produtos, ...resto }) => resto);
 
   // Dia: últimos 90 dias, todos os dias (sem venda = zero); hoje está correndo
   const deDia = somarDias(hoje, -(DIAS_GRAFICO_DIA - 1));
-  const dias = produtoPontos(linhas, (d) => d, diaMes, deDia, hoje, custo);
+  const porDia = agrupar(linhas.filter((l) => l.d >= deDia && l.d <= hoje), (d) => d);
   const dia = [];
-  for (let d = deDia; d <= hoje; d = somarDias(d, 1)) dia.push(dias.ponto(d, d, d));
+  for (let d = deDia; d <= hoje; d = somarDias(d, 1)) dia.push(porDia(d, diaMes(d), d, d));
 
-  // Semana (segunda a domingo) e mês: desde a primeira venda do produto na base
-  const primeira = linhas.find((l) => l.q !== 0)?.d ?? hoje;
-  // A semana leva o ano junto: a série pode ter mais de um ano (27/10/25 e 27/10/26)
-  const semanas = produtoPontos(linhas, inicioDaSemana, (k) => `sem. ${diaMes(k)}/${k.slice(2, 4)}`, primeira, hoje, custo);
+  // Semana (segunda a domingo, com o ano: a série pode ter mais de um ano) e mês, desde a primeira venda
+  const primeira = linhas.reduce((m, l) => (l.q !== 0 && l.d < m ? l.d : m), hoje);
+  const porSemana = agrupar(linhas, inicioDaSemana);
   const semana = [];
-  for (let s = inicioDaSemana(primeira); s <= hoje; s = somarDias(s, 7)) semana.push(semanas.ponto(s, s, somarDias(s, 6)));
-  const meses = produtoPontos(linhas, (d) => d.slice(0, 7),
-    (k) => `${MESES[Number(k.slice(5, 7)) - 1]}/${k.slice(2, 4)}`, primeira, hoje, custo);
+  for (let k = inicioDaSemana(primeira); k <= hoje; k = somarDias(k, 7)) {
+    semana.push(porSemana(k, `sem. ${diaMes(k)}/${k.slice(2, 4)}`, k, somarDias(k, 6)));
+  }
+  const porMes = agrupar(linhas, (d) => d.slice(0, 7));
   const mes = [];
   for (let m = primeira.slice(0, 7); m <= hoje.slice(0, 7); m = proximoMes(m)) {
-    mes.push(meses.ponto(m, `${m}-01`, somarDias(`${proximoMes(m)}-01`, -1)));
+    mes.push(porMes(m, `${MESES[Number(m.slice(5, 7)) - 1]}/${m.slice(2, 4)}`, `${m}-01`, somarDias(`${proximoMes(m)}-01`, -1)));
   }
 
   // Tendência: as 4 últimas semanas completas contra as 4 de antes
@@ -852,31 +883,87 @@ async function produto(query, params) {
     vezes[w] += 1;
     totais[w] += p.venda;
   }
-  const diaSemana = [1, 2, 3, 4, 5, 6, 0].map((w) => ({ dia: DIAS_SEMANA[w], media: r2(vezes[w] ? totais[w] / vezes[w] : 0) }));
 
+  // O último ponto de cada série está incompleto (hoje, esta semana, este mês)
+  const serie = (pontos, soComVenda) => ({
+    ...marcar(pontos, pontos.length - 1, mudancas, soComVenda, nomes),
+    pontos: limpar(pontos),
+  });
+  return {
+    tendencia: { ultimas: r2(ultimas), anteriores: r2(anteriores), variacao: r4(variacao(ultimas, anteriores)) },
+    dia_semana: [1, 2, 3, 4, 5, 6, 0].map((w) => ({ dia: DIAS_SEMANA[w], media: r2(vezes[w] ? totais[w] / vezes[w] : 0) })),
+    series: { dia: serie(dia, true), semana: serie(semana, false), mes: serie(mes, false) },
+    mudancas: [...mudancas].sort((a, b) => (a.quando < b.quando ? 1 : -1)),
+  };
+}
+
+// Um produto
+async function produto(query, params) {
+  const codigo = Number(params.codigo);
+  if (!Number.isInteger(codigo) || codigo <= 0) throw new AppError('Código do produto inválido');
+  const [base, margens] = await Promise.all([lerBase(query.atualizar === '1'), classificacao.listar(ALVO_MARGEM)]);
+  const cadastro = base.produtos.get(codigo);
+  if (!cadastro) throw new AppError('Produto não encontrado', 404);
+  const linhas = prepararLinhas(base.vendasPorProduto.get(codigo) ?? [], cadastro.custo_medio, codigo);
   const real = base.custosReais.get(codigo);
   const desejada = margens.get(codigo);
   return {
-    hoje,
+    hoje: base.hoje,
     produto: {
       codigo,
       descricao: cadastro.descricao,
       unidade: cadastro.unidade,
       varejo: cadastro.varejo,
-      custo_medio: custo,
+      custo_medio: cadastro.custo_medio,
       custo_real: r4(real?.custo ?? null),
       saldo: r4(cadastro.saldo),
       margem_desejada: desejada ? Number(desejada.tipo) : null,
     },
-    tendencia: { ultimas: r2(ultimas), anteriores: r2(anteriores), variacao: r4(variacao(ultimas, anteriores)) },
-    dia_semana: diaSemana,
-    // O último ponto de cada série está incompleto (hoje, esta semana, este mês)
-    series: {
-      dia: { pontos: dia, ...marcar(dia, dia.length - 1, mudancas, true) },
-      semana: { pontos: semana, ...marcar(semana, semana.length - 1, mudancas) },
-      mes: { pontos: mes, ...marcar(mes, mes.length - 1, mudancas) },
+    ...montarDetalhe(linhas, base.mudancasPorProduto.get(codigo) ?? [], base.hoje),
+  };
+}
+
+// Uma categoria: a mesma janela do produto, somando os produtos dela, com quem puxou o pico e a queda
+// e a precificação de cada produto (os mesmos números da lista da Análise, com os mesmos filtros).
+async function categoria(query, acesso = {}) {
+  const nome = query.nome ? String(query.nome) : null;
+  if (!nome) throw new AppError('Informe a categoria ("nome"; "__sem" para os produtos sem categoria)');
+  const lista = await analise({ dias: query.dias, tipo: query.tipo, categoria: nome }, acesso);
+  const base = await lerBase(false);
+
+  const nomes = new Map(lista.produtos.map((p) => [p.codigo, p.descricao]));
+  const linhas = [];
+  const mudancas = [];
+  for (const p of lista.produtos) {
+    linhas.push(...prepararLinhas(base.vendasPorProduto.get(p.codigo) ?? [], p.custo_medio, p.codigo));
+    for (const m of base.mudancasPorProduto.get(p.codigo) ?? []) mudancas.push({ ...m, produto: p.codigo, descricao: p.descricao });
+  }
+
+  // Como está a precificação da categoria
+  const comMargem = lista.produtos.filter((p) => p.margem_desejada != null);
+  const abaixo = comMargem.filter((p) => p.preco_sugerido && p.varejo > 0 && p.varejo < p.preco_sugerido * 0.99);
+  const naoPaga = lista.decisoes.abaixo_custo.length;
+  const margensDesejadas = [...new Set(comMargem.map((p) => p.margem_desejada))];
+
+  const campos = ['codigo', 'descricao', 'unidade', 'curva', 'qtd', 'venda', 'margem', 'margem_real', 'margem_anterior',
+    'varejo', 'custo_medio', 'custo_real', 'aliquota', 'bonificacao', 'margem_do_preco', 'margem_desejada',
+    'margem_desejada_por', 'preco_sugerido', 'diferenca_preco', 'var_venda'];
+  return {
+    hoje: base.hoje,
+    dias: lista.dias,
+    pode_editar: lista.pode_editar,
+    reguas: lista.reguas,
+    categoria: { nome: nome === SEM_CATEGORIA ? null : nome, ...lista.resumo },
+    precificacao: {
+      produtos: lista.produtos.length,
+      com_margem_desejada: comMargem.length,
+      abaixo_da_desejada: abaixo.length,
+      preco_nao_paga_custo: naoPaga,
+      // Quando todos têm a mesma margem desejada, a tela mostra qual é
+      margem_unica: margensDesejadas.length === 1 && comMargem.length === lista.produtos.length ? margensDesejadas[0] : null,
     },
-    mudancas: [...mudancas].reverse(),
+    produtos: lista.produtos.map((p) => Object.fromEntries(campos.map((k) => [k, p[k] ?? null]))),
+    ...montarDetalhe(linhas, mudancas, base.hoje, nomes),
   };
 }
 
@@ -906,4 +993,4 @@ async function definirMargens(query, params, corpo, usuario) {
   return classificacao.definir(ALVO_MARGEM, codigos, margem, usuario || 'chave mestra');
 }
 
-module.exports = { analise, produto, definirMargens, SEM_CATEGORIA };
+module.exports = { analise, produto, categoria, definirMargens, SEM_CATEGORIA };

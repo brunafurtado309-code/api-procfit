@@ -25,6 +25,14 @@ module.exports = {
     }
   },
   produtoAnalise: acao(analise.produto),
+  // Categoria: também diz se quem está logado pode aplicar a margem desejada a todos os produtos dela
+  categoriaAnalise: async (req, res, next) => {
+    try {
+      res.json(await analise.categoria(req.query, { podeEditar: podeEditarPreco(req) }));
+    } catch (err) {
+      next(err);
+    }
+  },
   definirMargens: acao(analise.definirMargens),
   podeEditarPreco,
   notas: acao(service.notas),

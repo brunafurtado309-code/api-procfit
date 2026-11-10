@@ -2357,7 +2357,8 @@ button.barra:hover { background: var(--verde-suave); color: inherit; }
 .tela-precificacao .analise-curva--c { background: var(--fundo); color: var(--tinta-suave); border: 1px solid var(--linha-forte); }
 /* Margem desejada dentro da célula do preço sugerido (campo pequeno, só para quem edita preço) */
 .tela-precificacao .analise-desejada {
-  display: inline-flex;
+  display: flex;
+  justify-content: flex-end;
   align-items: center;
   gap: 0.25rem;
   margin-top: 0.15rem;
@@ -2535,3 +2536,28 @@ input, select { font-size: var(--texto-pequeno); padding: 0.32rem 0.55rem; }
 .paginador__paginas button.paginador__atual { border-bottom: 2px solid var(--verde); border-radius: 0; color: var(--verde); }
 .paginador__paginas button:disabled { opacity: 0.35; cursor: default; }
 .paginador__reticencias { padding: 0 0.2rem; }
+
+/* --- Precificação, janela da categoria: quem fez o pico e a queda, e a precificação --- */
+.produto-analise-destaques {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 0.5rem 2rem;
+  margin-top: 0.5rem;
+}
+.produto-analise-destaques:empty { display: none; }
+.produto-analise-destaque h4 { margin: 0 0 0.2rem; font-size: var(--texto-pequeno); color: var(--tinta-suave); }
+.produto-analise-destaque ul { margin: 0; padding: 0; list-style: none; }
+.produto-analise-destaque li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.2rem 0;
+  border-bottom: 1px solid var(--linha);
+  font-size: var(--texto-pequeno);
+}
+.produto-analise-destaque .qtd { white-space: nowrap; color: var(--tinta-suave); }
+.produto-analise-destaque .qtd.negativo { color: var(--alerta); font-weight: 600; }
+.produto-analise-precificacao { margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid var(--linha); }
+.produto-analise-precificacao .indicadores { margin-top: 0.4rem; }
+.produto-analise-lote { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.6rem; font-size: var(--texto-pequeno); }
+.produto-analise-lote input { width: 5rem; }
