@@ -17,6 +17,12 @@
 //   modulos.lojaNoFiltro(sel) telas com filtro de empresa próprio (Logística, Entradas e saídas)
 //                             começam na loja do menu
 // modulos.PAGINAS também é usado pela tela inicial (inicio.js) para montar os cartões.
+//
+// MENU EM PASTAS (nov/2026): os módulos com várias telas viram pastas no menu da esquerda
+// (SUBMENUS abaixo). Clicar em "Financeiro" abre as funções dele, uma dentro da outra
+// (Financeiro > Contas a receber > Títulos em aberto...). As abas e divisões que ficavam em cima
+// da tela (NAVS_NO_MENU) saem da tela, porque agora estão no menu. Se o item é uma aba da própria
+// tela, o menu só aperta a aba (a tela não recarrega). Pastas abertas ficam guardadas no navegador.
 
 const modulos = (() => {
   // Ícones do menu: desenhos simples de linha (SVG), na cor do texto
@@ -53,6 +59,49 @@ const modulos = (() => {
     admin: { titulo: 'Administrativo', pagina: 'admin.html',
       descricao: 'Ações registradas no PROCFIT: quem fez o quê, por dia e por usuário.' },
   };
+  // Funções de cada módulo no menu em pastas. "aba" = botão da própria tela (data-aba);
+  // "itens" = pasta dentro da pasta.
+  const SUBMENUS = {
+    vendas: [
+      { titulo: 'Resumo', pagina: 'index.html#parte-resumo' },
+      { titulo: 'Vendedores', pagina: 'index.html#parte-vendedores' },
+      { titulo: 'Caixa das lojas', pagina: 'index.html#parte-caixa' },
+      { titulo: 'Gráficos', pagina: 'index.html#parte-graficos' },
+    ],
+    financeiro: [
+      { titulo: 'Contas a receber', itens: [
+        { titulo: 'Títulos em aberto', pagina: 'financeiro.html#titulos', aba: 'titulos' },
+        { titulo: 'Baixa parcial', pagina: 'financeiro.html#parciais', aba: 'parciais' },
+        { titulo: 'Boletos e prazos', pagina: 'financeiro.html#boletos', aba: 'boletos' },
+        { titulo: 'Cobrança', pagina: 'financeiro.html#cobranca', aba: 'cobranca' },
+        { titulo: 'Despachos', pagina: 'despachos.html' },
+        { titulo: 'Clientes e crédito', pagina: 'clientes.html' },
+        { titulo: 'Recebimentos', pagina: 'recebimentos.html' },
+        { titulo: 'Conciliação com o banco', pagina: 'conciliacao.html' },
+      ] },
+      { titulo: 'Contas a pagar', pagina: 'pagar.html' },
+    ],
+    precificacao: [
+      { titulo: 'Análise', pagina: 'precificacao.html#analise', aba: 'analise' },
+      { titulo: 'Notas e fornecedores', pagina: 'precificacao.html#notas', aba: 'notas' },
+      { titulo: 'Produtos', pagina: 'precificacao.html#produtos', aba: 'produtos' },
+    ],
+    movimentos: [
+      { titulo: 'Notas de entrada', pagina: 'movimentos.html#notas', aba: 'notas' },
+      { titulo: 'Por produto', pagina: 'movimentos.html#produtos', aba: 'produtos' },
+    ],
+  };
+  // Navegação de cima da tela que passou para o menu em pastas (fica escondida)
+  const NAVS_NO_MENU = [
+    'nav.divisao[aria-label="Parte do financeiro"]',
+    'nav.abas[aria-label="Visões do contas a receber"]',
+    'nav.abas[aria-label="Visões do financeiro"]',
+    '#painel > nav.abas#abas', // financeiro.html
+    'nav.abas[aria-label="Partes da precificação"]',
+    'nav.abas[aria-label="Visões de entradas e saídas"]',
+    'nav.secoes[aria-label="Partes da tela"]', // vendas
+  ].join(', ');
+  const PASTAS = 'menu-pastas-abertas';
   const RECOLHIDO = 'menu-lateral-recolhido';
   const LOJA = 'painel-loja';
 
@@ -184,6 +233,107 @@ const modulos = (() => {
     return link;
   }
 
+  // ---------- Menu em pastas ----------
+  const arquivoDe = (pagina) => (pagina.split('#')[0] || 'index.html');
+  const arquivoAtual = () => window.location.pathname.split('/').pop() || 'index.html';
+  const abaDaTela = () => document.querySelector('nav.abas .aba--ativa[data-aba]')?.dataset.aba ?? null;
+
+  const lerPastas = () => { try { return new Set(JSON.parse(localStorage.getItem(PASTAS) ?? '[]')); } catch (_) { return new Set(); } };
+  const guardarPastas = (abertas) => { try { localStorage.setItem(PASTAS, JSON.stringify([...abertas])); } catch (_) { /* sem problema */ } };
+
+  // A função do menu é a tela aberta agora?
+  function ehAtual(f) {
+    if (arquivoDe(f.pagina) !== arquivoAtual()) return false;
+    if (f.aba) return f.aba === (abaDaTela() ?? f.aba);
+    const ancora = f.pagina.split('#')[1];
+    return ancora ? window.location.hash === `#${ancora}` : true;
+  }
+  // A pasta tem a tela aberta agora? (pela página; a aba é marcada só no item)
+  const temAtual = (lista) => lista.some((f) => (f.itens ? temAtual(f.itens) : arquivoDe(f.pagina) === arquivoAtual()));
+  const primeiraPagina = (lista) => (lista[0].itens ? primeiraPagina(lista[0].itens) : lista[0].pagina);
+
+  // Uma função (folha) da pasta
+  function subitem(f, nivel, aoTrocar) {
+    const link = document.createElement('a');
+    link.className = 'lateral__subitem';
+    link.style.setProperty('--nivel', nivel);
+    link.href = f.pagina;
+    link.title = f.titulo;
+    link.textContent = f.titulo;
+    link.funcao = f;
+    link.addEventListener('click', (evento) => {
+      // Aba da própria tela: aperta o botão da aba, sem recarregar
+      if (!f.aba || arquivoDe(f.pagina) !== arquivoAtual()) return;
+      const botao = document.querySelector(`nav.abas .aba[data-aba="${f.aba}"]`);
+      if (!botao) return;
+      evento.preventDefault();
+      botao.click();
+      window.history.replaceState(null, '', `#${f.aba}`);
+      aoTrocar();
+    });
+    return link;
+  }
+
+  // Uma pasta: botão que abre/fecha + as funções dentro (pode ter pasta dentro de pasta)
+  function pasta({ chave, titulo, iconeNome, lista, nivel, abertas, aoTrocar }) {
+    const caixa = document.createElement('div');
+    caixa.className = 'lateral__pasta';
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    botao.className = nivel === 0 ? 'lateral__item lateral__pasta-botao' : 'lateral__subitem lateral__pasta-botao';
+    if (nivel > 0) botao.style.setProperty('--nivel', nivel);
+    botao.title = titulo;
+    if (iconeNome) botao.append(icone(iconeNome));
+    const texto = document.createElement('span');
+    texto.className = 'lateral__texto';
+    texto.textContent = titulo;
+    const seta = document.createElement('span');
+    seta.className = 'lateral__seta';
+    seta.setAttribute('aria-hidden', 'true');
+    botao.append(texto, seta);
+
+    const filhos = document.createElement('div');
+    filhos.className = 'lateral__filhos';
+    for (const f of lista) {
+      filhos.append(f.itens
+        ? pasta({ chave: `${chave}/${f.titulo}`, titulo: f.titulo, lista: f.itens, nivel: nivel + 1, abertas, aoTrocar })
+        : subitem(f, nivel + 1, aoTrocar));
+    }
+
+    const abrir = (sim) => {
+      caixa.classList.toggle('lateral__pasta--aberta', sim);
+      botao.setAttribute('aria-expanded', String(sim));
+      filhos.hidden = !sim;
+    };
+    // A pasta da tela aberta já vem aberta
+    abrir(abertas.has(chave) || temAtual(lista));
+    if (temAtual(lista)) caixa.classList.add('lateral__pasta--atual');
+
+    botao.addEventListener('click', () => {
+      // Menu recolhido (só ícones): não dá para mostrar a pasta, então vai para a primeira função
+      if (document.body.classList.contains('lateral-recolhida') || window.matchMedia('(max-width: 720px)').matches) {
+        window.location.href = primeiraPagina(lista);
+        return;
+      }
+      const sim = !caixa.classList.contains('lateral__pasta--aberta');
+      abrir(sim);
+      if (sim) abertas.add(chave); else abertas.delete(chave);
+      guardarPastas(abertas);
+    });
+    caixa.append(botao, filhos);
+    return caixa;
+  }
+
+  // Marca no menu a função da tela aberta (de novo a cada troca de aba)
+  function marcarFuncaoAtual(lista) {
+    for (const link of lista.querySelectorAll('.lateral__subitem[href]')) {
+      const atual = ehAtual(link.funcao);
+      link.classList.toggle('lateral__subitem--ativo', atual);
+      if (atual) link.setAttribute('aria-current', 'page');
+      else link.removeAttribute('aria-current');
+    }
+  }
+
   const lerRecolhido = () => { try { return localStorage.getItem(RECOLHIDO) === '1'; } catch (_) { return false; } };
   const guardarRecolhido = (sim) => { try { localStorage.setItem(RECOLHIDO, sim ? '1' : '0'); } catch (_) { /* sem problema */ } };
 
@@ -223,8 +373,15 @@ const modulos = (() => {
     const lista = document.createElement('div');
     lista.className = 'lateral__lista';
     lista.append(item('inicio', 'Início', 'inicio.html', atual));
+    const abertas = lerPastas();
+    const aoTrocar = () => marcarFuncaoAtual(lista);
     for (const setor of setores.filter((s) => PAGINAS[s])) {
-      lista.append(item(setor, PAGINAS[setor].titulo, PAGINAS[setor].pagina, atual));
+      if (SUBMENUS[setor]) {
+        lista.append(pasta({ chave: setor, titulo: PAGINAS[setor].titulo, iconeNome: setor,
+          lista: SUBMENUS[setor], nivel: 0, abertas, aoTrocar }));
+      } else {
+        lista.append(item(setor, PAGINAS[setor].titulo, PAGINAS[setor].pagina, atual));
+      }
     }
     // Usuários: só a conta principal. Já entra no menu (escondido) para o sessao.js não criar outro.
     const usuarios = item('usuarios', 'Usuários', 'usuarios.html', atual);
@@ -242,6 +399,16 @@ const modulos = (() => {
     document.body.prepend(menu);
     document.body.classList.add('com-lateral');
     aplicar(lerRecolhido());
+
+    // Abas e divisões de cima da tela agora estão no menu
+    for (const nav of document.querySelectorAll(NAVS_NO_MENU)) nav.classList.add('no-menu');
+    // A tela pode trocar de aba sozinha (filtro guardado, endereço): o menu acompanha
+    aoTrocar();
+    setTimeout(aoTrocar, 0);
+    for (const nav of document.querySelectorAll('nav.abas')) {
+      new MutationObserver(aoTrocar).observe(nav, { subtree: true, attributes: true, attributeFilter: ['class'] });
+    }
+    window.addEventListener('hashchange', aoTrocar);
 
     fetch('/auth/eu', { headers: { 'x-api-key': lerChave() } })
       .then((r) => (r.ok ? r.json() : null))

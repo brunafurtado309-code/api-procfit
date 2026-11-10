@@ -2678,6 +2678,75 @@ body.com-lateral #modulos { display: none !important; }
 }
 .lateral-recolhida .lateral__item { justify-content: center; padding: 0.5rem 0; }
 .lateral-recolhida .lateral__texto { display: none; }
+
+/* Menu em pastas (modulos.js, SUBMENUS): Financeiro > Contas a receber > Títulos em aberto... */
+.no-menu { display: none !important; } /* abas de cima da tela que passaram para o menu */
+button.lateral__pasta-botao,
+button.lateral__pasta-botao:hover {
+  width: 100%;
+  border: 0;
+  text-align: left;
+  font-weight: 600;
+}
+button.lateral__pasta-botao { background: none; }
+button.lateral__pasta-botao.lateral__item:hover { background: var(--verde-suave); color: var(--tinta); }
+.lateral__pasta--atual > .lateral__pasta-botao { color: var(--tinta); }
+.lateral__pasta-botao .lateral__texto { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
+.lateral__seta {
+  flex: 0 0 auto;
+  width: 0.4rem;
+  height: 0.4rem;
+  margin-right: 0.15rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  opacity: 0.7;
+  transition: transform 0.15s ease;
+}
+.lateral__pasta--aberta > .lateral__pasta-botao .lateral__seta { transform: rotate(45deg); }
+/* Funções dentro da pasta: linha fina à esquerda, como uma árvore de pastas */
+.lateral__filhos {
+  display: grid;
+  gap: 1px;
+  margin: 0.1rem 0 0.25rem 1.15rem;
+  padding-left: 0.4rem;
+  border-left: 1px solid var(--linha);
+}
+.lateral__subitem,
+button.lateral__subitem,
+button.lateral__subitem:hover {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.3rem 0.5rem;
+  border: 0;
+  border-radius: var(--raio);
+  background: none;
+  color: var(--tinta-suave);
+  font-size: var(--texto-mini);
+  font-weight: 500;
+  line-height: 1.3;
+  text-align: left;
+  text-decoration: none;
+  white-space: normal; /* nome comprido quebra em duas linhas, sem cortar */
+}
+.lateral__subitem:hover,
+button.lateral__subitem:hover { background: var(--verde-suave); color: var(--tinta); }
+button.lateral__subitem { font-weight: 600; }
+.lateral__subitem--ativo,
+.lateral__subitem--ativo:hover {
+  background: var(--verde-suave);
+  color: var(--verde-escuro);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--verde);
+}
+/* Menu recolhido ou tela estreita: só os ícones, sem as funções */
+.lateral-recolhida .lateral__filhos,
+.lateral-recolhida .lateral__seta { display: none !important; }
+@media (max-width: 720px) {
+  .lateral__filhos, .lateral__seta { display: none !important; }
+}
 @media (max-width: 720px) {
   body.com-lateral { padding-left: var(--lateral-recolhida); }
   .lateral { width: var(--lateral-recolhida); }
