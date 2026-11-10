@@ -61,16 +61,25 @@ const modulos = (() => {
 
   const lojaAtual = () => lojaGuardada;
 
+  // Lista de lojas. Se a API falhar, o erro vai para quem pediu (o seletor mostra o motivo)
+  // e o próximo pedido tenta de novo.
   function lerLojas() {
     listaDeLojas ??= fetch('/lojas', { headers: { 'x-api-key': lerChave() } })
-      .then((r) => (r.ok ? r.json() : { lojas: [] }))
-      .then((corpo) => corpo.lojas ?? [])
-      .catch(() => []);
+      .then(async (r) => {
+        const corpo = await r.json().catch(() => ({}));
+        if (r.status === 404) throw new Error('O servidor ainda não tem a lista de lojas (atualização não publicada).');
+        if (!r.ok) throw new Error(corpo.erro ?? `A lista de lojas não carregou (erro ${r.status}).`);
+        return corpo.lojas ?? [];
+      })
+      .catch((erro) => { listaDeLojas = null; throw erro; });
     return listaDeLojas;
   }
 
-  const nomeDaLoja = async (codigo = lojaGuardada) =>
-    (codigo ? (await lerLojas()).find((l) => String(l.codigo) === String(codigo))?.nome : null) ?? null;
+  const nomeDaLoja = async (codigo = lojaGuardada) => {
+    if (!codigo) return null;
+    const lojas = await lerLojas().catch(() => []);
+    return lojas.find((l) => String(l.codigo) === String(codigo))?.nome ?? null;
+  };
 
   function escolherLoja(codigo) {
     const valor = codigo == null ? '' : String(codigo);
@@ -99,6 +108,13 @@ const modulos = (() => {
       // Loja guardada que parou de vender: some do seletor e o painel volta para todas
       if (lojaGuardada && !lojas.some((l) => String(l.codigo) === lojaGuardada)) escolherLoja('');
       select.value = lojaGuardada;
+    }).catch((erro) => {
+      // Fica em "Todas", mas avisa por que as lojas não aparecem
+      const aviso = new Option(`⚠ ${erro.message}`, '__erro');
+      aviso.disabled = true;
+      select.append(aviso);
+      select.title = erro.message;
+      console.error('Lojas:', erro);
     });
     select.addEventListener('change', () => escolherLoja(select.value));
     return select;
