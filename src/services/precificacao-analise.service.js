@@ -326,6 +326,75 @@ function efeitoDoPreco(mudancas, linhas, de, hoje, custoEstimado) {
   };
 }
 
+// Cada mudança de preço de um produto, para a janela dele: venda, quantidade e lucro por dia antes e depois.
+// A janela vai até 28 dias para cada lado, mas para na mudança vizinha (uma não contamina a outra).
+// Com menos de 7 dias de cada lado, é cedo (ou o preço mudou de novo logo): fica marcado e sem resultado.
+function analisarMudancas(mudancas, linhas, hoje, custoEstimado, custoReal) {
+  const validas = (mudancas ?? []).filter((m) => m.antes > 0 && m.depois > 0);
+  return validas.map((m, i) => {
+    const dia = m.quando.slice(0, 10);
+    const anterior = validas[i - 1]?.quando.slice(0, 10);
+    const proxima = validas[i + 1]?.quando.slice(0, 10);
+    const diasDepois = diasEntre(dia, proxima ? somarDias(proxima, -1) : hoje);
+    const diasAntes = anterior ? diasEntre(somarDias(anterior, 1), dia) : JANELA_PRECO;
+    const janela = Math.min(JANELA_PRECO, diasDepois, diasAntes);
+    const base = {
+      quando: m.quando, antes: m.antes, depois: m.depois, quem: m.quem, fora: m.fora,
+      produto: m.produto ?? null, descricao: m.descricao ?? null,
+      subiu: m.depois > m.antes, var_preco: r4(variacao(m.depois, m.antes)), janela,
+    };
+    if (janela < DIAS_MINIMOS_DEPOIS) {
+      return {
+        ...base, cedo: true,
+        resultado: proxima && diasEntre(dia, proxima) < DIAS_MINIMOS_DEPOIS
+          ? `O preço mudou de novo ${diasEntre(dia, proxima)} dias depois: curto demais para medir.`
+          : `Cedo para medir: ${diasDepois} dias com o preço novo (precisa de ${DIAS_MINIMOS_DEPOIS}).`,
+      };
+    }
+    // O dia da mudança fica fora das duas janelas (metade do dia com cada preço)
+    const porDia = (t) => {
+      const r = resultado(t, custoEstimado);
+      const real = custoReal ? r.base - t.q * custoReal : null;
+      return {
+        qtd: r4(t.q / janela), venda: r2(t.v / janela),
+        lucro: r2(r.base ? lucroDe(r) / janela : null), lucro_real: r2(real == null ? null : real / janela),
+      };
+    };
+    const a = porDia(somar(linhas, somarDias(dia, -janela), somarDias(dia, -1)));
+    const b = porDia(somar(linhas, somarDias(dia, 1), somarDias(dia, janela)));
+    // O lucro que decide é o real (com a bonificação), quando tem; senão o do PROCFIT
+    const lucroA = a.lucro_real ?? a.lucro;
+    const lucroB = b.lucro_real ?? b.lucro;
+    const varQtd = variacao(b.qtd, a.qtd);
+    const lucroSubiu = lucroA != null && lucroB != null ? lucroB > lucroA : null;
+    let resultadoTexto;
+    let bom;
+    if (base.subiu) {
+      if (varQtd != null && varQtd <= -EFEITO_QTD) {
+        bom = lucroSubiu === true;
+        resultadoTexto = bom ? 'Vende menos, mas lucra mais por dia.' : 'Perdeu venda e lucro.';
+      } else {
+        bom = true;
+        resultadoTexto = varQtd != null && varQtd < 0 ? 'Subiu e a venda caiu pouco.' : 'Subiu sem perder venda.';
+      }
+    } else if (varQtd == null ? b.qtd > 0 : varQtd >= EFEITO_QTD) {
+      bom = lucroSubiu !== false;
+      resultadoTexto = bom ? 'Vende mais e lucra mais.' : 'Vende mais, mas lucra menos por dia.';
+    } else {
+      bom = false;
+      resultadoTexto = 'Baixou e a venda não reagiu: perdeu margem sem ganhar volume.';
+    }
+    return {
+      ...base, cedo: false,
+      antes_por_dia: a, depois_por_dia: b,
+      var_qtd: r4(varQtd), var_venda: r4(variacao(b.venda, a.venda)),
+      var_lucro: lucroA != null && lucroB != null && Math.abs(lucroA) > 0 ? r4((lucroB - lucroA) / Math.abs(lucroA)) : null,
+      lucro_real: a.lucro_real != null,
+      bom, resultado: resultadoTexto,
+    };
+  });
+}
+
 // ---------- A análise ----------
 
 async function analise(query, acesso = {}) {
@@ -762,10 +831,11 @@ const proximoMes = (m) => {
 };
 
 // Cada linha de venda já com a venda sem imposto (base) e o custo (estimado na venda por nota)
-function prepararLinhas(linhas, custoEstimado, codigo) {
+function prepararLinhas(linhas, custoEstimado, codigo, custoReal = null) {
   return linhas.map((l) => {
     const r = resultado(l, custoEstimado);
-    return { d: l.d, q: l.q, v: l.v, base: r.base, custo: r.custo, p: codigo };
+    // Custo real (bonificação descontada) em todas as unidades; sem ele, o do PROCFIT
+    return { d: l.d, q: l.q, v: l.v, base: r.base, custo: r.custo, real: custoReal ? l.q * custoReal : r.custo, p: codigo };
   });
 }
 
@@ -774,15 +844,17 @@ function agrupar(linhas, chave) {
   const grupos = new Map();
   for (const l of linhas) {
     const k = chave(l.d);
-    if (!grupos.has(k)) grupos.set(k, { q: 0, v: 0, base: 0, custo: 0, produtos: new Map() });
+    if (!grupos.has(k)) grupos.set(k, { q: 0, v: 0, base: 0, custo: 0, real: 0, produtos: new Map() });
     const t = grupos.get(k);
-    t.q += l.q; t.v += l.v; t.base += l.base; t.custo += l.custo;
+    t.q += l.q; t.v += l.v; t.base += l.base; t.custo += l.custo; t.real += l.real;
     t.produtos.set(l.p, (t.produtos.get(l.p) ?? 0) + l.v);
   }
   return (k, rotulo, inicio, fim) => {
-    const t = grupos.get(k) ?? { q: 0, v: 0, base: 0, custo: 0, produtos: new Map() };
+    const t = grupos.get(k) ?? { q: 0, v: 0, base: 0, custo: 0, real: 0, produtos: new Map() };
     return {
-      rotulo, inicio, fim, venda: r2(t.v), qtd: r4(t.q), lucro: r2(t.base ? t.base - t.custo : null), _produtos: t.produtos,
+      rotulo, inicio, fim, venda: r2(t.v), qtd: r4(t.q),
+      lucro: r2(t.base ? t.base - t.custo : null), lucro_real: r2(t.base ? t.base - t.real : null),
+      preco_medio: r4(t.q > 0 ? t.v / t.q : null), _produtos: t.produtos,
     };
   };
 }
@@ -884,10 +956,16 @@ function montarDetalhe(linhas, mudancas, hoje, nomes = null) {
     totais[w] += p.venda;
   }
 
+  // Em cada ponto: quantas vezes o preço subiu e baixou dentro dele (▲ ▼ no gráfico e na tabela)
+  const comMudancas = (pontos) => pontos.map((p) => {
+    const dentro = mudancas.filter((m) => m.quando.slice(0, 10) >= p.inicio && m.quando.slice(0, 10) <= p.fim);
+    return { ...p, subiu: dentro.filter((m) => m.depois > m.antes).length, baixou: dentro.filter((m) => m.depois < m.antes).length };
+  });
+
   // O último ponto de cada série está incompleto (hoje, esta semana, este mês)
   const serie = (pontos, soComVenda) => ({
     ...marcar(pontos, pontos.length - 1, mudancas, soComVenda, nomes),
-    pontos: limpar(pontos),
+    pontos: comMudancas(limpar(pontos)),
   });
   return {
     tendencia: { ultimas: r2(ultimas), anteriores: r2(anteriores), variacao: r4(variacao(ultimas, anteriores)) },
@@ -904,9 +982,11 @@ async function produto(query, params) {
   const [base, margens] = await Promise.all([lerBase(query.atualizar === '1'), classificacao.listar(ALVO_MARGEM)]);
   const cadastro = base.produtos.get(codigo);
   if (!cadastro) throw new AppError('Produto não encontrado', 404);
-  const linhas = prepararLinhas(base.vendasPorProduto.get(codigo) ?? [], cadastro.custo_medio, codigo);
   const real = base.custosReais.get(codigo);
+  const brutas = base.vendasPorProduto.get(codigo) ?? [];
+  const linhas = prepararLinhas(brutas, cadastro.custo_medio, codigo, real?.custo ?? null);
   const desejada = margens.get(codigo);
+  const mudancas = base.mudancasPorProduto.get(codigo) ?? [];
   return {
     hoje: base.hoje,
     produto: {
@@ -919,7 +999,9 @@ async function produto(query, params) {
       saldo: r4(cadastro.saldo),
       margem_desejada: desejada ? Number(desejada.tipo) : null,
     },
-    ...montarDetalhe(linhas, base.mudancasPorProduto.get(codigo) ?? [], base.hoje),
+    ...montarDetalhe(linhas, mudancas, base.hoje),
+    // Cada mudança de preço e o que aconteceu com a venda depois (a mais nova primeiro)
+    variacoes: analisarMudancas(mudancas, brutas, base.hoje, cadastro.custo_medio, real?.custo ?? null).reverse(),
   };
 }
 
@@ -934,10 +1016,15 @@ async function categoria(query, acesso = {}) {
   const nomes = new Map(lista.produtos.map((p) => [p.codigo, p.descricao]));
   const linhas = [];
   const mudancas = [];
+  const variacoes = [];
   for (const p of lista.produtos) {
-    linhas.push(...prepararLinhas(base.vendasPorProduto.get(p.codigo) ?? [], p.custo_medio, p.codigo));
-    for (const m of base.mudancasPorProduto.get(p.codigo) ?? []) mudancas.push({ ...m, produto: p.codigo, descricao: p.descricao });
+    const brutas = base.vendasPorProduto.get(p.codigo) ?? [];
+    linhas.push(...prepararLinhas(brutas, p.custo_medio, p.codigo, p.custo_real));
+    const doProduto = (base.mudancasPorProduto.get(p.codigo) ?? []).map((m) => ({ ...m, produto: p.codigo, descricao: p.descricao }));
+    mudancas.push(...doProduto);
+    variacoes.push(...analisarMudancas(doProduto, brutas, base.hoje, p.custo_medio, p.custo_real));
   }
+  variacoes.sort((a, b) => (a.quando < b.quando ? 1 : -1));
 
   // Como está a precificação da categoria
   const comMargem = lista.produtos.filter((p) => p.margem_desejada != null);
@@ -964,6 +1051,7 @@ async function categoria(query, acesso = {}) {
     },
     produtos: lista.produtos.map((p) => Object.fromEntries(campos.map((k) => [k, p[k] ?? null]))),
     ...montarDetalhe(linhas, mudancas, base.hoje, nomes),
+    variacoes,
   };
 }
 

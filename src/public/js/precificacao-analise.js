@@ -662,6 +662,97 @@ const analiseTela = (() => {
     }
   }
 
+  // Tabela das variações de preço: antes e depois de cada mudança, e o resultado
+  function tabelaVariacoes(d, ehCategoria) {
+    if (!d.variacoes.length) {
+      return criar('p', 'explica', 'O preço de varejo não mudou desde que o PROCFIT começou a guardar o histórico (mai/2026).');
+    }
+    const rolagem = criar('div', 'tabela-rolagem produto-analise-tabela');
+    const tabela = criar('table', 'tabela');
+    const cabeca = criar('tr');
+    const colunas = [['Quando', true], ...(ehCategoria ? [['Produto', true]] : []), ['Preço', false],
+      ['Vende por dia', false], ['Venda por dia', false], ['Lucro por dia', false], ['Resultado', true]];
+    for (const [texto, esquerda] of colunas) {
+      const th = criar('th', esquerda ? 'esquerda' : '', texto);
+      th.scope = 'col';
+      cabeca.append(th);
+    }
+    tabela.createTHead().append(cabeca);
+    const corpoTabela = tabela.createTBody();
+    for (const v of d.variacoes) {
+      const tr = criar('tr');
+      if (!v.cedo && !v.bom) tr.className = 'linha-vencida';
+      const quando = linhaPequena(celula(dataBR(v.quando), 'esquerda sem-quebra'),
+        [v.quem, v.fora ? 'direto no banco' : null].filter(Boolean).join(' · '));
+      const preco = linhaPequena(celula(`${dinheiro(v.antes)} → ${dinheiro(v.depois)}`, 'sem-quebra'),
+        comSinal(v.var_preco), v.subiu ? 'qtd negativo' : 'qtd');
+      let colunasNumeros;
+      if (v.cedo) {
+        const vazio = celula('–');
+        vazio.colSpan = 3;
+        colunasNumeros = [vazio];
+      } else {
+        const lucroA = v.antes_por_dia.lucro_real ?? v.antes_por_dia.lucro;
+        const lucroB = v.depois_por_dia.lucro_real ?? v.depois_por_dia.lucro;
+        colunasNumeros = [
+          linhaPequena(celula(`${quantidade(v.antes_por_dia.qtd)} → ${quantidade(v.depois_por_dia.qtd)}`, 'sem-quebra'),
+            `${comSinal(v.var_qtd)} · ${plural(v.janela, 'dia', 'dias')} de cada lado`, (v.var_qtd ?? 0) < 0 ? 'qtd negativo' : 'qtd'),
+          linhaPequena(celula(`${dinheiro(v.antes_por_dia.venda)} → ${dinheiro(v.depois_por_dia.venda)}`, 'sem-quebra'),
+            comSinal(v.var_venda), (v.var_venda ?? 0) < 0 ? 'qtd negativo' : 'qtd'),
+          linhaPequena(celula(lucroA == null ? '–' : `${dinheiro(lucroA)} → ${dinheiro(lucroB)}`, 'sem-quebra'),
+            v.lucro_real ? 'com o custo real' : 'custo do PROCFIT', lucroB != null && lucroA != null && lucroB < lucroA ? 'qtd negativo' : 'qtd'),
+        ];
+      }
+      tr.append(quando,
+        ...(ehCategoria ? [celula(nomeClicavel({ codigo: v.produto, descricao: v.descricao }), 'esquerda')] : []),
+        preco, ...colunasNumeros, celula(v.resultado, `esquerda analise-acao${v.cedo ? '' : v.bom ? '' : ' negativo'}`));
+      corpoTabela.append(tr);
+    }
+    tabela.append(corpoTabela);
+    rolagem.append(tabela);
+    return rolagem;
+  }
+
+  // Tabela das alterações de venda: cada ponto da série (o mais novo em cima) contra o anterior
+  function tabelaAlteracoes(serie, ehCategoria, p) {
+    const rolagem = criar('div', 'tabela-rolagem produto-analise-tabela');
+    const tabela = criar('table', 'tabela');
+    const cabeca = criar('tr');
+    const colunas = [['Quando', true], ['Venda', false], ['vs anterior', false],
+      ...(ehCategoria ? [] : [['Quantidade', false], ['Preço médio', false]]), ['Lucro real', false], ['Preço', true]];
+    for (const [texto, esquerda] of colunas) {
+      const th = criar('th', esquerda ? 'esquerda' : '', texto);
+      th.scope = 'col';
+      cabeca.append(th);
+    }
+    tabela.createTHead().append(cabeca);
+    const corpoTabela = tabela.createTBody();
+    const pontos = serie.pontos;
+    for (let i = pontos.length - 1; i >= 0; i -= 1) {
+      const x = pontos[i];
+      const antes = pontos[i - 1];
+      const varVenda = antes && antes.venda > 0 ? (x.venda - antes.venda) / antes.venda : null;
+      const tr = criar('tr');
+      if (serie.queda && i === serie.queda.indice) tr.className = 'linha-vencida';
+      if (serie.pico && i === serie.pico.indice) tr.className = 'linha-marcada';
+      const mudou = [x.subiu ? `▲ subiu${x.subiu > 1 ? ` ${x.subiu}×` : ''}` : null,
+        x.baixou ? `▼ baixou${x.baixou > 1 ? ` ${x.baixou}×` : ''}` : null].filter(Boolean).join(' · ');
+      const marca = i === serie.pico?.indice ? 'pico' : i === serie.queda?.indice ? 'maior queda' : i === pontos.length - 1 ? 'correndo' : '';
+      tr.append(
+        linhaPequena(celula(x.rotulo.replace('sem. ', 'semana de '), 'esquerda sem-quebra'), marca),
+        celula(dinheiro(x.venda)),
+        celula(varVenda == null ? '–' : comSinal(varVenda), (varVenda ?? 0) < 0 ? 'negativo' : ''),
+        ...(ehCategoria ? [] : [celula(quantidade(x.qtd, p.unidade)), celula(x.preco_medio ? dinheiro(x.preco_medio) : '–')]),
+        celula(x.lucro_real == null ? '–' : dinheiro(x.lucro_real), (x.lucro_real ?? 0) < 0 ? 'negativo' : ''),
+        celula(mudou || '–', `esquerda${x.subiu ? ' negativo' : ''}`),
+      );
+      corpoTabela.append(tr);
+    }
+    tabela.append(corpoTabela);
+    rolagem.append(tabela);
+    return rolagem;
+  }
+
   // Categoria: valor do filtro ("Descartáveis" ou "__sem" para os sem categoria)
   async function abrirCategoria(valor, mensagem) {
     modo = 'categoria';
@@ -883,47 +974,28 @@ const analiseTela = (() => {
         (x) => `${dinheiro(x.antes)} → ${dinheiro(x.depois)} (−${dinheiro(x.perdeu)})`, 'qtd negativo'));
     }
 
-    // Mudanças de preço do produto
-    const tituloMudancas = criar('h3', 'subtitulo', `Mudanças do preço de varejo (${inteiro(d.mudancas.length)})`);
-    let mudancas;
-    if (d.mudancas.length) {
-      mudancas = criar('div', 'tabela-rolagem');
-      const tabela = criar('table', 'tabela');
-      const cabeca = criar('tr');
-      const colunas = [['Quando', true], ...(ehCategoria ? [['Produto', true]] : []), ['Antes', false], ['Depois', false],
-        ['Mudança', false], ['Quem', true]];
-      for (const [texto, esquerda] of colunas) {
-        const th = criar('th', esquerda ? 'esquerda' : '', texto);
-        th.scope = 'col';
-        cabeca.append(th);
-      }
-      tabela.createTHead().append(cabeca);
-      const corpoTabela = tabela.createTBody();
-      for (const m of d.mudancas) {
-        const tr = criar('tr');
-        const v = m.antes > 0 ? (m.depois - m.antes) / m.antes : null;
-        tr.append(celula(dataBR(m.quando), 'esquerda'),
-          ...(ehCategoria ? [celula(nomeClicavel({ codigo: m.produto, descricao: m.descricao }), 'esquerda')] : []),
-          celula(dinheiro(m.antes)), celula(dinheiro(m.depois)),
-          celula(comSinal(v), (v ?? 0) > 0 ? 'negativo' : ''),
-          linhaPequena(celula(m.quem ?? '–', 'esquerda'), m.fora ? 'direto no banco, fora do PROCFIT' : ''));
-        corpoTabela.append(tr);
-      }
-      mudancas.append(tabela);
-    } else {
-      mudancas = criar('p', 'explica', 'O preço de varejo não mudou desde que o PROCFIT começou a guardar o histórico (mai/2026).');
-    }
+    const tituloVariacoes = criar('h3', 'subtitulo', `Variações de preço (${inteiro(d.variacoes.length)})`);
+    const variacoes = tabelaVariacoes(d, ehCategoria);
+    const tituloVendas = criar('h3', 'subtitulo', `Alterações de venda (${AGRUPAR_PRODUTO[agruparProduto].toLowerCase()})`);
+    const vendas = tabelaAlteracoes(serie, ehCategoria, p);
 
     corpo.replaceChildren(indicadores, botoes, grafico, explica, destaques,
-      ...(ehCategoria ? [precificacaoCategoria(d)] : []), tituloMudancas, mudancas);
+      ...(ehCategoria ? [precificacaoCategoria(d)] : []), tituloVariacoes, variacoes, tituloVendas, vendas);
     graficos.colunas(grafico, {
       titulo: `Venda de ${p.descricao}`,
-      rotulos: serie.pontos.map((x) => x.rotulo),
+      // ▲ ▼ no rótulo: o preço subiu ou baixou dentro daquele ponto
+      rotulos: serie.pontos.map((x) => `${x.rotulo}${x.subiu ? ' ▲' : ''}${x.baixou ? ' ▼' : ''}`),
       series: [
         { nome: 'Venda', valores: serie.pontos.map((x) => x.venda), cor: 'var(--verde-claro)', cores },
-        { nome: 'Lucro (PROCFIT)', valores: serie.pontos.map((x) => x.lucro), cor: 'var(--verde)' },
+        // Lucro real (com a bonificação); sem custo real, é o do PROCFIT. Lucro negativo não aparece como barra.
+        { nome: 'Lucro real', valores: serie.pontos.map((x) => x.lucro_real), cor: 'var(--verde-vivo)' },
       ],
       vazio: 'Sem venda neste período.',
+    });
+    // O gráfico pode ser mais largo que a janela: abre rolado para o fim (o mais recente)
+    requestAnimationFrame(() => {
+      const rolagem = grafico.querySelector('.grafico-rolagem');
+      if (rolagem) rolagem.scrollLeft = rolagem.scrollWidth;
     });
   }
 

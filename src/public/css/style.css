@@ -2769,3 +2769,7 @@ button:hover,
 
 /* Gráficos: o pico (verde-escuro) agora é o verde mais claro, que é o destaque no escuro */
 .grafico-grade { stroke: var(--linha-forte); }
+/* Tabelas longas dentro da janela do produto/categoria: rolam por dentro, com o cabeçalho parado */
+.produto-analise-tabela { max-height: 22rem; overflow-y: auto; }
+.produto-analise-tabela thead th { position: sticky; top: 0; background: var(--superficie); z-index: 1; }
+.tela-precificacao .produto-analise-tabela tr.linha-marcada > td { background: var(--verde-suave); }
