@@ -49,6 +49,15 @@ const JANELA_PRECO = 28;            // mudança de preço: compara até 28 dias 
 const DIAS_MINIMOS_DEPOIS = 7;      // ...e só depois de 7 dias do novo preço (antes disso é cedo)
 const EFEITO_QTD = 0.2;             // ...a venda mudou 20% ou mais
 const VENDA_MINIMA_PRECO = 50;      // ...e o produto vendeu ao menos R$ 50 nas duas janelas
+const UNIDADES_MINIMAS = 20;        // ...e ao menos 20 unidades nas duas janelas: com menos, 20% é sorte, não sinal
+const UNIDADES_MINIMAS_MARGEM = 20; // perdeu margem: ao menos 20 unidades vendidas no caixa em cada período
+// O estoque do PROCFIT ainda não está conferido (nov/2026): o que depende do saldo (GMROI, cobertura,
+// "estoque alto para o giro", valor parado) fica desligado. Quando o estoque estiver conferido, é só mudar para true.
+const ESTOQUE_CONFERIDO = false;
+const COBERTURA_ALTA = 90;          // estoque alto: dá para mais de 90 dias de venda...
+const COBERTURA_BOA = 30;           // ...e o ideal é ter até uns 30 dias
+const ESTOQUE_MINIMO_ALERTA = 300;  // ...e o excesso vale ao menos R$ 300 no custo
+const DIFERENCA_EMBALAGEM = 0.02;   // embalagem maior 2% mais cara por kg/litro que a menor já é incoerente
 const MARGEM_DESEJADA_MAXIMA = 0.6; // ninguém grava margem desejada acima de 60% sobre a venda
 const SEM_CATEGORIA = '__sem';
 const ALVO_MARGEM = 'produto_margem'; // na tabela de classificação do painel: "tipo" = margem (ex.: "0.15")
@@ -142,18 +151,39 @@ function precoPara(custo, aliquota, margemDesejada) {
 
 let cache = null;
 
-function organizar({ hoje, vendas, produtos, mudancas, custosReais }) {
-  const vendasPorProduto = new Map();
+function organizar({ hoje, vendas, produtos, mudancas, custosReais, lojas }) {
+  // A venda vem por produto, loja e dia. Fica guardada de dois jeitos:
+  //   vendasPorProduto   todas as lojas juntas (uma linha por produto e dia)
+  //   vendasPorLoja      loja -> produto -> linhas (para o filtro de loja e a tabela de lojas)
+  const somarLinha = (alvo, l) => {
+    alvo.q += n(l.q); alvo.v += n(l.v); alvo.i += n(l.i); alvo.qc += n(l.qc); alvo.vc += n(l.vc); alvo.ic += n(l.ic); alvo.c += n(l.c);
+  };
+  const novaLinha = (d) => ({ d, q: 0, v: 0, i: 0, qc: 0, vc: 0, ic: 0, c: 0 });
+  const juntas = new Map();     // "produto|dia" -> linha
+  const vendasPorLoja = new Map();
   let primeiroDia = hoje;
   for (const l of vendas) {
     const codigo = Number(l.p);
-    if (!vendasPorProduto.has(codigo)) vendasPorProduto.set(codigo, []);
-    vendasPorProduto.get(codigo).push({
-      d: l.d, q: n(l.q), v: n(l.v), i: n(l.i), qc: n(l.qc), vc: n(l.vc), ic: n(l.ic), c: n(l.c),
-    });
+    const loja = Number(l.e);
+    const chave = `${codigo}|${l.d}`;
+    if (!juntas.has(chave)) juntas.set(chave, { codigo, linha: novaLinha(l.d) });
+    somarLinha(juntas.get(chave).linha, l);
+    if (!vendasPorLoja.has(loja)) vendasPorLoja.set(loja, new Map());
+    const daLoja = vendasPorLoja.get(loja);
+    if (!daLoja.has(codigo)) daLoja.set(codigo, []);
+    const linha = novaLinha(l.d);
+    somarLinha(linha, l);
+    daLoja.get(codigo).push(linha);
     if (l.d < primeiroDia) primeiroDia = l.d;
   }
-  for (const linhas of vendasPorProduto.values()) linhas.sort((a, b) => (a.d < b.d ? -1 : 1));
+  const vendasPorProduto = new Map();
+  for (const { codigo, linha } of juntas.values()) {
+    if (!vendasPorProduto.has(codigo)) vendasPorProduto.set(codigo, []);
+    vendasPorProduto.get(codigo).push(linha);
+  }
+  const ordenar = (mapa) => { for (const linhas of mapa.values()) linhas.sort((a, b) => (a.d < b.d ? -1 : 1)); };
+  ordenar(vendasPorProduto);
+  for (const daLoja of vendasPorLoja.values()) ordenar(daLoja);
 
   // Mudanças de preço: todas (varejo e atacado, para mostrar) e só as do varejo (para as decisões)
   const mudancasPorProduto = new Map();
@@ -191,6 +221,8 @@ function organizar({ hoje, vendas, produtos, mudancas, custosReais }) {
     hoje,
     primeiroDia,
     vendasPorProduto,
+    vendasPorLoja,
+    lojas: (lojas ?? []).map((l) => ({ codigo: Number(l.codigo), nome: l.nome || `Loja ${l.codigo}` })),
     mudancasPorProduto,
     mudancasVarejo,
     custosReais: custos,
@@ -227,6 +259,16 @@ function periodo(valor) {
   if (!PERIODOS.includes(dias)) throw new AppError(`"dias" deve ser: ${PERIODOS.join(', ')}`);
   return dias;
 }
+
+// Loja (empresa) escolhida: o código, se existir na base; vazio = todas as lojas
+function lojaFiltro(valor, base) {
+  if (valor === undefined || valor === null || valor === '') return null;
+  const codigo = Number(valor);
+  if (!base.lojas.some((l) => l.codigo === codigo)) throw new AppError('Loja não encontrada');
+  return codigo;
+}
+// As vendas de uma loja (ou de todas) no formato produto -> linhas
+const vendasDa = (base, loja) => (loja == null ? base.vendasPorProduto : base.vendasPorLoja.get(loja) ?? new Map());
 
 function tipoFiltro(valor) {
   if (!valor) return null;
@@ -303,15 +345,68 @@ function series(porDia, base, de) {
 }
 
 // ---------- Mudança de preço: o que aconteceu com a venda depois ----------
+//
+// Como a medição é feita (revisão de precificação, nov/2026):
+//   - janela SEMPRE em semanas inteiras (7, 14, 21 ou 28 dias): os dois lados têm o mesmo número de
+//     sábados e domingos, senão o dia da semana vira "efeito do preço";
+//   - a variação da CATEGORIA nas mesmas datas é descontada: se a categoria inteira caiu 15%, o produto
+//     que caiu 15% não perdeu nada por causa do preço (sem categoria, compara com todos os outros produtos);
+//   - elasticidade = variação da quantidade (já descontada) ÷ variação do preço. Ex.: -2,4 = cada 1% a mais
+//     no preço tirou 2,4% da quantidade. Entre -1 e 0, a venda quase não sente o preço.
+//   Limite que fica: dias sem estoque (ruptura) ainda contam como dia sem venda.
+
+// Janela em semanas inteiras, até JANELA_PRECO; 0 = menos de uma semana
+const semanasInteiras = (dias) => Math.floor(Math.min(JANELA_PRECO, dias) / 7) * 7;
+
+// Venda por dia de cada categoria (e do total), para descontar o movimento da categoria.
+// Devolve controle(codigo, categoria) -> (de, ate) => venda da categoria nesse intervalo, SEM o próprio produto.
+function montarControle(produtos) {
+  const porCategoria = new Map();
+  const somarEm = (nome, l) => {
+    if (!porCategoria.has(nome)) porCategoria.set(nome, new Map());
+    const m = porCategoria.get(nome);
+    m.set(l.d, (m.get(l.d) ?? 0) + l.v);
+  };
+  for (const p of produtos) {
+    for (const l of p.linhas) {
+      somarEm(p.categoria ?? SEM_CATEGORIA, l);
+      somarEm('__todos', l);
+    }
+  }
+  const somaJanela = (mapa, de, ate) => {
+    let t = 0;
+    for (let d = de; d <= ate; d = somarDias(d, 1)) t += mapa?.get(d) ?? 0;
+    return t;
+  };
+  const doProduto = (linhas, de, ate) => linhas.reduce((t, l) => (l.d >= de && l.d <= ate ? t + l.v : t), 0);
+  return (linhas, categoria) => {
+    // Categoria com um produto só não serve de comparação: usa todos os outros produtos
+    const mapa = porCategoria.get(categoria ?? SEM_CATEGORIA);
+    return (de, ate) => {
+      const resto = somaJanela(mapa, de, ate) - doProduto(linhas, de, ate);
+      if (resto > 0) return resto;
+      return somaJanela(porCategoria.get('__todos'), de, ate) - doProduto(linhas, de, ate);
+    };
+  };
+}
+
+// Quantidade por dia antes e depois, descontando o movimento da categoria; e a elasticidade
+function efeitoAjustado(qtdAntes, qtdDepois, controleAntes, controleDepois, varPreco) {
+  const bruta = variacao(qtdDepois, qtdAntes);
+  const categoria = controleAntes > 0 ? controleDepois / controleAntes - 1 : null;
+  const ajustada = bruta != null && categoria != null && categoria > -1 ? (1 + bruta) / (1 + categoria) - 1 : bruta;
+  const elasticidade = ajustada != null && varPreco != null && Math.abs(varPreco) >= 0.01 ? ajustada / varPreco : null;
+  return { bruta, categoria, ajustada, elasticidade };
+}
 
 // Última mudança do preço de varejo dentro do período, com a venda e o lucro por dia antes e depois.
 // Devolve null se não tem mudança no período ou se ainda é cedo para medir.
-function efeitoDoPreco(mudancas, linhas, de, hoje, custoEstimado) {
+function efeitoDoPreco(mudancas, linhas, de, hoje, custoEstimado, controle = null) {
   const noPeriodo = (mudancas ?? []).filter((m) => m.quando.slice(0, 10) >= de && m.antes > 0 && m.depois > 0);
   const m = noPeriodo[noPeriodo.length - 1];
   if (!m) return null;
   const dia = m.quando.slice(0, 10);
-  const janela = Math.min(JANELA_PRECO, diasEntre(dia, hoje));
+  const janela = semanasInteiras(diasEntre(dia, hoje));
   if (janela < DIAS_MINIMOS_DEPOIS) return { ...m, cedo: true, dias_depois: diasEntre(dia, hoje) };
 
   // O dia da mudança fica fora das duas janelas (metade do dia com cada preço)
@@ -323,15 +418,24 @@ function efeitoDoPreco(mudancas, linhas, de, hoje, custoEstimado) {
   };
   const a = porDia(antes);
   const b = porDia(depois);
+  const varPreco = variacao(m.depois, m.antes);
+  const ajuste = efeitoAjustado(a.qtd, b.qtd,
+    controle ? controle(somarDias(dia, -janela), somarDias(dia, -1)) : 0,
+    controle ? controle(somarDias(dia, 1), somarDias(dia, janela)) : 0, varPreco);
   return {
     ...m,
     dia,
     janela,
     subiu: m.depois > m.antes,
-    var_preco: r4(variacao(m.depois, m.antes)),
+    var_preco: r4(varPreco),
     antes_por_dia: { qtd: r4(a.qtd), venda: r2(a.venda), lucro: r2(a.lucro) },
     depois_por_dia: { qtd: r4(b.qtd), venda: r2(b.venda), lucro: r2(b.lucro) },
-    var_qtd: r4(variacao(b.qtd, a.qtd)),
+    // var_qtd já desconta a categoria; a bruta fica guardada para mostrar
+    var_qtd: r4(ajuste.ajustada),
+    var_qtd_bruta: r4(ajuste.bruta),
+    var_categoria: r4(ajuste.categoria),
+    elasticidade: r2(ajuste.elasticidade),
+    unidades_janelas: antes.q + depois.q,
     var_lucro: a.lucro != null && b.lucro != null && a.lucro > 0 ? r4((b.lucro - a.lucro) / a.lucro) : null,
     venda_janelas: antes.v + depois.v,
     lucro_subiu: a.lucro != null && b.lucro != null ? b.lucro > a.lucro : null,
@@ -343,7 +447,7 @@ function efeitoDoPreco(mudancas, linhas, de, hoje, custoEstimado) {
 // Com menos de 7 dias de cada lado, é cedo (ou o preço mudou de novo logo): fica marcado e sem resultado.
 // Varejo e atacado são medidos cada um com as suas vizinhas (a do atacado não corta a janela do varejo);
 // a venda comparada é a do produto inteiro.
-function analisarMudancas(mudancas, linhas, hoje, custoEstimado, custoReal) {
+function analisarMudancas(mudancas, linhas, hoje, custoEstimado, custoReal, controle = null) {
   const porTabela = new Map();
   for (const m of (mudancas ?? []).filter((x) => x.antes > 0 && x.depois > 0)) {
     const t = m.tabela ?? 1;
@@ -351,18 +455,18 @@ function analisarMudancas(mudancas, linhas, hoje, custoEstimado, custoReal) {
     porTabela.get(t).push(m);
   }
   return [...porTabela.values()]
-    .flatMap((lista) => analisarTabela(lista, linhas, hoje, custoEstimado, custoReal))
+    .flatMap((lista) => analisarTabela(lista, linhas, hoje, custoEstimado, custoReal, controle))
     .sort((a, b) => (a.quando < b.quando ? -1 : 1));
 }
 
-function analisarTabela(validas, linhas, hoje, custoEstimado, custoReal) {
+function analisarTabela(validas, linhas, hoje, custoEstimado, custoReal, controle) {
   return validas.map((m, i) => {
     const dia = m.quando.slice(0, 10);
     const anterior = validas[i - 1]?.quando.slice(0, 10);
     const proxima = validas[i + 1]?.quando.slice(0, 10);
     const diasDepois = diasEntre(dia, proxima ? somarDias(proxima, -1) : hoje);
     const diasAntes = anterior ? diasEntre(somarDias(anterior, 1), dia) : JANELA_PRECO;
-    const janela = Math.min(JANELA_PRECO, diasDepois, diasAntes);
+    const janela = semanasInteiras(Math.min(diasDepois, diasAntes));
     const base = {
       quando: m.quando, antes: m.antes, depois: m.depois, quem: m.quem, fora: m.fora,
       tabela: m.tabela ?? 1, nome_tabela: m.nome_tabela ?? 'Varejo',
@@ -374,7 +478,9 @@ function analisarTabela(validas, linhas, hoje, custoEstimado, custoReal) {
         ...base, cedo: true,
         resultado: proxima && diasEntre(dia, proxima) < DIAS_MINIMOS_DEPOIS
           ? `O preço mudou de novo ${diasEntre(dia, proxima)} dias depois: curto demais para medir.`
-          : `Cedo para medir: ${diasDepois} dias com o preço novo (precisa de ${DIAS_MINIMOS_DEPOIS}).`,
+          : diasDepois < DIAS_MINIMOS_DEPOIS
+            ? `Cedo para medir: ${diasDepois} dias com o preço novo (precisa de uma semana inteira).`
+            : 'A mudança anterior foi há menos de uma semana: curto demais para medir.',
       };
     }
     // O dia da mudança fica fora das duas janelas (metade do dia com cada preço)
@@ -386,12 +492,18 @@ function analisarTabela(validas, linhas, hoje, custoEstimado, custoReal) {
         lucro: r2(r.base ? lucroDe(r) / janela : null), lucro_real: r2(real == null ? null : real / janela),
       };
     };
-    const a = porDia(somar(linhas, somarDias(dia, -janela), somarDias(dia, -1)));
-    const b = porDia(somar(linhas, somarDias(dia, 1), somarDias(dia, janela)));
+    const somaAntes = somar(linhas, somarDias(dia, -janela), somarDias(dia, -1));
+    const somaDepois = somar(linhas, somarDias(dia, 1), somarDias(dia, janela));
+    const a = porDia(somaAntes);
+    const b = porDia(somaDepois);
+    const ajuste = efeitoAjustado(a.qtd, b.qtd,
+      controle ? controle(somarDias(dia, -janela), somarDias(dia, -1)) : 0,
+      controle ? controle(somarDias(dia, 1), somarDias(dia, janela)) : 0, base.var_preco);
+    const poucoVolume = somaAntes.q + somaDepois.q < UNIDADES_MINIMAS;
     // O lucro que decide é o real (com a bonificação), quando tem; senão o do PROCFIT
     const lucroA = a.lucro_real ?? a.lucro;
     const lucroB = b.lucro_real ?? b.lucro;
-    const varQtd = variacao(b.qtd, a.qtd);
+    const varQtd = ajuste.ajustada; // já descontado o movimento da categoria
     const lucroSubiu = lucroA != null && lucroB != null ? lucroB > lucroA : null;
     let resultadoTexto;
     let bom;
@@ -403,22 +515,66 @@ function analisarTabela(validas, linhas, hoje, custoEstimado, custoReal) {
         bom = true;
         resultadoTexto = varQtd != null && varQtd < 0 ? 'Subiu e a venda caiu pouco.' : 'Subiu sem perder venda.';
       }
-    } else if (varQtd == null ? b.qtd > 0 : varQtd >= EFEITO_QTD) {
+    } else if (varQtd == null ? b.qtd > 0
+      // Reagiu: a venda subiu 20% ou mais, ou subiu e a elasticidade passa de 1 (corte pequeno com resposta forte)
+      : varQtd >= EFEITO_QTD || (varQtd > 0.05 && ajuste.elasticidade != null && ajuste.elasticidade <= -1)) {
       bom = lucroSubiu !== false;
       resultadoTexto = bom ? 'Vende mais e lucra mais.' : 'Vende mais, mas lucra menos por dia.';
     } else {
       bom = false;
       resultadoTexto = 'Baixou e a venda não reagiu: perdeu margem sem ganhar volume.';
     }
+    if (poucoVolume) {
+      resultadoTexto = `Pouco volume para concluir (${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 })
+        .format(somaAntes.q + somaDepois.q)} unidades nas duas janelas; precisa de ${UNIDADES_MINIMAS}).`;
+      bom = true;
+    }
     return {
-      ...base, cedo: false,
+      ...base, cedo: false, pouco_volume: poucoVolume,
       antes_por_dia: a, depois_por_dia: b,
-      var_qtd: r4(varQtd), var_venda: r4(variacao(b.venda, a.venda)),
+      var_qtd: r4(varQtd), var_qtd_bruta: r4(ajuste.bruta), var_categoria: r4(ajuste.categoria),
+      elasticidade: r2(ajuste.elasticidade),
+      var_venda: r4(variacao(b.venda, a.venda)),
       var_lucro: lucroA != null && lucroB != null && Math.abs(lucroA) > 0 ? r4((lucroB - lucroA) / Math.abs(lucroA)) : null,
       lucro_real: a.lucro_real != null,
       bom, resultado: resultadoTexto,
     };
   });
+}
+
+// ---------- Embalagens do mesmo produto ----------
+// Lê o tamanho na descrição ("CERELIS 1KG - ALISPEC", "AÇAÍ 10L", "LEITE 395G") e junta os produtos que só
+// mudam no tamanho. Grama vira kg e ml vira litro, para comparar o preço por kg (ou litro).
+const TAMANHO = /(\d+(?:[.,]\d+)?)\s*(KG|KGS|GR|G|LT|L|ML)\b/gi;
+function tamanhoDaEmbalagem(descricao) {
+  const texto = String(descricao ?? '').toUpperCase();
+  const achados = [...texto.matchAll(TAMANHO)];
+  if (!achados.length) return null;
+  const ultimo = achados[achados.length - 1];
+  const numero = Number(ultimo[1].replace(',', '.'));
+  if (!(numero > 0)) return null;
+  const sigla = ultimo[2];
+  const peso = ['KG', 'KGS', 'GR', 'G'].includes(sigla);
+  const medida = ['GR', 'G', 'ML'].includes(sigla) ? numero / 1000 : numero;
+  // O "nome" sem o tamanho: é o que junta as embalagens do mesmo produto
+  const nome = (texto.slice(0, ultimo.index) + texto.slice(ultimo.index + ultimo[0].length))
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z0-9]+/g, ' ').trim();
+  return { medida, unidade: peso ? 'kg' : 'L', nome };
+}
+
+function gruposDeEmbalagem(produtos) {
+  const grupos = new Map();
+  for (const p of produtos) {
+    if (!(p.varejo > 0)) continue;
+    const t = tamanhoDaEmbalagem(p.descricao);
+    if (!t || !t.nome) continue;
+    const chave = `${t.nome}|${t.unidade}`;
+    if (!grupos.has(chave)) grupos.set(chave, []);
+    grupos.get(chave).push({ p, medida: t.medida, unidade: t.unidade, porMedida: p.varejo / t.medida });
+  }
+  return [...grupos.values()]
+    .filter((g) => new Set(g.map((x) => x.medida)).size > 1)
+    .map((g) => g.sort((a, b) => a.medida - b.medida));
 }
 
 // ---------- A análise ----------
@@ -434,6 +590,8 @@ async function analise(query, acesso = {}) {
     classificacao.listar('produto_categoria'),
     classificacao.listar(ALVO_MARGEM),
   ]);
+  const loja = lojaFiltro(query.loja, base);
+  const vendas = vendasDa(base, loja);
 
   // Período atual (termina hoje) e o anterior, do mesmo tamanho
   const de = somarDias(base.hoje, -(dias - 1));
@@ -445,8 +603,9 @@ async function analise(query, acesso = {}) {
   // 1. Uma linha por produto que interessa: vendeu na base ou tem estoque, e não é insumo nem uso interno
   const todos = [];
   for (const p of base.produtos.values()) {
-    const linhas = base.vendasPorProduto.get(p.codigo) ?? [];
-    if (!linhas.length && !(p.saldo > 0)) continue;
+    const linhas = vendas.get(p.codigo) ?? [];
+    // Com loja escolhida, só os produtos que essa loja vendeu (o saldo é do grupo, não da loja)
+    if (!linhas.length && (loja != null || !(p.saldo > 0))) continue;
     const tipoProduto = tipoDoProduto(p, tipos.get(p.codigo)?.tipo);
     if (FORA_DA_ANALISE.has(tipoProduto)) continue;
     if (tipo && tipoProduto !== tipo) continue;
@@ -455,6 +614,8 @@ async function analise(query, acesso = {}) {
     const anterior = somar(linhas, anteriorDe, anteriorAte);
     const antesDoPeriodo = somar(linhas, anoAntes, anteriorAte);
     const ano = somar(linhas, umAno, base.hoje);
+    // Dias de dados no último ano (a base pode começar depois): para anualizar o lucro do GMROI
+    const diasNoAno = Math.max(1, Math.min(365, diasEntre(base.primeiroDia > umAno ? base.primeiroDia : umAno, base.hoje) + 1));
     const ultimaVenda = [...linhas].reverse().find((l) => l.q > 0)?.d ?? null;
 
     // Imposto do produto: o que ele pagou de verdade no último ano
@@ -468,6 +629,15 @@ async function analise(query, acesso = {}) {
     const rAtual = resultado(atual, p.custo_medio);
     const rAnterior = resultado(anterior, p.custo_medio);
     const rReal = custoReal ? resultadoReal(atual, custoReal) : rAtual;
+
+    // GMROI: quanto cada real de estoque (no custo) devolve de lucro bruto por ano.
+    // Estoque = o saldo de hoje (o PROCFIT não guarda o saldo de cada dia). Cobertura: dias de venda que o estoque aguenta.
+    const rAno = custoReal ? resultadoReal(ano, custoReal) : resultado(ano, p.custo_medio);
+    const lucroAno = rAno.base ? (lucroDe(rAno) * 365) / diasNoAno : null;
+    const estoqueCusto = p.saldo > 0 && custoBase ? p.saldo * custoBase : null;
+    const gmroi = estoqueCusto && lucroAno != null ? lucroAno / estoqueCusto : null;
+    const vendaDiaria = atual.q > 0 ? atual.q / dias : 0;
+    const cobertura = p.saldo > 0 && vendaDiaria > 0 ? p.saldo / vendaDiaria : null;
 
     // Dia da semana em que o produto mais vende (no período)
     const porDiaSemana = DIAS_SEMANA.map(() => 0);
@@ -535,6 +705,10 @@ async function analise(query, acesso = {}) {
       vende_a_cada: atual.dias ? r2(dias / atual.dias) : null,
       melhor_dia: melhor > 0 ? DIAS_SEMANA[porDiaSemana.indexOf(melhor)] : null,
       ultima_venda: ultimaVenda,
+      estoque_custo: r2(estoqueCusto),
+      gmroi: r2(gmroi),
+      cobertura: cobertura == null ? null : Math.round(cobertura),
+      _vendaDiaria: vendaDiaria,
       dias_sem_venda: ultimaVenda ? diasEntre(ultimaVenda, base.hoje) : null,
       vendeu_antes: antesDoPeriodo.q > 0,
       ultima_mudanca: (base.mudancasVarejo.get(p.codigo) ?? []).slice(-1)[0] ?? null,
@@ -553,6 +727,9 @@ async function analise(query, acesso = {}) {
       _aliquota: aliquota,
     });
   }
+
+  // Venda de cada categoria por dia, para descontar o movimento dela na medição das mudanças de preço
+  const controleDe = montarControle(todos.map((p) => ({ linhas: p._linhas, categoria: p.categoria })));
 
   // 2. Categorias: calculadas antes do filtro de categoria, para a tela poder trocar de uma para outra
   const porCategoria = new Map();
@@ -593,7 +770,36 @@ async function analise(query, acesso = {}) {
     ? todos.filter((p) => (categoria === SEM_CATEGORIA ? !p.categoria : p.categoria === categoria))
     : todos;
 
+  // Lojas: venda e margem de cada loja, com os mesmos filtros de tipo e categoria (sem o filtro de loja,
+  // para a tela poder trocar de uma para outra)
+  const codigosDaLista = new Map(lista.map((p) => [p.codigo, p]));
+  const porLoja = [];
+  for (const l of base.lojas) {
+    const daLoja = base.vendasPorLoja.get(l.codigo);
+    if (!daLoja) continue;
+    const t = { venda: 0, anterior: 0, r: resultadoVazio(), vendidos: 0 };
+    for (const [codigo, linhas] of daLoja) {
+      const p = codigosDaLista.get(codigo) ?? (loja != null ? todos.find((x) => x.codigo === codigo) : null);
+      if (!p) continue;
+      const at = somar(linhas, de, base.hoje);
+      const ant = somar(linhas, anteriorDe, anteriorAte);
+      t.venda += at.v;
+      t.anterior += ant.v;
+      if (at.q > 0) t.vendidos += 1;
+      juntarResultado(t.r, resultado(at, p.custo_medio));
+    }
+    porLoja.push({
+      codigo: l.codigo, nome: l.nome, venda: r2(t.venda), venda_anterior: r2(t.anterior),
+      var_venda: r4(variacao(t.venda, t.anterior)), lucro: r2(lucroDe(t.r)), margem: r4(margemDe(t.r)), vendidos: t.vendidos,
+    });
+  }
+  porLoja.sort((a, b) => b.venda - a.venda);
+  const vendaLojas = porLoja.reduce((t, l) => t + l.venda, 0);
+  for (const l of porLoja) l.participacao = vendaLojas > 0 ? r4(l.venda / vendaLojas) : null;
+
   // 4. Totais do período e venda por dia (dos produtos da lista)
+  // Margem por canal: balcão (caixa, custo de cada venda) e atacado (nota, custo estimado com o de hoje)
+  const canais = { balcao: resultadoVazio(), atacado: resultadoVazio() };
   const total = {
     venda: 0, vendaAnterior: 0, imposto: 0, vendaComCusto: 0,
     r: resultadoVazio(), rAnterior: resultadoVazio(), rReal: resultadoVazio(),
@@ -604,6 +810,14 @@ async function analise(query, acesso = {}) {
     total.vendaAnterior += p._anterior.v;
     total.imposto += p._atual.i;
     total.vendaComCusto += p._atual.vc;
+    juntarResultado(canais.balcao, { base: p._atual.vc - p._atual.ic, custo: p._atual.c, venda: p._atual.vc });
+    if (p.custo_medio) {
+      juntarResultado(canais.atacado, {
+        base: (p._atual.v - p._atual.vc) - (p._atual.i - p._atual.ic),
+        custo: Math.max(0, p._atual.q - p._atual.qc) * p.custo_medio,
+        venda: p._atual.v - p._atual.vc,
+      });
+    }
     juntarResultado(total.r, p._r);
     juntarResultado(total.rAnterior, p._rAnterior);
     juntarResultado(total.rReal, p._rReal);
@@ -630,6 +844,28 @@ async function analise(query, acesso = {}) {
     acumulado += p.venda;
     p.curva = fatiaAntes < CURVA_A ? 'A' : fatiaAntes < CURVA_B ? 'B' : 'C';
   }
+  // Matriz giro x margem: o papel de cada produto que vendeu.
+  //   giro alto = curva A ou B; margem alta = margem (real, se tiver) igual ou acima da mediana dos vendidos.
+  //   estrela (gira e tem margem): proteger, nunca faltar, preço com cuidado
+  //   puxador (gira, pouca margem): traz o cliente; preço competitivo de propósito, ganhar no resto da compra
+  //   oportunidade (margem boa, pouco giro): dar visibilidade, exposição, venda junto
+  //   peso morto (nem gira nem tem margem): rever preço ou sair de linha
+  const margemDoPapel = (p) => p.margem_real ?? p.margem;
+  const margensVendidos = vendidos.map(margemDoPapel).filter((m) => m != null).sort((a, b) => a - b);
+  const medianaMargem = margensVendidos.length ? margensVendidos[Math.floor(margensVendidos.length / 2)] : null;
+  const papeis = { estrela: { produtos: 0, venda: 0 }, puxador: { produtos: 0, venda: 0 },
+    oportunidade: { produtos: 0, venda: 0 }, peso_morto: { produtos: 0, venda: 0 } };
+  for (const p of vendidos) {
+    const m = margemDoPapel(p);
+    if (m == null || medianaMargem == null) continue;
+    const giroAlto = p.curva === 'A' || p.curva === 'B';
+    const margemAlta = m >= medianaMargem;
+    p.papel = giroAlto ? (margemAlta ? 'estrela' : 'puxador') : (margemAlta ? 'oportunidade' : 'peso_morto');
+    papeis[p.papel].produtos += 1;
+    papeis[p.papel].venda += p.venda;
+  }
+  for (const k of Object.keys(papeis)) papeis[k].venda = r2(papeis[k].venda);
+
   const curvas = { A: 0, B: 0, C: 0 };
   for (const p of vendidos) curvas[p.curva] += 1;
 
@@ -642,6 +878,8 @@ async function analise(query, acesso = {}) {
     subiu_vendeu_menos: [],
     baixou_vendeu_mais: [],
     parados: [],
+    estoque_alto: [],
+    embalagem: [],
   };
 
   for (const p of lista) {
@@ -680,7 +918,8 @@ async function analise(query, acesso = {}) {
     }
 
     // O efeito da última mudança de preço (usado em c, e, f)
-    const efeito = efeitoDoPreco(base.mudancasVarejo.get(p.codigo), p._linhas, de, base.hoje, p.custo_medio);
+    const efeito = efeitoDoPreco(base.mudancasVarejo.get(p.codigo), p._linhas, de, base.hoje, p.custo_medio,
+      controleDe(p._linhas, p.categoria));
     // Baixou o preço de propósito e passou a lucrar mais: a margem menor foi escolha, não problema
     const baixouEGanhou = efeito && !efeito.cedo && !efeito.subiu && efeito.lucro_subiu === true;
 
@@ -688,6 +927,7 @@ async function analise(query, acesso = {}) {
     const mAt = margemCaixa(p._atual);
     const mAnt = margemCaixa(p._anterior);
     if (mAt != null && mAnt != null && p._atual.vc >= VENDA_MINIMA_MARGEM && p._anterior.vc >= VENDA_MINIMA_MARGEM
+        && p._atual.qc >= UNIDADES_MINIMAS_MARGEM && p._anterior.qc >= UNIDADES_MINIMAS_MARGEM
         && mAnt - mAt >= QUEDA_MARGEM && !baixouEGanhou) {
       const varCusto = variacao(custoUnitario(p._atual), custoUnitario(p._anterior));
       const varPreco = variacao(precoPraticado(p._atual), precoPraticado(p._anterior));
@@ -730,7 +970,7 @@ async function analise(query, acesso = {}) {
     }
 
     // e) e f) Mudou o preço de varejo no período: o que aconteceu com a venda
-    if (efeito && !efeito.cedo && efeito.venda_janelas >= VENDA_MINIMA_PRECO) {
+    if (efeito && !efeito.cedo && efeito.venda_janelas >= VENDA_MINIMA_PRECO && efeito.unidades_janelas >= UNIDADES_MINIMAS) {
       const linha = {
         codigo: p.codigo,
         dia: efeito.dia,
@@ -740,6 +980,9 @@ async function analise(query, acesso = {}) {
         janela: efeito.janela,
         var_preco: efeito.var_preco,
         var_qtd: efeito.var_qtd,
+        var_qtd_bruta: efeito.var_qtd_bruta,
+        var_categoria: efeito.var_categoria,
+        elasticidade: efeito.elasticidade,
         var_lucro: efeito.var_lucro,
         antes_por_dia: efeito.antes_por_dia,
         depois_por_dia: efeito.depois_por_dia,
@@ -766,20 +1009,69 @@ async function analise(query, acesso = {}) {
       }
     }
 
+    // h) Estoque alto para o giro: dá para mais de COBERTURA_ALTA dias de venda
+    if (ESTOQUE_CONFERIDO && p.cobertura != null && p.cobertura > COBERTURA_ALTA && p.estoque_custo) {
+      const excesso = (p.saldo - COBERTURA_BOA * p._vendaDiaria) * p._custoBase;
+      if (excesso >= ESTOQUE_MINIMO_ALERTA) {
+        decisoes.estoque_alto.push({
+          codigo: p.codigo,
+          excesso: r2(excesso),
+          valor: r2(excesso),
+          acao: `O estoque dá para ${p.cobertura} dias de venda (${reais(p.estoque_custo)} no custo). `
+            + `Pare de comprar até baixar para uns ${COBERTURA_BOA} dias${p.papel === 'oportunidade' ? ' e dê mais visibilidade (margem boa, pouco giro)' : ''}`
+            + `${p.papel === 'peso_morto' ? '; com pouca margem e pouco giro, vale uma promoção para girar' : ''}.`,
+        });
+      }
+    }
+
     // g) Parado: não vendeu nada no período, mas vendia antes ou tem estoque
     if (!(p._atual.q > 0) && (p.vendeu_antes || (p.saldo > 0 && p.varejo > 0))) {
       const valorEstoque = p.saldo > 0 && p.custo_medio ? p.saldo * p.custo_medio : 0;
+      const saldo = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(p.saldo);
+      // Com o estoque ainda não conferido, o saldo é só uma pista: a ordem é pelo que o produto vendia antes
+      let acao;
+      if (!ESTOQUE_CONFERIDO) {
+        acao = p.saldo > 0
+          ? `O sistema mostra ${saldo} em estoque (estoque ainda não conferido): confira se o produto está na loja, `
+            + 'exposto e com preço. Se estiver, faça promoção ou exponha melhor.'
+          : 'Sem venda no período: confira se saiu de linha, se faltou comprar ou se está sem preço.';
+      } else {
+        acao = p.saldo > 0
+          ? `Tem ${saldo} em estoque parado${valorEstoque ? ` (${reais(valorEstoque)} no custo)` : ''}: faça promoção ou `
+            + 'exponha melhor, e pare de comprar até girar.'
+          : 'Sem estoque e sem venda: confira se saiu de linha ou se faltou comprar.';
+      }
       decisoes.parados.push({
         codigo: p.codigo,
-        valor_estoque: r2(valorEstoque),
-        valor: r2(valorEstoque),
-        acao: p.saldo > 0
-          ? `Tem ${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(p.saldo)} em estoque parado`
-            + `${valorEstoque ? ` (${reais(valorEstoque)} no custo)` : ''}: faça promoção ou exponha melhor, e pare de comprar até girar.`
-          : 'Sem estoque e sem venda: confira se saiu de linha ou se faltou comprar.',
+        valor_estoque: ESTOQUE_CONFERIDO ? r2(valorEstoque) : null,
+        valor: ESTOQUE_CONFERIDO ? r2(valorEstoque) : r2(somar(p._linhas, anoAntes, anteriorAte).v),
+        acao,
       });
     }
   }
+  // i) Embalagens do mesmo produto: a maior não pode sair mais cara por kg (ou litro) que a menor
+  for (const grupo of gruposDeEmbalagem(lista)) {
+    for (let i = 1; i < grupo.length; i += 1) {
+      const menor = grupo[i - 1];
+      const maior = grupo[i];
+      if (maior.porMedida > menor.porMedida * (1 + DIFERENCA_EMBALAGEM)) {
+        const precoMaximo = menor.porMedida * maior.medida;
+        decisoes.embalagem.push({
+          codigo: maior.p.codigo,
+          menor: menor.p.codigo,
+          por_medida: r2(maior.porMedida),
+          por_medida_menor: r2(menor.porMedida),
+          medida: maior.unidade,
+          preco_maximo: r2(precoMaximo),
+          valor: maior.p.venda,
+          acao: `${maior.p.descricao} sai a ${reais(maior.porMedida)}/${maior.unidade} e ${menor.p.descricao} (menor) a `
+            + `${reais(menor.porMedida)}/${maior.unidade}: a embalagem maior está mais cara. O cliente compra a pequena `
+            + `ou vai ao concorrente. Para ficar igual, o preço máximo da maior é ${reais(precoMaximo)}; o normal é ela sair um pouco mais barata.`,
+        });
+      }
+    }
+  }
+
   // Os de maior impacto primeiro
   for (const itens of Object.values(decisoes)) itens.sort((a, b) => n(b.valor) - n(a.valor));
 
@@ -790,7 +1082,7 @@ async function analise(query, acesso = {}) {
   // Lista para a tela, sem os campos internos (os que começam com "_")
   const produtos = lista.map((p) => {
     const limpo = Object.fromEntries(Object.entries(p).filter(([k]) => !k.startsWith('_')));
-    return { ...limpo, curva: p.curva ?? null };
+    return { ...limpo, curva: p.curva ?? null, papel: p.papel ?? null };
   });
   produtos.sort((a, b) => (b.venda - a.venda) || String(a.descricao).localeCompare(String(b.descricao)));
 
@@ -802,7 +1094,9 @@ async function analise(query, acesso = {}) {
     de,
     anterior: { de: anteriorDe, ate: anteriorAte },
     lido_em: base.lidoEm,
-    filtros: { tipo, categoria },
+    filtros: { tipo, categoria, loja },
+    lojas: base.lojas,
+    por_loja: porLoja,
     pode_editar: Boolean(acesso.podeEditar),
     tipos: TIPOS,
     categorias: nomesCategorias,
@@ -810,6 +1104,8 @@ async function analise(query, acesso = {}) {
       queda_margem: QUEDA_MARGEM, janela_preco: JANELA_PRECO, dias_minimos_depois: DIAS_MINIMOS_DEPOIS,
       efeito_qtd: EFEITO_QTD, curva_a: CURVA_A, curva_b: CURVA_B, dias_custo_real: repo.DIAS_CUSTO_REAL,
       margem_desejada_maxima: MARGEM_DESEJADA_MAXIMA,
+      unidades_minimas: UNIDADES_MINIMAS, cobertura_alta: COBERTURA_ALTA, cobertura_boa: COBERTURA_BOA,
+      estoque_conferido: ESTOQUE_CONFERIDO,
     },
     resumo: {
       venda: r2(total.venda),
@@ -829,6 +1125,12 @@ async function analise(query, acesso = {}) {
       com_custo_real: lista.filter((p) => p.custo_real).length,
       com_bonificacao: lista.filter((p) => p.bonificacao).length,
       curvas,
+      papeis,
+      mediana_margem: r4(medianaMargem),
+      canais: {
+        balcao: { venda: r2(canais.balcao.venda), margem: r4(margemDe(canais.balcao)), lucro: r2(lucroDe(canais.balcao)) },
+        atacado: { venda: r2(canais.atacado.venda), margem: r4(margemDe(canais.atacado)), lucro: r2(lucroDe(canais.atacado)), estimado: true },
+      },
       melhor_dia: melhorDia && melhorDia.media > 0 ? melhorDia : null,
     },
     tempo,
@@ -1005,6 +1307,19 @@ function montarDetalhe(linhas, mudancas, hoje, nomes = null) {
   };
 }
 
+// Controle para as janelas: as mesmas regras de escopo da aba (sem insumo e uso interno)
+async function controleDaBase(base, loja = null) {
+  const vendas = vendasDa(base, loja);
+  const [tipos, categorias] = await Promise.all([classificacao.listar('produto'), classificacao.listar('produto_categoria')]);
+  const produtos = [];
+  for (const p of base.produtos.values()) {
+    const linhas = vendas.get(p.codigo);
+    if (!linhas?.length || FORA_DA_ANALISE.has(tipoDoProduto(p, tipos.get(p.codigo)?.tipo))) continue;
+    produtos.push({ linhas, categoria: categorias.get(p.codigo)?.tipo ?? null, codigo: p.codigo });
+  }
+  return { controleDe: montarControle(produtos), categoriaDe: (codigo) => categorias.get(codigo)?.tipo ?? null };
+}
+
 // Um produto
 async function produto(query, params) {
   const codigo = Number(params.codigo);
@@ -1013,10 +1328,12 @@ async function produto(query, params) {
   const cadastro = base.produtos.get(codigo);
   if (!cadastro) throw new AppError('Produto não encontrado', 404);
   const real = base.custosReais.get(codigo);
-  const brutas = base.vendasPorProduto.get(codigo) ?? [];
+  const loja = lojaFiltro(query.loja, base);
+  const brutas = vendasDa(base, loja).get(codigo) ?? [];
   const linhas = prepararLinhas(brutas, cadastro.custo_medio, codigo, real?.custo ?? null);
   const desejada = margens.get(codigo);
   const mudancas = base.mudancasPorProduto.get(codigo) ?? [];
+  const controle = await controleDaBase(base, loja);
   return {
     hoje: base.hoje,
     produto: {
@@ -1031,7 +1348,8 @@ async function produto(query, params) {
     },
     ...montarDetalhe(linhas, mudancas, base.hoje),
     // Cada mudança de preço e o que aconteceu com a venda depois (a mais nova primeiro)
-    variacoes: analisarMudancas(mudancas, brutas, base.hoje, cadastro.custo_medio, real?.custo ?? null).reverse(),
+    variacoes: analisarMudancas(mudancas, brutas, base.hoje, cadastro.custo_medio, real?.custo ?? null,
+      controle.controleDe(brutas, controle.categoriaDe(codigo))).reverse(),
   };
 }
 
@@ -1040,19 +1358,22 @@ async function produto(query, params) {
 async function categoria(query, acesso = {}) {
   const nome = query.nome ? String(query.nome) : null;
   if (!nome) throw new AppError('Informe a categoria ("nome"; "__sem" para os produtos sem categoria)');
-  const lista = await analise({ dias: query.dias, tipo: query.tipo, categoria: nome }, acesso);
+  const lista = await analise({ dias: query.dias, tipo: query.tipo, categoria: nome, loja: query.loja }, acesso);
   const base = await lerBase(false);
 
   const nomes = new Map(lista.produtos.map((p) => [p.codigo, p.descricao]));
+  const controle = await controleDaBase(base, lista.filtros.loja);
+  const vendasLoja = vendasDa(base, lista.filtros.loja);
   const linhas = [];
   const mudancas = [];
   const variacoes = [];
   for (const p of lista.produtos) {
-    const brutas = base.vendasPorProduto.get(p.codigo) ?? [];
+    const brutas = vendasLoja.get(p.codigo) ?? [];
     linhas.push(...prepararLinhas(brutas, p.custo_medio, p.codigo, p.custo_real));
     const doProduto = (base.mudancasPorProduto.get(p.codigo) ?? []).map((m) => ({ ...m, produto: p.codigo, descricao: p.descricao }));
     mudancas.push(...doProduto);
-    variacoes.push(...analisarMudancas(doProduto, brutas, base.hoje, p.custo_medio, p.custo_real));
+    variacoes.push(...analisarMudancas(doProduto, brutas, base.hoje, p.custo_medio, p.custo_real,
+      controle.controleDe(brutas, p.categoria ?? controle.categoriaDe(p.codigo))));
   }
   variacoes.sort((a, b) => (a.quando < b.quando ? 1 : -1));
 

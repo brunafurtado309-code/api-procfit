@@ -61,6 +61,10 @@
     <div id="aba-analise" hidden>
       <div class="fornecedores-opcoes produtos-filtros analise-filtros">
         <label class="campo">
+          <span>Loja</span>
+          <select id="analise-loja"><option value="">Todas as lojas</option></select>
+        </label>
+        <label class="campo">
           <span>Categoria</span>
           <select id="analise-categoria"><option value="">Todas</option><option value="__sem">Sem categoria</option></select>
         </label>
@@ -156,6 +160,30 @@
         </div>
       </section>
 
+      <section class="bloco">
+        <h2>Lojas</h2>
+        <p class="bloco__descricao">
+          Venda e margem de cada loja, com os filtros de tipo e categoria. Clique no nome para ver a aba inteira só daquela
+          loja (clique de novo para voltar a todas). As lojas novas aparecem aqui sozinhas quando começam a vender.
+        </p>
+        <div class="tabela-rolagem">
+          <table class="tabela" id="tabela-lojas">
+            <thead>
+              <tr>
+                <th scope="col" class="esquerda">Loja</th>
+                <th scope="col">Venda</th>
+                <th scope="col">Participação</th>
+                <th scope="col">vs período anterior</th>
+                <th scope="col">Lucro bruto</th>
+                <th scope="col">Margem</th>
+                <th scope="col">Produtos vendidos</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
       <div class="duas-colunas">
         <section class="bloco">
           <h2>Mais vendidos</h2>
@@ -168,6 +196,13 @@
           <div class="barras" id="analise-menos-vendidos"></div>
         </section>
       </div>
+
+      <section class="bloco">
+        <h2>Papel de cada produto</h2>
+        <p class="bloco__descricao" id="analise-matriz-explica"></p>
+        <div class="analise-matriz" id="analise-matriz" aria-label="Matriz giro x margem"></div>
+        <div class="analise-matriz-eixos" aria-hidden="true"><span>↑ gira muito</span><span>margem alta ← | → margem baixa</span></div>
+      </section>
 
       <section class="bloco">
         <div class="bloco-topo">
@@ -186,6 +221,8 @@
               <option value="sugerido">Mais abaixo do preço sugerido</option>
               <option value="bonificacao">Mais bonificados</option>
               <option value="mudou">Mudança de preço mais recente</option>
+              <option value="gmroi">Maior GMROI</option>
+              <option value="cobertura">Mais dias de estoque</option>
             </select>
           </label>
         </div>
@@ -194,7 +231,8 @@
           por nota, que vem sem custo, o custo é estimado. Margem real: com o custo real, que desconta as unidades
           bonificadas (pago nas compras ÷ unidades recebidas, últimos 120 dias). Preço sugerido: custo real ÷
           (1 − imposto − margem desejada), com a margem desejada de cada produto, que só a precificação define.
-          Giro: de quantos em quantos dias o produto vende.
+          Giro: de quantos em quantos dias o produto vende; estoque p/ X dias = quanto o estoque de hoje aguenta no ritmo
+          do período; GMROI = lucro bruto do ano ÷ estoque de hoje no custo (acima de 1, o estoque se paga no ano).
         </p>
         <div class="cartoes cartoes--cinco" id="analise-curvas"></div>
 
@@ -214,7 +252,7 @@
                 <th scope="col">Preço sugerido</th>
                 <th scope="col">Giro</th>
                 <th scope="col">Última venda</th>
-                <th scope="col">Estoque</th>
+                <th scope="col" title="Saldo do PROCFIT: o estoque ainda não foi todo conferido">Estoque (sistema)</th>
               </tr>
             </thead>
             <tbody></tbody>

@@ -3,7 +3,7 @@
 //
 // Uma consulta só, com cinco resultados, lida de uma vez e guardada por alguns minutos no service:
 //   1. Hoje           a data do banco (a mesma régua de "hoje" das outras telas)
-//   2. Venda por dia  uma linha por produto e por dia, desde 1º de janeiro do ano passado
+//   2. Venda por dia  uma linha por produto, por LOJA (empresa) e por dia, desde 1º de janeiro do ano passado
 //                     (assim dá para comparar mês com mês e ano com ano).
 //                     Mesmas regras do painel de vendas (vendas.repository.js):
 //                       - sem o tipo 20 (importação de demanda, não é venda);
@@ -36,7 +36,10 @@
 //                     21,25 = TOTAL_PRODUTO ÷ QUANTIDADE_ESTOQUE). Conta as notas ainda sem entrada no
 //                     estoque também: a mercadoria já chegou e já foi (ou será) paga.
 //
-// Nomes curtos nas colunas da venda por dia (p, d, q...) porque são muitas linhas.
+//   6. Lojas          EMPRESAS_USUARIAS: código e nome de cada empresa que vendeu no período da base.
+//                     Hoje é uma loja; o painel já separa por empresa para as próximas (são 12 previstas).
+//
+// Nomes curtos nas colunas da venda por dia (p, e, d, q...) porque são muitas linhas.
 
 const { getPool } = require('../config/db');
 const { MUDANCAS_DE_PRECO, TABELA_VAREJO, TABELA_ATACADO } = require('./logistica.repository');
@@ -60,6 +63,7 @@ async function base() {
     -- 2. Venda por produto e por dia
     SELECT
       VA.PRODUTO                                         AS p,
+      VA.EMPRESA                                         AS e,
       CONVERT(varchar(10), CAST(VA.MOVIMENTO AS date), 23) AS d,
       SUM(VA.QUANTIDADE)                                 AS q,
       SUM(VA.VENDA_LIQUIDA)                              AS v,
@@ -74,7 +78,7 @@ async function base() {
       AND VA.MOVIMENTO < DATEADD(day, 1, @hoje)
       AND ISNULL(VA.DOCUMENTO_TIPO, 0) <> 20
       AND VA.PRODUTO IS NOT NULL
-    GROUP BY VA.PRODUTO, CAST(VA.MOVIMENTO AS date);
+    GROUP BY VA.PRODUTO, VA.EMPRESA, CAST(VA.MOVIMENTO AS date);
 
     -- 3. Produtos: cadastro, preço de varejo, custo médio e saldo de estoque
     WITH PRECOS AS (
@@ -117,6 +121,15 @@ async function base() {
       AND M.quando >= @desde
     ORDER BY M.produto, M.quando;
 
+    -- 6. Lojas (empresas) que venderam desde o início da base
+    SELECT EU.EMPRESA_USUARIA AS codigo, LTRIM(RTRIM(EU.NOME_FANTASIA)) AS nome
+    FROM EMPRESAS_USUARIAS EU WITH (NOLOCK)
+    WHERE EXISTS (
+      SELECT 1 FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
+      WHERE VA.EMPRESA = EU.EMPRESA_USUARIA AND VA.MOVIMENTO >= @desde AND ISNULL(VA.DOCUMENTO_TIPO, 0) <> 20
+    )
+    ORDER BY EU.EMPRESA_USUARIA;
+
     -- 5. Custo real: pago nas compras ÷ (unidades compradas + bonificadas)
     SELECT
       P.PRODUTO                                                                         AS produto,
@@ -132,8 +145,8 @@ async function base() {
       AND ${FINAL_CFOP} IN ('910', '101', '102', '401', '403', '404', '405')
     GROUP BY P.PRODUTO;
   `);
-  const [[{ hoje }], vendas, produtos, mudancas, custosReais] = recordsets;
-  return { hoje, vendas, produtos, mudancas, custosReais };
+  const [[{ hoje }], vendas, produtos, mudancas, custosReais, lojas] = recordsets;
+  return { hoje, vendas, produtos, mudancas, custosReais, lojas };
 }
 
 module.exports = { base, DIAS_CUSTO_REAL };
