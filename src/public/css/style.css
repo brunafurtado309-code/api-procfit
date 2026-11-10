@@ -2360,14 +2360,14 @@ button.barra:hover { background: var(--verde-suave); color: inherit; }
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  margin-top: 0.3rem;
+  margin-top: 0.15rem;
   font-size: var(--texto-mini);
   color: var(--tinta-suave);
   white-space: nowrap;
 }
 .tela-precificacao .analise-desejada input {
-  width: 4.2rem;
-  padding: 0.15rem 0.35rem;
+  width: 3.8rem;
+  padding: 0.05rem 0.3rem;
   font-size: var(--texto-mini);
   text-align: right;
 }
@@ -2375,3 +2375,163 @@ button.barra:hover { background: var(--verde-suave); color: inherit; }
 @media (max-width: 720px) {
   .tela-precificacao .bloco-topo { flex-wrap: wrap; }
 }
+
+/* --- Precificação, janela do produto (picos e quedas) --- */
+.tela-precificacao .analise-produto-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tela-precificacao .analise-produto-link:hover { color: var(--verde); text-decoration: underline; background: none; }
+.tela-precificacao button.barra .barra-rotulo { color: var(--tinta); }
+.detalhe--produto-analise { width: min(80rem, calc(100vw - 2rem)); }
+.produto-analise-corpo { padding-top: 1rem; }
+.produto-analise-numeros { margin-bottom: 1rem; }
+.produto-analise-grafico { margin-top: 0.75rem; }
+.produto-analise-explica { margin-top: 0.5rem; }
+.produto-analise-explica p { margin: 0.35rem 0; font-size: var(--texto-pequeno); line-height: 1.45; }
+.produto-analise-marca {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  margin-right: 0.45rem;
+  border-radius: 3px;
+  vertical-align: baseline;
+}
+.produto-analise-marca--pico { background: var(--verde-escuro); }
+.produto-analise-marca--queda { background: var(--alerta); }
+.produto-analise-marca--correndo { background: var(--verde-suave); border: 1px solid var(--verde-claro); }
+
+/* ==========================================================
+   24. Densidade: o painel inteiro mais compacto (padrão de ERP)
+   Pedido em nov/2026: letras e números menores, tudo mais junto, para caber mais informação
+   na tela sem rolar (referência: tela de produtos do Nomus). Vale para TODAS as telas.
+   Fica aqui, no fim, para mudar a densidade num lugar só: as variáveis do topo (seção 1) são
+   redefinidas e os componentes que tinham medida própria são apertados.
+   ========================================================== */
+:root {
+  --texto-mini: 0.75rem;      /* 12px: notas embaixo do valor, rótulos de campo */
+  --texto-pequeno: 0.8125rem; /* 13px: tabelas, descrições, botões */
+  --texto: 0.875rem;          /* 14px: corpo */
+  --texto-titulo: 1.0625rem;  /* 17px: título de seção */
+  --largura: 1920px;          /* usa quase toda a tela larga */
+  --margem-lateral: clamp(0.75rem, 1.5vw, 1.5rem);
+  --respiro-secao: 1rem;
+  --raio: 6px;
+  --raio-cartao: 8px;
+}
+
+/* Topo verde mais fino */
+.topo { padding: 0.45rem var(--margem-lateral); }
+.topo h1 { font-size: 1.05rem; }
+.modulo { padding: 0.3rem 0.65rem; }
+.botao-texto { padding: 0.3rem 0.7rem; }
+.conteudo, .conteudo--largo { padding-bottom: 1.5rem; }
+
+/* Botões e campos mais baixos */
+button { padding: 0.4rem 0.85rem; }
+input, select { font-size: var(--texto-pequeno); padding: 0.32rem 0.55rem; }
+.campo, .filtros label, .filtros-lista label { gap: 0.15rem; }
+.pesquisa input { font-size: var(--texto-pequeno); }
+.atalhos { min-height: 2rem; gap: 0.3rem; }
+.atalhos button { padding: 0.28rem 0.65rem; }
+.status { margin-bottom: 0.4rem; }
+
+/* Abas e divisão do financeiro */
+.aba { padding: 0.5rem 0.85rem; font-size: var(--texto-pequeno); }
+.divisao { margin-top: 0.75rem; }
+.divisao__item { padding: 0.4rem 1rem; font-size: var(--texto-pequeno); }
+
+/* Número principal e indicadores: menores, sem perder o destaque */
+.valor-grande { margin: 0.1rem 0 0.5rem; font-size: clamp(1.6rem, 2.4vw, 2.15rem); }
+.destaque .explica { margin-top: 0.4rem; }
+.painel-topo { gap: 1rem 2.5rem; }
+.indicadores { gap: 0.15rem 1rem; }
+.indicadores dd, .numero dd { font-size: clamp(1rem, 1.2vw, 1.2rem); }
+.numero { padding: 0.1rem 1rem; }
+.bloco .numeros { margin-top: 0.75rem; }
+
+/* Seções */
+.bloco > h2, .bloco-topo h2 { line-height: 1.25; }
+.bloco__descricao, .explica { margin-top: 0.15rem; }
+.subtitulo { margin-top: 0.75rem; }
+.aviso-alerta { margin-top: 0.6rem; padding: 0.5rem 0.75rem; font-size: var(--texto-pequeno); }
+
+/* Cartões-filtro */
+.cartoes { gap: 0.5rem; }
+.bloco .cartoes { margin-top: 0.6rem; }
+.cartao { padding: 0.55rem 0.8rem; }
+.cartao-valor { margin-top: 0.15rem; font-size: clamp(1rem, 1.25vw, 1.2rem); }
+.cartao-nota { margin-top: 0.05rem; }
+
+/* Tabelas: linhas baixas, letra de 13px, cabeçalho de 12px */
+.tabela-rolagem { margin-top: 0.6rem; }
+.tabela { font-size: var(--texto-pequeno); }
+.tabela th, .tabela td { padding: 0.36rem 0.6rem; }
+.tabela th { font-size: var(--texto-mini); }
+.tabela .qtd, .tabela .origem { font-size: var(--texto-mini); }
+
+/* Barras, "precisa de atenção" e paginação */
+.barras { margin-top: 0.5rem; }
+.barra { padding: 0.32rem 0.4rem; gap: 0.75rem; }
+.barra-rotulo { font-size: var(--texto-pequeno); }
+.barra-valor { font-size: var(--texto-pequeno); }
+.atencao { margin-top: 0.6rem; }
+.atencao__linha { padding: 0.45rem 0.6rem; gap: 0.75rem; }
+.paginacao { margin-top: 0.6rem; gap: 0.6rem; }
+
+/* Barra de filtros numa linha só (pesquisa + período + Atualizar), como num ERP.
+   O que não cabe desce; "Mais filtros", marcadores e status ficam sempre na linha de baixo. */
+.barra-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.75rem 0 0.25rem;
+}
+.barra-filtros__linha { flex: 1 1 26rem; gap: 0.5rem; }
+.barra-filtros > .filtros { flex: 0 1 auto; gap: 0.5rem 0.75rem; }
+.barra-filtros > :not(.barra-filtros__linha):not(.filtros) { flex-basis: 100%; }
+.barra-filtros > .filtros--extras { flex-basis: 100%; }
+.pesquisa input[type="search"] {
+  height: 2.1rem;
+  padding-left: 2.1rem;
+  font-size: var(--texto-pequeno);
+  background-position: 0.65rem center;
+  background-size: 0.95rem;
+}
+.pesquisa button { height: 2.1rem; }
+
+/* Janelas de detalhe */
+.detalhe__topo { padding: 0.7rem 1.25rem; }
+.detalhe__topo h2 { font-size: 1.1rem; }
+.detalhe__corpo { padding: 0 1.25rem 1rem; }
+
+/* --- Paginação no padrão de ERP (js/paginacao.js): linhas por página, "1-20 de 274" e as páginas --- */
+.paginador {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
+  margin-top: 0.6rem;
+  font-size: var(--texto-pequeno);
+  color: var(--tinta-suave);
+}
+.paginador select { padding: 0.2rem 0.4rem; }
+.paginador__paginas { display: flex; align-items: center; gap: 0.15rem; }
+.paginador__paginas button {
+  min-width: 1.9rem;
+  padding: 0.2rem 0.45rem;
+  border: 0;
+  background: none;
+  color: var(--tinta);
+  font-weight: 600;
+}
+.paginador__paginas button:hover:not(:disabled) { background: var(--verde-suave); color: var(--verde-escuro); }
+.paginador__paginas button.paginador__atual { border-bottom: 2px solid var(--verde); border-radius: 0; color: var(--verde); }
+.paginador__paginas button:disabled { opacity: 0.35; cursor: default; }
+.paginador__reticencias { padding: 0 0.2rem; }

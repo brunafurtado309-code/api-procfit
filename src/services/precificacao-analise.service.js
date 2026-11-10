@@ -741,6 +741,145 @@ async function analise(query, acesso = {}) {
   };
 }
 
+// ---------- Um produto: picos e quedas da venda no tempo ----------
+//
+// Abre ao clicar no produto. Mostra a venda por dia (últimos 90 dias), por semana e por mês (toda a base),
+// marcando:
+//   pico  = o ponto de maior venda;
+//   queda = a maior queda em relação ao ponto anterior (só entre pontos completos: a semana e o mês
+//           de hoje ainda estão correndo e sempre pareceriam uma queda);
+// e, perto de cada um, as mudanças do preço de varejo (até 14 dias antes), que quase sempre explicam.
+
+const DIAS_GRAFICO_DIA = 90;
+// "2026-12" -> "2027-01"
+const proximoMes = (m) => {
+  const [a, b] = [Number(m.slice(0, 4)), Number(m.slice(5, 7))];
+  return b === 12 ? `${a + 1}-01` : `${a}-${String(b + 1).padStart(2, '0')}`;
+};
+const DIAS_MOTIVO = 14;
+
+function produtoPontos(linhas, chave, rotulo, de, ate, custoEstimado) {
+  const grupos = new Map();
+  for (const l of linhas) {
+    if (l.d < de || l.d > ate) continue;
+    const k = chave(l.d);
+    if (!grupos.has(k)) grupos.set(k, { q: 0, v: 0, i: 0, qc: 0, vc: 0, ic: 0, c: 0 });
+    const t = grupos.get(k);
+    t.q += l.q; t.v += l.v; t.i += l.i; t.qc += l.qc; t.vc += l.vc; t.ic += l.ic; t.c += l.c;
+  }
+  return { grupos, ponto: (k, inicio, fim) => {
+    const t = grupos.get(k) ?? { q: 0, v: 0, i: 0, qc: 0, vc: 0, ic: 0, c: 0 };
+    const r = resultado(t, custoEstimado);
+    return { rotulo: rotulo(k), inicio, fim, venda: r2(t.v), qtd: r4(t.q), lucro: r2(r.base ? lucroDe(r) : null) };
+  } };
+}
+
+// Pico, maior queda e as mudanças de preço que aconteceram perto deles.
+// soComVenda (dia): compara só os dias que tiveram venda, cada um com o dia com venda anterior.
+// Sem isso, todo dia fechado (domingo, feriado) viraria uma "queda de 100%".
+function marcar(pontos, completos, mudancas, soComVenda = false) {
+  if (!pontos.length) return { pico: null, queda: null };
+  let pico = 0;
+  pontos.forEach((p, i) => { if (p.venda > pontos[pico].venda) pico = i; });
+  let queda = null;
+  let anterior = 0;
+  for (let i = 1; i < completos; i += 1) {
+    if (soComVenda) {
+      if (!(pontos[i].venda > 0)) continue;
+      while (anterior < i && !(pontos[anterior].venda > 0)) anterior += 1;
+    } else {
+      anterior = i - 1;
+    }
+    const antes = pontos[anterior]?.venda;
+    if (anterior < i && antes > 0) {
+      const v = (pontos[i].venda - antes) / antes;
+      if (v < 0 && (queda === null || v < queda.variacao)) queda = { indice: i, variacao: v, anterior };
+    }
+    if (soComVenda) anterior = i;
+  }
+  const perto = (p) => mudancas
+    .filter((m) => m.quando.slice(0, 10) >= somarDias(p.inicio, -DIAS_MOTIVO) && m.quando.slice(0, 10) <= p.fim)
+    .map((m) => ({ ...m, subiu: m.depois > m.antes }));
+  return {
+    pico: pontos[pico].venda > 0 ? { indice: pico, ...pontos[pico], mudancas: perto(pontos[pico]) } : null,
+    queda: queda ? {
+      indice: queda.indice, ...pontos[queda.indice], variacao: r4(queda.variacao),
+      anterior: pontos[queda.anterior].venda, mudancas: perto(pontos[queda.indice]),
+    } : null,
+  };
+}
+
+async function produto(query, params) {
+  const codigo = Number(params.codigo);
+  if (!Number.isInteger(codigo) || codigo <= 0) throw new AppError('Código do produto inválido');
+  const [base, margens] = await Promise.all([lerBase(query.atualizar === '1'), classificacao.listar(ALVO_MARGEM)]);
+  const cadastro = base.produtos.get(codigo);
+  if (!cadastro) throw new AppError('Produto não encontrado', 404);
+  const linhas = base.vendasPorProduto.get(codigo) ?? [];
+  const mudancas = base.mudancasPorProduto.get(codigo) ?? [];
+  const custo = cadastro.custo_medio;
+  const hoje = base.hoje;
+
+  // Dia: últimos 90 dias, todos os dias (sem venda = zero); hoje está correndo
+  const deDia = somarDias(hoje, -(DIAS_GRAFICO_DIA - 1));
+  const dias = produtoPontos(linhas, (d) => d, diaMes, deDia, hoje, custo);
+  const dia = [];
+  for (let d = deDia; d <= hoje; d = somarDias(d, 1)) dia.push(dias.ponto(d, d, d));
+
+  // Semana (segunda a domingo) e mês: desde a primeira venda do produto na base
+  const primeira = linhas.find((l) => l.q !== 0)?.d ?? hoje;
+  // A semana leva o ano junto: a série pode ter mais de um ano (27/10/25 e 27/10/26)
+  const semanas = produtoPontos(linhas, inicioDaSemana, (k) => `sem. ${diaMes(k)}/${k.slice(2, 4)}`, primeira, hoje, custo);
+  const semana = [];
+  for (let s = inicioDaSemana(primeira); s <= hoje; s = somarDias(s, 7)) semana.push(semanas.ponto(s, s, somarDias(s, 6)));
+  const meses = produtoPontos(linhas, (d) => d.slice(0, 7),
+    (k) => `${MESES[Number(k.slice(5, 7)) - 1]}/${k.slice(2, 4)}`, primeira, hoje, custo);
+  const mes = [];
+  for (let m = primeira.slice(0, 7); m <= hoje.slice(0, 7); m = proximoMes(m)) {
+    mes.push(meses.ponto(m, `${m}-01`, somarDias(`${proximoMes(m)}-01`, -1)));
+  }
+
+  // Tendência: as 4 últimas semanas completas contra as 4 de antes
+  const completas = semana.slice(0, -1);
+  const ultimas = completas.slice(-4).reduce((t, p) => t + p.venda, 0);
+  const anteriores = completas.slice(-8, -4).reduce((t, p) => t + p.venda, 0);
+
+  // Média por dia da semana nos últimos 90 dias
+  const totais = DIAS_SEMANA.map(() => 0);
+  const vezes = DIAS_SEMANA.map(() => 0);
+  for (const p of dia) {
+    const w = diaDaSemana(p.inicio);
+    vezes[w] += 1;
+    totais[w] += p.venda;
+  }
+  const diaSemana = [1, 2, 3, 4, 5, 6, 0].map((w) => ({ dia: DIAS_SEMANA[w], media: r2(vezes[w] ? totais[w] / vezes[w] : 0) }));
+
+  const real = base.custosReais.get(codigo);
+  const desejada = margens.get(codigo);
+  return {
+    hoje,
+    produto: {
+      codigo,
+      descricao: cadastro.descricao,
+      unidade: cadastro.unidade,
+      varejo: cadastro.varejo,
+      custo_medio: custo,
+      custo_real: r4(real?.custo ?? null),
+      saldo: r4(cadastro.saldo),
+      margem_desejada: desejada ? Number(desejada.tipo) : null,
+    },
+    tendencia: { ultimas: r2(ultimas), anteriores: r2(anteriores), variacao: r4(variacao(ultimas, anteriores)) },
+    dia_semana: diaSemana,
+    // O último ponto de cada série está incompleto (hoje, esta semana, este mês)
+    series: {
+      dia: { pontos: dia, ...marcar(dia, dia.length - 1, mudancas, true) },
+      semana: { pontos: semana, ...marcar(semana, semana.length - 1, mudancas) },
+      mes: { pontos: mes, ...marcar(mes, mes.length - 1, mudancas) },
+    },
+    mudancas: [...mudancas].reverse(),
+  };
+}
+
 // ---------- Margem desejada (só com a permissão "Edita preço") ----------
 
 // Um ou vários produtos com a mesma margem desejada (fração sobre a venda: 0.15 = 15%).
@@ -767,4 +906,4 @@ async function definirMargens(query, params, corpo, usuario) {
   return classificacao.definir(ALVO_MARGEM, codigos, margem, usuario || 'chave mestra');
 }
 
-module.exports = { analise, definirMargens, SEM_CATEGORIA };
+module.exports = { analise, produto, definirMargens, SEM_CATEGORIA };

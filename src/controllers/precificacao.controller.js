@@ -24,6 +24,7 @@ module.exports = {
       next(err);
     }
   },
+  produtoAnalise: acao(analise.produto),
   definirMargens: acao(analise.definirMargens),
   podeEditarPreco,
   notas: acao(service.notas),

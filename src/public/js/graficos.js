@@ -2,7 +2,8 @@
 // Seguem o DESIGN.md: só verdes, laranja para alerta, texto legível e sem caixas.
 //
 // Uso:
-//   graficos.colunas(elemento, { rotulos, series: [{ nome, valores, cor }], formato, empilhado })
+//   graficos.colunas(elemento, { rotulos, series: [{ nome, valores, cor, cores }], formato, empilhado })
+//     cores (opcional): uma cor por coluna, para destacar algumas (ex.: o pico e a queda de um produto)
 //   graficos.rosca(elemento, { itens: [{ nome, valor }], formato, centro })
 // Cada barra/fatia tem uma dica (title) com o valor exato ao passar o mouse.
 // Os gráficos se ajustam à largura do elemento (viewBox + preserveAspectRatio).
@@ -125,7 +126,7 @@ const graficos = (() => {
         if (alturaBarra <= 0) return;
         const barra = criar('rect', {
           x, y: yTopo, width: Math.max(1, larguraColuna - (empilhado ? 0 : 2)), height: alturaBarra,
-          rx: 3, class: 'grafico-barra', style: `fill:${s.cor}`,
+          rx: 3, class: 'grafico-barra', style: `fill:${s.cores?.[i] ?? s.cor}`,
         });
         barra.append(criar('title', {}, `${rotulo} · ${s.nome}: ${formato(valor)}`));
         svg.append(barra);

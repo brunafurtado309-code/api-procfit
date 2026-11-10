@@ -8,6 +8,8 @@ const router = express.Router();
 // Análise: venda, margem, categorias, giro e as decisões de preço (só leitura)
 // ?dias=30|60|90|180 &tipo=revenda|producao &categoria=Nome (ou __sem) &atualizar=1 (lê o PROCFIT de novo)
 router.get('/analise', controller.analise);
+// Um produto: venda por dia, semana e mês, com o pico, a maior queda e as mudanças de preço perto deles
+router.get('/analise/produto/:codigo', controller.produtoAnalise);
 
 // Margem desejada por produto: só quem tem a permissão "Edita preço" (a pessoa da precificação)
 // { produtos: [códigos], margem: 0.15 } ou { produtos: [...], margem: null } para tirar

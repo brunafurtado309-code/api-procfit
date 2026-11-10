@@ -9,7 +9,7 @@
 // a classificação NÃO muda sozinha, quem confirma decide.
 
 const produtosTela = (() => {
-  const POR_PAGINA = 50;
+  let porPagina = paginacao.lembrar('precificacao-produtos', 20); // linhas por página (fica guardado no navegador)
   let lista = null;
   let diasCarregados = null;
   let cartao = 'pendentes';
@@ -199,10 +199,10 @@ const produtosTela = (() => {
     const codigos = new Set(itens.map((p) => p.codigo));
     for (const c of [...marcados]) if (!codigos.has(c)) marcados.delete(c);
 
-    const paginas = Math.max(1, Math.ceil(itens.length / POR_PAGINA));
+    const paginas = Math.max(1, Math.ceil(itens.length / porPagina));
     pagina = Math.min(pagina, paginas);
-    const primeiro = (pagina - 1) * POR_PAGINA;
-    const daPagina = itens.slice(primeiro, primeiro + POR_PAGINA);
+    const primeiro = (pagina - 1) * porPagina;
+    const daPagina = itens.slice(primeiro, primeiro + porPagina);
 
     el('produtos-titulo').textContent = `${CARTOES[cartao].titulo} (${inteiro(itens.length)})`;
 
@@ -251,13 +251,19 @@ const produtosTela = (() => {
     }
     el('tabela-produtos').tBodies[0].replaceChildren(...linhas);
 
-    el('produtos-paginacao').hidden = paginas <= 1;
-    el('produtos-pagina').textContent = itens.length
-      ? `Produtos ${inteiro(primeiro + 1)} a ${inteiro(Math.min(primeiro + POR_PAGINA, itens.length))}`
-        + ` de ${inteiro(itens.length)} · página ${pagina} de ${paginas}`
-      : '';
-    el('produtos-anterior').disabled = pagina <= 1;
-    el('produtos-proxima').disabled = pagina >= paginas;
+    paginacao.desenhar(el('produtos-paginador'), {
+      total: itens.length,
+      pagina,
+      porPagina,
+      aoMudar: (escolha) => {
+        pagina = escolha.pagina;
+        if (escolha.porPagina !== porPagina) {
+          porPagina = escolha.porPagina;
+          paginacao.guardar('precificacao-produtos', porPagina);
+        }
+        mostrarTabela();
+      },
+    });
     mostrarLote(itens);
   }
 
@@ -319,13 +325,6 @@ const produtosTela = (() => {
     });
     el('produtos-lote-aplicar').addEventListener('click', aplicarLote);
     el('produtos-lote-limpar').addEventListener('click', () => { marcados.clear(); mostrarTabela(); });
-    const irPara = (nova) => {
-      pagina = nova;
-      mostrarTabela();
-      el('produtos-titulo').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    };
-    el('produtos-anterior').addEventListener('click', () => irPara(pagina - 1));
-    el('produtos-proxima').addEventListener('click', () => irPara(pagina + 1));
   }
 
   // Precisa ler de novo quando nunca leu ou quando o período mudou desde a última leitura

@@ -15,10 +15,15 @@ cor nem tamanho próprio: usa as variáveis.
    `--verde-vivo`, `--verde-claro`, `--verde-suave`. Quando precisar de duas séries num
    gráfico, use `--verde` e `--verde-vivo`.
 4. **Laranja é só alerta.** `--alerta` aparece apenas para atraso, valor negativo e desconto.
-5. **Letra legível.** Texto de leitura nunca abaixo de `--texto-mini` (13px). Corpo em 16px,
-   título de seção em `--texto-titulo` (20px).
-6. **Largura cheia.** O conteúdo usa até `--largura` (1600px), com a mesma margem lateral
+5. **Compacto, como um ERP** (nov/2026). Corpo em 14px (`--texto`), tabelas e descrições em
+   13px (`--texto-pequeno`), notas e rótulos em 12px (`--texto-mini`, o mínimo), título de seção
+   em 17px (`--texto-titulo`). Linhas de tabela baixas, cartões e espaços curtos. Tudo isso fica
+   na seção 24 do style.css ("Densidade"): para deixar mais ou menos compacto, mude só ali.
+6. **Largura cheia.** O conteúdo usa até `--largura` (1920px), com a mesma margem lateral
    em todas as telas.
+7. **No máximo duas linhas pequenas por célula.** Junte as informações de apoio numa linha
+   com " · " (ex.: "custo R$ 19,69 · real R$ 16,07"). A classe `.qtd` já quebra a linha:
+   não coloque `<br>` antes dela.
 
 ## Estrutura de uma tela
 
@@ -38,11 +43,12 @@ cor nem tamanho próprio: usa as variáveis.
 Os filtros de toda tela ficam num lugar só, logo abaixo do topo (ou das abas), dentro de
 `<section class="barra-filtros">`, sempre nesta ordem:
 
-1. **Linha 1 — pesquisa e ações** (`.barra-filtros__linha`): campo de pesquisa grande com
-   lupa (`form.pesquisa`), botão Pesquisar e, à direita, as ações da tela
-   (`.barra-filtros__acoes`): "Mais filtros" (se houver) e "Baixar Excel".
-2. **Linha 2 — período** (`form.filtros`): datas De/Até, atalhos de período (`.atalhos`,
-   em pílulas; clicar preenche as datas) e o botão Atualizar (`.filtros__aplicar`).
+1. **Pesquisa e ações** (`.barra-filtros__linha`): campo de pesquisa com lupa
+   (`form.pesquisa`), botão Pesquisar e as ações da tela (`.barra-filtros__acoes`):
+   "Mais filtros" (se houver) e "Baixar Excel".
+2. **Período** (`form.filtros`): datas De/Até, atalhos de período (`.atalhos`, em pílulas;
+   clicar preenche as datas) e o botão Atualizar (`.filtros__aplicar`).
+   Pesquisa e período ficam **na mesma linha** quando cabem (o que não cabe desce).
 3. **Mais filtros** (`form.filtros-lista`, fechado por padrão): todo filtro que não é
    período nem pesquisa (seletores e filtros de coluna), com Aplicar e Limpar.
    O botão mostra quantos estão ativos: "Mais filtros (2)".
@@ -74,6 +80,8 @@ sem aparecer nos marcadores; nada de filtro solto dentro das seções da página
 | Janela de detalhe | `dialog.detalhe` | topo verde-escuro |
 | Nº do pedido | `pedidoJanela.link(numero)` (js/pedido.js) | **sempre clicável**: abre a janela do pedido |
 | Janela do pedido | `pedidoJanela.abrir(numero)` | dados, nota/cupom gerados e produtos; igual em todas as telas |
+| Paginação de lista | `paginacao.desenhar(el, { total, pagina, porPagina, aoMudar })` (js/paginacao.js) | linhas por página (10, 20, 50, 100), "1-20 de 274 registros" e as páginas; fica **acima** da tabela; `paginacao.lembrar/guardar` guarda a escolha no navegador |
+| Coluna de destaque no gráfico | `series[].cores` em `graficos.colunas` | uma cor por coluna (ex.: pico verde-escuro, queda laranja) |
 
 ## Pedido em qualquer tela
 
@@ -147,7 +155,8 @@ valor exato na dica ao passar o mouse; número importante também escrito em tex
 ## Checklist antes de publicar uma tela
 
 - [ ] Nenhuma cor escrita direto no CSS da tela (só `var(--...)`)
-- [ ] Nenhum texto menor que 13px
+- [ ] Nenhum texto menor que 12px (`--texto-mini`)
+- [ ] Lista com paginação: `js/paginacao.js`, acima da tabela
 - [ ] Sem caixa em volta de seção (só linha fina)
 - [ ] Testado na largura do notebook e no celular (F12 → ícone de celular no Chrome)
 - [ ] Classes novas com nome que não existe em outra tela

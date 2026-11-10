@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="css/style.css">
   <script src="js/modulos.js" defer></script>
   <script src="js/graficos.js" defer></script>
+  <script src="js/paginacao.js" defer></script>
   <script src="js/precificacao.js" defer></script>
   <script src="js/precificacao-analise.js" defer></script>
   <script src="js/precificacao-produtos.js" defer></script>
@@ -195,6 +196,7 @@
         <div class="cartoes cartoes--cinco" id="analise-curvas"></div>
 
         <h3 class="subtitulo" id="analise-produtos-titulo">Produtos</h3>
+        <div id="analise-paginador" hidden></div>
         <div class="tabela-rolagem">
           <table class="tabela" id="tabela-analise-produtos">
             <thead>
@@ -213,11 +215,6 @@
             </thead>
             <tbody></tbody>
           </table>
-        </div>
-        <div class="paginacao" id="analise-paginacao" hidden>
-          <button type="button" class="botao-secundario" id="analise-anterior">Anterior</button>
-          <span id="analise-pagina"></span>
-          <button type="button" class="botao-secundario" id="analise-proxima">Próxima</button>
         </div>
       </section>
     </div>
@@ -322,6 +319,7 @@
       <datalist id="lista-categorias"></datalist>
 
       <h3 class="subtitulo" id="produtos-titulo">Produtos</h3>
+      <div id="produtos-paginador" hidden></div>
       <div class="tabela-rolagem">
         <table class="tabela" id="tabela-produtos">
           <thead>
@@ -340,11 +338,6 @@
           </thead>
           <tbody></tbody>
         </table>
-      </div>
-      <div class="paginacao" id="produtos-paginacao" hidden>
-        <button type="button" class="botao-secundario" id="produtos-anterior">Anterior</button>
-        <span id="produtos-pagina"></span>
-        <button type="button" class="botao-secundario" id="produtos-proxima">Próxima</button>
       </div>
     </section>
   </main>
