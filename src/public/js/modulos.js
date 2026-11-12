@@ -81,9 +81,10 @@ const modulos = (() => {
       ] },
       { titulo: 'Contas a pagar', pagina: 'pagar.html' },
     ],
+    // "setor" = a função tem permissão própria (sem ele, vale a permissão do módulo)
     faturamento: [
       { titulo: 'Pedidos', pagina: 'faturamento.html' },
-      { titulo: 'Faturados por vendedor', pagina: 'faturamento-vendedores.html' },
+      { titulo: 'Faturados por vendedor', pagina: 'faturamento-vendedores.html', setor: 'faturamento_vendedores' },
     ],
     precificacao: [
       { titulo: 'Análise', pagina: 'precificacao.html#analise', aba: 'analise' },
@@ -95,6 +96,29 @@ const modulos = (() => {
       { titulo: 'Por produto', pagina: 'movimentos.html#produtos', aba: 'produtos' },
     ],
   };
+  // Permissões que abrem só uma parte de um módulo: o módulo entra no menu com só aquela parte
+  // (ex.: quem tem só "Faturamento: faturados por vendedor" vê a pasta Faturamento só com ela)
+  const PARTES = { faturamento_vendedores: 'faturamento' };
+  let setoresRecebidos = null; // tudo o que a chave abre (telas e permissões), vindo de /acessos
+
+  // Funções da pasta que esta pessoa pode ver (pasta vazia some)
+  function funcoesLiberadas(setor, lista = SUBMENUS[setor] ?? []) {
+    const tem = (s) => (setoresRecebidos ?? [setor]).includes(s);
+    return lista
+      .map((f) => (f.itens ? { ...f, itens: funcoesLiberadas(setor, f.itens) } : f))
+      .filter((f) => (f.itens ? f.itens.length > 0 : tem(f.setor ?? setor)));
+  }
+
+  // Página de entrada do módulo para esta pessoa (a primeira função liberada)
+  function paginaDe(setor) {
+    const padrao = PAGINAS[setor]?.pagina ?? 'index.html';
+    const funcoes = funcoesLiberadas(setor);
+    if (!SUBMENUS[setor] || !funcoes.length) return padrao;
+    const primeira = primeiraPagina(funcoes);
+    // A tela de sempre do módulo está liberada: entra por ela, como antes
+    return arquivoDe(primeira) === arquivoDe(padrao) ? padrao : primeira;
+  }
+
   // Navegação de cima da tela que passou para o menu em pastas (fica escondida)
   const NAVS_NO_MENU = [
     'nav.divisao[aria-label="Parte do financeiro"]',
@@ -207,12 +231,19 @@ const modulos = (() => {
     }
     if (!resposta.ok) throw new Error('Não foi possível conferir o acesso da chave');
     const { setores } = await resposta.json();
-    // Só as telas: permissões que não são tela (ex.: precificacao_edita) não entram no menu
-    return setores.filter((setor) => PAGINAS[setor]);
+    setoresRecebidos = setores;
+    // Só os módulos: permissões que não são tela (ex.: precificacao_edita) não entram no menu;
+    // permissão de uma parte (PARTES) traz o módulo dela
+    const telas = [];
+    for (const setor of setores) {
+      const modulo = PAGINAS[setor] ? setor : PARTES[setor];
+      if (modulo && !telas.includes(modulo)) telas.push(modulo);
+    }
+    return telas;
   }
 
   function irPara(setor) {
-    window.location.href = PAGINAS[setor]?.pagina ?? 'index.html';
+    window.location.href = paginaDe(setor);
   }
 
   function icone(nome) {
@@ -383,7 +414,7 @@ const modulos = (() => {
     for (const setor of setores.filter((s) => PAGINAS[s])) {
       if (SUBMENUS[setor]) {
         lista.append(pasta({ chave: setor, titulo: PAGINAS[setor].titulo, iconeNome: setor,
-          lista: SUBMENUS[setor], nivel: 0, abertas, aoTrocar }));
+          lista: funcoesLiberadas(setor), nivel: 0, abertas, aoTrocar }));
       } else {
         lista.append(item(setor, PAGINAS[setor].titulo, PAGINAS[setor].pagina, atual));
       }
@@ -421,6 +452,6 @@ const modulos = (() => {
       .catch(() => {});
   }
 
-  return { setoresDaChave, irPara, desenharMenu, PAGINAS,
+  return { setoresDaChave, irPara, paginaDe, desenharMenu, PAGINAS,
     lojaAtual, escolherLoja, aoMudarLoja, seletorDeLoja, lerLojas, nomeDaLoja, marcarLoja, lojaNoFiltro };
 })();

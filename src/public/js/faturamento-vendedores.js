@@ -49,7 +49,7 @@ async function buscar(rota, parametros = {}) {
     window.location.reload();
     throw new Error('Chave inválida');
   }
-  if (resposta.status === 403) throw new Error('Esta chave não tem acesso ao faturamento.');
+  if (resposta.status === 403) throw new Error('Seu acesso não inclui "Faturamento: faturados por vendedor". Peça para liberar na tela de Usuários.');
   return resposta;
 }
 

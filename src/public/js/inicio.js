@@ -13,7 +13,7 @@ function saudacao(nome) {
 function cartao(setor, pagina) {
   const link = document.createElement('a');
   link.className = 'inicio-cartao';
-  link.href = pagina.pagina;
+  link.href = modulos.paginaDe(setor); // a primeira parte do módulo liberada para a pessoa
 
   const imagem = document.createElement('img');
   imagem.src = `img/modulos/${setor}.svg`;

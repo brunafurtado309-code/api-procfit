@@ -13,6 +13,7 @@ const vendasRoutes = require('./routes/vendas.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
 const adminRoutes = require('./routes/admin.routes');
 const faturamentoRoutes = require('./routes/faturamento.routes');
+const faturamentoVendedoresRoutes = require('./routes/faturamento-vendedores.routes');
 const conciliacaoRoutes = require('./routes/conciliacao.routes'); // NOVO: Conciliação de títulos
 const logisticaRoutes = require('./routes/logistica.routes');
 const precosRoutes = require('./routes/precos.routes');
@@ -85,6 +86,8 @@ app.get('/lojas', exigirChave(), async (req, res, next) => {
 app.use('/vendas', exigirChave('vendas'), vendasRoutes);
 app.use('/financeiro', exigirChave('financeiro'), financeiroRoutes);
 app.use('/admin', exigirChave('admin'), adminRoutes);
+// Sub-tela "Faturados por vendedor": permissão própria, por isso vem antes do /faturamento
+app.use('/faturamento/notas-vendedor', exigirChave('faturamento_vendedores'), faturamentoVendedoresRoutes);
 app.use('/faturamento', exigirChave('faturamento'), faturamentoRoutes);
 app.use('/logistica', exigirChave('logistica'), logisticaRoutes);
 app.use('/precos', exigirChave('precos'), precosRoutes);
