@@ -1648,11 +1648,12 @@ function marcarAtalho(ativo) {
 }
 
 // ===== Início =====
-// Sub-telas das vendas: Resumo | Vendedores | Caixa das lojas | Gráficos.
+// Sub-telas das vendas: Resumo (com os gráficos) | Vendedores | Caixa das lojas.
 // Só a parte escolhida aparece; os números já carregados continuam valendo (trocar de sub-tela
 // não vai ao banco de novo). O endereço guarda a sub-tela (index.html#caixa), e os endereços
 // antigos (#parte-caixa) continuam funcionando.
-const PARTES_VENDAS = ['resumo', 'vendedores', 'caixa', 'graficos'];
+// Os gráficos ficam no Resumo (nov/2026): o endereço antigo #graficos abre o Resumo
+const PARTES_VENDAS = ['resumo', 'vendedores', 'caixa'];
 let parteAtual = 'resumo';
 let vendedoresPendente = null; // carga da sub-tela Vendedores esperando ela ser aberta
 
@@ -1665,6 +1666,7 @@ function carregarParteVendedores() {
 }
 
 function abrirParte(nome) {
+  const pedidoGraficos = nome === 'graficos';
   parteAtual = PARTES_VENDAS.includes(nome) ? nome : 'resumo';
   for (const botao of document.querySelectorAll('#abas-vendas [data-aba]')) {
     const ativa = botao.dataset.aba === parteAtual;
@@ -1675,9 +1677,11 @@ function abrirParte(nome) {
   for (const bloco of document.querySelectorAll('[data-parte]')) bloco.hidden = bloco.dataset.parte !== parteAtual;
   if (window.location.hash !== `#${parteAtual}`) window.history.replaceState(null, '', `#${parteAtual}`);
   // Gráfico desenhado com a parte escondida fica sem largura: redesenha ao abrir
-  if (parteAtual === 'graficos') desenharGraficos();
+  if (parteAtual === 'resumo') desenharGraficos();
   if (parteAtual === 'vendedores') carregarParteVendedores();
-  window.scrollTo({ top: 0 });
+  // Endereço antigo dos gráficos: abre o Resumo já nos gráficos
+  if (pedidoGraficos) el('parte-graficos').scrollIntoView({ block: 'start' });
+  else window.scrollTo({ top: 0 });
 }
 
 const parteDoEndereco = () => window.location.hash.slice(1).replace(/^parte-/, '');

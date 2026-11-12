@@ -63,11 +63,10 @@ const modulos = (() => {
   // "itens" = pasta dentro da pasta.
   const SUBMENUS = {
     vendas: [
-      // Sub-telas da tela de vendas (abas: só a parte escolhida aparece)
+      // Sub-telas da tela de vendas (abas: só a parte escolhida aparece). Os gráficos ficam no Resumo.
       { titulo: 'Resumo', pagina: 'index.html#resumo', aba: 'resumo' },
       { titulo: 'Vendedores', pagina: 'index.html#vendedores', aba: 'vendedores' },
       { titulo: 'Caixa das lojas', pagina: 'index.html#caixa', aba: 'caixa' },
-      { titulo: 'Gráficos', pagina: 'index.html#graficos', aba: 'graficos' },
     ],
     financeiro: [
       { titulo: 'Contas a receber', itens: [
