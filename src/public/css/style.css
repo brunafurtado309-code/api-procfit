@@ -2971,3 +2971,12 @@ button:hover,
   .tela-vendas .tabela-cartoes tfoot tr { background: var(--verde-suave); }
   .tela-vendas .tabela-cartoes .qtd { display: block; }
 }
+/* Gráficos de barras do Resumo (vendedores e maiores vendas): detalhe embaixo do nome */
+.barra-rotulo .barra-detalhe {
+  display: block;
+  font-size: var(--texto-mini);
+  font-weight: 400;
+  color: var(--tinta-suave);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

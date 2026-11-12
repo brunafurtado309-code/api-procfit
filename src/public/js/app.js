@@ -1524,9 +1524,16 @@ async function carregar({ automatico = false } = {}) {
     mostrarOrigens(origens);
     mostrarComposicao(porVendedor.total);
     mostrarTabela(TABELA_VENDEDORES, porVendedor.vendedores, porVendedor.total);
+    // Gráfico "Venda por vendedor" (Resumo): usa os mesmos números, sem ir de novo ao banco
+    try {
+      mostrarGraficoVendedores(porVendedor.vendedores);
+    } catch (erro) {
+      console.error('Gráfico por vendedor:', erro);
+    }
     mostrarTabela(TABELA_CAIXA, porOperador.operadores, porOperador.total);
     // Gráficos carregam à parte: se falharem, o resto do painel continua
     carregarGraficos(filtros, minhaCarga);
+    carregarMaioresVendas(filtros, minhaCarga);
     // Sub-tela Vendedores (controle e funil): só busca quando ela está aberta; se estiver
     // escondida, busca na hora em que for aberta (abrirParte). Assim o resto não espera por ela.
     vendedoresPendente = { filtros, minhaCarga };
@@ -1561,6 +1568,96 @@ async function carregar({ automatico = false } = {}) {
       : erro.message, true);
   } finally {
     if (minhaCarga === cargaAtual) carregando = false;
+  }
+}
+
+// ===== Gráficos de barras do Resumo: vendedores e maiores vendas =====
+// Uma linha: nome (e um detalhe embaixo), a barra proporcional ao maior e o valor
+function linhaDeBarra(rotuloTexto, detalhe, valorTexto, nota, fracao, destaque = false) {
+  const linha = document.createElement('div');
+  linha.className = `barra barra--previsao${destaque ? ' barra--ativa' : ''}`;
+  const rotulo = document.createElement('span');
+  rotulo.className = 'barra-rotulo';
+  rotulo.textContent = rotuloTexto;
+  rotulo.title = rotuloTexto;
+  if (detalhe) {
+    const pequeno = document.createElement('small');
+    pequeno.className = 'barra-detalhe';
+    pequeno.textContent = detalhe;
+    rotulo.append(pequeno);
+  }
+  const trilho = document.createElement('span');
+  trilho.className = 'barra-trilho';
+  const preenchida = document.createElement('span');
+  preenchida.className = 'barra-preenchida';
+  preenchida.style.width = `${Math.max(2, Math.min(100, fracao * 100))}%`;
+  trilho.append(preenchida);
+  const valor = document.createElement('span');
+  valor.className = 'barra-valor';
+  valor.textContent = valorTexto;
+  if (nota) {
+    const pequeno = document.createElement('small');
+    pequeno.textContent = nota;
+    valor.append(pequeno);
+  }
+  linha.append(rotulo, trilho, valor);
+  return linha;
+}
+
+const VENDEDORES_NO_GRAFICO = 12;
+
+function mostrarGraficoVendedores(vendedores) {
+  const alvo = el('barras-vendedores');
+  const lista = [...(vendedores ?? [])]
+    .filter((v) => Number(v.liquido) > 0)
+    .sort((a, b) => Number(b.liquido) - Number(a.liquido));
+  if (!lista.length) {
+    alvo.textContent = 'Nenhuma venda no período.';
+    return;
+  }
+  const total = lista.reduce((t, v) => t + Number(v.liquido), 0);
+  const maior = Number(lista[0].liquido);
+  const mostrar = lista.slice(0, VENDEDORES_NO_GRAFICO);
+  const linhas = mostrar.map((v, i) => {
+    const partes = [];
+    if (Number(v.notas_valor)) partes.push(`notas ${moeda.format(Number(v.notas_valor))}`);
+    if (Number(v.caixa_valor)) partes.push(`caixa ${moeda.format(Number(v.caixa_valor))}`);
+    return linhaDeBarra(v.nome || `Vendedor ${v.vendedor}`, partes.join(' · '),
+      moeda.format(Number(v.liquido)), `${(Number(v.liquido) / total * 100).toFixed(1).replace('.', ',')}% do total`,
+      Number(v.liquido) / maior, i === 0);
+  });
+  const resto = lista.slice(VENDEDORES_NO_GRAFICO);
+  if (resto.length) {
+    const soma = resto.reduce((t, v) => t + Number(v.liquido), 0);
+    linhas.push(linhaDeBarra(`Outros ${contar(resto.length, 'vendedor', 'vendedores')}`, null,
+      moeda.format(soma), `${(soma / total * 100).toFixed(1).replace('.', ',')}% do total`, soma / maior));
+  }
+  alvo.replaceChildren(...linhas);
+}
+
+async function carregarMaioresVendas(filtros, minhaCarga) {
+  const alvo = el('barras-maiores-vendas');
+  try {
+    const vendas = await buscar('maiores-vendas', { ...filtros, limite: 10 });
+    if (minhaCarga !== cargaAtual) return;
+    if (!vendas.length) {
+      alvo.textContent = 'Nenhuma venda no período.';
+      return;
+    }
+    const maior = Number(vendas[0].venda_liquida) || 1;
+    alvo.replaceChildren(...vendas.map((v, i) => {
+      const documento = v.categoria === 'CAIXA'
+        ? `Cupom ${v.documento ?? '—'}${v.caixa != null ? ` · caixa ${v.caixa}` : ''}`
+        : `NF ${v.documento ?? '—'}`;
+      const cliente = v.cliente || (v.cod_cliente ? `Cliente ${v.cod_cliente}` : 'Consumidor');
+      return linhaDeBarra(cliente, `${documento} · ${dataBR(v.dia)} · ${v.vendedor}`,
+        moeda.format(Number(v.venda_liquida) || 0), contar(Number(v.itens) || 0, 'produto', 'produtos'),
+        (Number(v.venda_liquida) || 0) / maior, i === 0);
+    }));
+  } catch (erro) {
+    if (minhaCarga !== cargaAtual || erro instanceof ChaveInvalida) return;
+    console.error('Maiores vendas:', erro);
+    alvo.textContent = 'Não foi possível carregar as maiores vendas agora.';
   }
 }
 

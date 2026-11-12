@@ -333,10 +333,13 @@ async function pesquisar(query) {
 
 const topProdutos = (query) =>
   repo.topProdutos(montarFiltros(query), montarLimite(query.limite));
+// Gráfico "Maiores vendas do período" (Resumo)
+const maioresVendas = (query) =>
+  repo.maioresVendas(montarFiltros(query), montarLimite(query.limite));
 
 module.exports = {
   resumo, porDia, porLoja, porOrigem, porVendedor, notasDoVendedor,
-  porOperador, cuponsDoOperador, caixasDoOperador, pesquisar, topProdutos,
+  porOperador, cuponsDoOperador, caixasDoOperador, pesquisar, topProdutos, maioresVendas,
   todasNotas, todosCupons, listaDevolucoes, listaDescontos, itensDoDocumento,
   montarFiltros, montarLimite,
 };

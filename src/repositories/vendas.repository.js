@@ -750,9 +750,50 @@ async function topProdutos(filtros, limite) {
   return recordset;
 }
 
+// Maiores vendas do período: cada documento (nota ou cupom do caixa) com o valor líquido,
+// os maiores primeiro. Mesma regra do resto da tela (VENDAS_ANALITICAS): a nota cancelada
+// (tipo 11) usa o mesmo número da original e zera a nota ao somar, por isso fica de fora sozinha;
+// devoluções (12, 13, 14, 16) e o tipo 20 não entram.
+async function maioresVendas(filtros, limite) {
+  const request = await criarRequest(filtros);
+  request.input('limite', sql.Int, limite);
+  const { recordset } = await request.query(`
+    SELECT TOP (@limite)
+      D.categoria, D.documento, D.caixa, D.empresa,
+      CONVERT(varchar(10), D.MOVIMENTO, 23) AS dia,
+      D.cod_vendedor, COALESCE(LTRIM(RTRIM(V.NOME)), 'Sem vendedor') AS vendedor,
+      D.cod_cliente, LTRIM(RTRIM(E.NOME)) AS cliente,
+      D.itens, D.venda_liquida
+    FROM (
+      SELECT
+        CASE WHEN VA.DOCUMENTO_TIPO IN (1, 2, 9, 10, 18, 19) THEN 'CAIXA' ELSE 'NOTA' END AS categoria,
+        VA.DOCUMENTO_NUMERO AS documento,
+        VA.CAIXA            AS caixa,
+        VA.EMPRESA          AS empresa,
+        VA.MOVIMENTO,
+        MAX(VA.VENDEDOR)    AS cod_vendedor,
+        MAX(VA.CLIENTE)     AS cod_cliente,
+        COUNT(DISTINCT VA.PRODUTO) AS itens,
+        SUM(VA.VENDA_LIQUIDA)      AS venda_liquida
+      FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
+      WHERE VA.MOVIMENTO BETWEEN CAST(@inicio AS date) AND CAST(@fim AS date)
+        AND (@empresa IS NULL OR VA.EMPRESA = @empresa)
+        AND ISNULL(VA.DOCUMENTO_TIPO, 0) NOT IN (12, 13, 14, 16, 20)
+      GROUP BY CASE WHEN VA.DOCUMENTO_TIPO IN (1, 2, 9, 10, 18, 19) THEN 'CAIXA' ELSE 'NOTA' END,
+               VA.EMPRESA, VA.MOVIMENTO, VA.ESPECIE_FISCAL, VA.CAIXA, VA.VENDA, VA.DOCUMENTO_NUMERO, VA.SERIE_NF
+      HAVING SUM(VA.VENDA_LIQUIDA) > 0
+    ) D
+    LEFT JOIN VENDEDORES V WITH (NOLOCK) ON V.VENDEDOR = D.cod_vendedor
+    LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = D.cod_cliente
+    ORDER BY D.venda_liquida DESC
+  `);
+  return recordset;
+}
+
 module.exports = {
   resumo, porDia, porLoja, porOrigem, porVendedor, notasDoVendedor, nomeDoVendedor,
   porOperador, cuponsDoOperador, caixasDoOperador, nomeDoOperador, itensDoDocumento, topProdutos,
+  maioresVendas,
   LIMITE_NOTAS,
   nomearTabelas, // usado também pelo detalhe do pedido
 };
