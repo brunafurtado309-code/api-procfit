@@ -195,13 +195,22 @@
         <h2 id="titulo-fat-vendedores">Funil dos pedidos por vendedor</h2>
         <p class="bloco__descricao">Pedidos feitos no período, pelo vendedor do pedido: orçamentos, pedidos processados e o que já virou nota fiscal. Clique no nome para ver os pedidos. Esta parte é a mais demorada da tela.</p>
         <p id="fat-vend-status" class="status" role="status" aria-live="polite"></p>
-        <div class="tabela-rolagem">
-          <table class="tabela">
-            <thead id="fat-vend-cab"></thead>
-            <tbody id="fat-vend"></tbody>
-            <tfoot id="fat-vend-total"></tfoot>
-          </table>
+        <!-- Funil da equipe: cada etapa do tamanho do valor que chegou até ela -->
+        <div id="funil-equipe" class="funil"></div>
+        <!-- Um vendedor por linha: onde os pedidos dele pararam -->
+        <div class="funil-vendedores-topo">
+          <ul id="funil-legenda" class="funil-legenda"></ul>
+          <label class="funil-ordem">Ordenar
+            <select id="funil-ordem">
+              <option value="total">Maior valor em pedidos</option>
+              <option value="conversao">Maior conversão em venda</option>
+              <option value="perda">Mais perdido (orçamento + cancelado)</option>
+              <option value="aguardando">Mais aguardando faturar</option>
+              <option value="nome">Nome (A–Z)</option>
+            </select>
+          </label>
         </div>
+        <div id="funil-vendedores" class="funil-vendedores"></div>
       </section>
       </div>
 

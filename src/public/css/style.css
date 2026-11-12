@@ -2984,3 +2984,77 @@ button:hover,
 .variacao-subtitulo { margin: 0.5rem 0 0.3rem; font-size: 0.95rem; font-weight: 600; }
 .barras--queda .barra-preenchida { background: var(--alerta); }
 .barras--queda .barra-valor { color: var(--alerta); }
+
+/* --- Funil dos pedidos por vendedor (Vendas > Vendedores) --- */
+.funil { display: grid; gap: 0.35rem; margin: 0.75rem 0 1.5rem; }
+.funil__etapa {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(12rem, 2fr);
+  align-items: center;
+  gap: 1.25rem;
+}
+/* Cada etapa centralizada e do tamanho do valor: forma de funil */
+.funil__barra {
+  justify-self: center;
+  display: grid;
+  justify-items: center;
+  gap: 0.1rem;
+  padding: 0.7rem 1rem;
+  border-radius: 6px;
+  background: var(--verde);
+  color: #fff;
+  text-align: center;
+  min-width: 11rem;
+}
+.funil__etapa:nth-child(2) .funil__barra { background: var(--verde-medio); }
+.funil__etapa:nth-child(3) .funil__barra { background: var(--verde-escuro); color: var(--superficie); }
+.funil__nome { font-size: var(--texto-mini); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.funil__barra strong { font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+.funil__qtd { font-size: var(--texto-mini); opacity: 0.9; }
+.funil__saida { display: grid; gap: 0.2rem; font-size: var(--texto-mini); }
+.funil__perda { padding-left: 0.6rem; border-left: 3px solid var(--linha); color: var(--tinta-suave); }
+.funil__perda--orcamento { border-left-color: var(--outros); }
+.funil__perda--cancelado,
+.funil__perda--aguardando { border-left-color: var(--alerta); color: var(--alerta); }
+.funil__perda--nota { border-left-color: var(--verde); }
+.funil__perda--caixa { border-left-color: var(--verde-vivo); }
+
+/* Cores das partes (barras por vendedor e legenda) */
+.funil__cor { display: inline-block; height: 100%; }
+.funil__cor--nota { background: var(--verde); }
+.funil__cor--caixa { background: var(--verde-vivo); }
+.funil__cor--aguardando { background: repeating-linear-gradient(135deg, var(--alerta) 0 4px, transparent 4px 7px); box-shadow: inset 0 0 0 1px var(--alerta); }
+.funil__cor--orcamento { background: var(--outros); }
+.funil__cor--cancelado { background: var(--alerta); }
+
+.funil-vendedores-topo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.4rem; }
+.funil-legenda { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; margin: 0; padding: 0; list-style: none; font-size: var(--texto-mini); color: var(--tinta-suave); }
+.funil-legenda li { display: inline-flex; align-items: center; gap: 0.35rem; }
+.funil-legenda .funil__cor { width: 0.9rem; height: 0.65rem; border-radius: 2px; }
+.funil-ordem { display: inline-flex; align-items: center; gap: 0.4rem; font-size: var(--texto-mini); color: var(--tinta-suave); }
+
+.funil-vendedor {
+  display: grid;
+  grid-template-columns: minmax(10rem, 15rem) minmax(0, 1fr) minmax(10rem, auto);
+  align-items: center;
+  gap: 1rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--linha);
+}
+.funil-vendedor:last-child { border-bottom: 0; }
+.funil-vendedor__nome { justify-self: start; text-align: left; }
+.funil-vendedor__trilho { height: 1rem; }
+.funil-vendedor__barra { display: flex; height: 100%; border-radius: 4px; overflow: hidden; background: var(--verde-suave); }
+.funil-vendedor__numeros { display: grid; justify-items: end; font-size: var(--texto-mini); color: var(--tinta-suave); white-space: nowrap; }
+.funil-vendedor__numeros strong { font-size: 0.9rem; color: var(--tinta); }
+.funil-vendedor__aviso { color: var(--alerta); }
+
+@media (max-width: 720px) {
+  .funil__etapa { grid-template-columns: minmax(0, 1fr); gap: 0.3rem; }
+  .funil__barra { min-width: 0; }
+  .funil__saida { padding-bottom: 0.5rem; }
+  .funil-vendedor { grid-template-columns: minmax(0, 1fr); gap: 0.35rem; }
+  .funil-vendedor__numeros { justify-items: start; white-space: normal; }
+  .funil-ordem { width: 100%; }
+  .funil-ordem select { flex: 1; min-width: 0; }
+}

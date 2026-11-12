@@ -5,19 +5,20 @@
 // Proteção do resto da API, igual à do Faturamento:
 //  - a mesma consulta pedida de novo em até 1 minuto vem guardada, sem ir ao banco;
 //  - pedida enquanto ainda roda, espera a que já está em andamento;
-//  - no máximo 2 consultas diferentes desta tela ao mesmo tempo: a terceira recebe "aguarde".
+//  - no máximo 4 consultas diferentes desta tela ao mesmo tempo (2 por abertura): a quinta recebe "aguarde".
 // As duas partes rodam separadas: se uma falhar ou passar do tempo, a outra aparece mesmo assim.
 
 const AppError = require('../utils/AppError');
 const faturamento = require('./faturamento.service');
 
 const GUARDAR_MS = 60 * 1000;
-const MAX_SIMULTANEAS = 2;
+const MAX_SIMULTANEAS = 4; // 2 telas ao mesmo tempo (cada uma faz 2 consultas)
 const guardadas = new Map();
 const emAndamento = new Map();
 
-async function consultarControle(filtros) {
-  const chave = JSON.stringify(filtros);
+// qual: 'controle' (orçamentos, cancelados, devoluções canceladas) ou 'duplicadas'
+async function consultarControle(qual, filtros) {
+  const chave = `${qual}:${JSON.stringify(filtros)}`;
   const guardada = guardadas.get(chave);
   if (guardada && Date.now() - guardada.quando < GUARDAR_MS) return guardada.dados;
   if (emAndamento.has(chave)) return emAndamento.get(chave);
@@ -26,7 +27,7 @@ async function consultarControle(filtros) {
   }
   const consulta = (async () => {
     const repo = require('../repositories/vendas-vendedores.repository');
-    const dados = await repo.controle(filtros);
+    const dados = await repo[qual](filtros);
     guardadas.set(chave, { quando: Date.now(), dados });
     while (guardadas.size > 30) guardadas.delete(guardadas.keys().next().value);
     return dados;
@@ -42,13 +43,16 @@ async function consultarControle(filtros) {
 async function controle(query) {
   const filtros = faturamento.montarFiltros(query);
   const base = { inicio: filtros.inicio, fim: filtros.fim, empresa: filtros.empresa ?? null };
-  const [notas, pedidos] = await Promise.allSettled([
+  const [notas, pedidos, duplicadas] = await Promise.allSettled([
     faturamento.notasVendedor({ inicio: base.inicio, fim: base.fim, empresa: query.empresa }),
-    consultarControle(base),
+    consultarControle('controle', base),
+    consultarControle('duplicadas', base),
   ]);
   const motivo = (r) => (r.status === 'rejected' ? (r.reason?.status ? r.reason.message : 'Não foi possível carregar agora.') : null);
   if (notas.status === 'rejected' && !notas.reason?.status) console.error('Vendas > Vendedores (notas):', notas.reason);
   if (pedidos.status === 'rejected' && !pedidos.reason?.status) console.error('Vendas > Vendedores (pedidos):', pedidos.reason);
+  if (duplicadas.status === 'rejected' && !duplicadas.reason?.status) console.error('Vendas > Vendedores (duplicadas):', duplicadas.reason);
+  const notasDuplicadas = duplicadas.status === 'fulfilled' ? duplicadas.value : [];
 
   // Uma linha por vendedor, com tudo junto
   const linhas = new Map();
@@ -80,9 +84,9 @@ async function controle(query) {
         cancelados: v.cancelados, valor_cancelados: v.valor_cancelados,
       });
     }
-    for (const d of p.duplicadas) linha(d.cod_vendedor, d.vendedor).duplicadas += 1;
     for (const d of p.devolucoesCanceladas) linha(d.cod_vendedor, d.vendedor).devolucoes_canceladas += 1;
   }
+  for (const d of notasDuplicadas) linha(d.cod_vendedor, d.vendedor).duplicadas += 1;
 
   return {
     periodo: base,
@@ -92,10 +96,10 @@ async function controle(query) {
     cancelados: p?.cancelados ?? [],
     totalCancelados: p?.totalCancelados ?? 0,
     devolucoesCanceladas: p?.devolucoesCanceladas ?? [],
-    duplicadas: p?.duplicadas ?? [],
+    duplicadas: notasDuplicadas,
     limite: p?.limite ?? null,
     // Parte que não carregou (a tela mostra o aviso só nela)
-    erros: { notas: motivo(notas), pedidos: motivo(pedidos) },
+    erros: { notas: motivo(notas), pedidos: motivo(pedidos), duplicadas: motivo(duplicadas) },
   };
 }
 

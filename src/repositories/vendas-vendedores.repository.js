@@ -23,7 +23,8 @@ const AppError = require('../utils/AppError');
 const LIMITE_MS = Number(process.env.VENDAS_VENDEDORES_TIMEOUT_MS) || 40000;
 const LIMITE_LISTA = 1000; // pedidos por lista (orçamentos, cancelados)
 
-async function controle(filtros) {
+// Roda uma consulta com tempo-limite: passou, ela é cancelada no banco e a conexão fica livre
+async function comLimite(filtros, texto) {
   const pool = await getPool();
   const pedido = pool.request();
   let cancelada = false;
@@ -36,11 +37,24 @@ async function controle(filtros) {
       .input('inicio', sql.VarChar(10), filtros.inicio)
       .input('fim', sql.VarChar(10), filtros.fim)
       .input('empresa', sql.Int, filtros.empresa ?? null)
-      .query(`
+      .query(texto);
+    return recordsets;
+  } catch (err) {
+    if (cancelada || err.code === 'ECANCEL') {
+      throw new AppError(`A consulta passou de ${Math.round(LIMITE_MS / 1000)} segundos e foi cancelada para não travar o painel. `
+        + 'Tente um período menor ou escolha uma loja.', 504);
+    }
+    throw err;
+  } finally {
+    clearTimeout(relogio);
+  }
+}
+
+// Orçamentos, cancelados e devoluções canceladas
+async function controle(filtros) {
+  const recordsets = await comLimite(filtros, `
         SET NOCOUNT ON;
         IF OBJECT_ID('tempdb..#PED') IS NOT NULL DROP TABLE #PED;
-        IF OBJECT_ID('tempdb..#ND') IS NOT NULL DROP TABLE #ND;
-        IF OBJECT_ID('tempdb..#GD') IS NOT NULL DROP TABLE #GD;
 
         -- 1. Pedidos do período que estão em orçamento ou foram cancelados
         SELECT P.PEDIDO_PREVENDA                               AS pedido,
@@ -117,8 +131,26 @@ async function controle(filtros) {
           AND NC.DATA_HORA < DATEADD(day, 1, CAST(@fim AS date))
           AND (@empresa IS NULL OR N.EMPRESA = @empresa)
         ORDER BY NC.DATA_HORA DESC;
+      `);
+  return {
+    porVendedor: recordsets[0],
+    orcamentos: recordsets[1],
+    totalOrcamentos: recordsets[2][0]?.total ?? recordsets[1].length,
+    cancelados: recordsets[3],
+    totalCancelados: recordsets[4][0]?.total ?? recordsets[3].length,
+    devolucoesCanceladas: recordsets[5],
+    limite: LIMITE_LISTA,
+  };
+}
 
-        -- 2. Notas de venda do período (sem canceladas e sem transferências), para achar duplicadas
+// Notas que parecem duplicadas (consulta separada: se falhar, o resto aparece)
+async function duplicadas(filtros) {
+  const recordsets = await comLimite(filtros, `
+        SET NOCOUNT ON;
+        IF OBJECT_ID('tempdb..#ND') IS NOT NULL DROP TABLE #ND;
+        IF OBJECT_ID('tempdb..#GD') IS NOT NULL DROP TABLE #GD;
+
+        -- Notas de venda do período (sem canceladas e sem transferências), para achar duplicadas
         SELECT N.NF_FATURAMENTO, N.NF_NUMERO, N.EMPRESA, N.ENTIDADE, N.VENDEDOR,
                CAST(N.MOVIMENTO AS date) AS dia,
                TRY_CAST(LTRIM(RTRIM(N.PEDIDO_CLIENTE)) AS numeric(18, 0)) AS pedido,
@@ -135,9 +167,12 @@ async function controle(filtros) {
                           WHERE X.NF_FATURAMENTO = N.NF_FATURAMENTO)
         OPTION (RECOMPILE);
 
-        -- Grupos suspeitos: o mesmo pedido em mais de uma nota, ou mesmo cliente + dia + valor
-        SELECT 'pedido' AS motivo, CAST(pedido AS varchar(30)) AS chave
-        INTO #GD
+        -- Grupos suspeitos: o mesmo pedido em mais de uma nota, ou mesmo cliente + dia + valor.
+        -- A tabela é criada antes com o tamanho certo: criada pelo SELECT INTO, a coluna ficava do
+        -- tamanho de 'pedido' e o 'cliente_dia_valor' não cabia (a consulta inteira falhava).
+        CREATE TABLE #GD (motivo varchar(20), chave varchar(100));
+        INSERT INTO #GD (motivo, chave)
+        SELECT 'pedido', CAST(pedido AS varchar(30))
         FROM #ND WHERE pedido IS NOT NULL
         GROUP BY pedido HAVING COUNT(*) > 1;
         INSERT INTO #GD (motivo, chave)
@@ -146,7 +181,7 @@ async function controle(filtros) {
         FROM #ND
         GROUP BY ENTIDADE, dia, valor HAVING COUNT(*) > 1;
 
-        -- [6] As notas de cada grupo suspeito
+        -- As notas de cada grupo suspeito
         SELECT G.motivo, G.chave AS grupo,
                D.NF_NUMERO AS nota, D.EMPRESA AS empresa, CONVERT(varchar(10), D.dia, 23) AS dia,
                D.pedido, D.ENTIDADE AS cod_cliente, LTRIM(RTRIM(E.NOME)) AS cliente,
@@ -164,25 +199,7 @@ async function controle(filtros) {
         LEFT JOIN VENDEDORES V WITH (NOLOCK) ON V.VENDEDOR = D.VENDEDOR
         ORDER BY G.motivo, G.chave, D.NF_NUMERO;
       `);
-    return {
-      porVendedor: recordsets[0],
-      orcamentos: recordsets[1],
-      totalOrcamentos: recordsets[2][0]?.total ?? recordsets[1].length,
-      cancelados: recordsets[3],
-      totalCancelados: recordsets[4][0]?.total ?? recordsets[3].length,
-      devolucoesCanceladas: recordsets[5],
-      duplicadas: recordsets[6],
-      limite: LIMITE_LISTA,
-    };
-  } catch (err) {
-    if (cancelada || err.code === 'ECANCEL') {
-      throw new AppError(`A consulta passou de ${Math.round(LIMITE_MS / 1000)} segundos e foi cancelada para não travar o painel. `
-        + 'Tente um período menor ou escolha uma loja.', 504);
-    }
-    throw err;
-  } finally {
-    clearTimeout(relogio);
-  }
+  return recordsets[0];
 }
 
-module.exports = { controle };
+module.exports = { controle, duplicadas };

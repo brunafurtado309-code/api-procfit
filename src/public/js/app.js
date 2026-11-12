@@ -1252,18 +1252,6 @@ const ABAS_VENDEDOR = [
 let fatVendedores = [];
 let fatPedidos = [];
 let fatAba = 'todos';
-// Ordem da tabela: clique no nome da coluna (vendedor = ordem alfabética; valores = maior/menor)
-let fatOrdem = { coluna: 'valor_processados', direcao: 'desc' };
-const COLUNAS_FAT_VENDEDOR = [
-  { titulo: 'Vendedor', chave: 'vendedor', texto: true },
-  { titulo: 'Orçamentos', chave: 'valor_orcamentos' },
-  { titulo: 'Processados', chave: 'valor_processados' },
-  { titulo: 'Aguardando faturar', chave: 'valor_aguardando' },
-  { titulo: 'Faturado em nota', chave: 'valor_notas' },
-  { titulo: 'Vendido no caixa', chave: 'valor_cupons' },
-  { titulo: 'Cancelados', chave: 'valor_cancelados' },
-];
-
 async function carregarFatVendedores(filtros, minhaCarga) {
   const status = el('fat-vend-status');
   status.classList.remove('status--erro');
@@ -1281,106 +1269,165 @@ async function carregarFatVendedores(filtros, minhaCarga) {
   }
 }
 
-// Célula com o valor em reais e a quantidade embaixo
-function celulaEtapa(valor, quantidade, rotulo, alerta = false) {
-  const td = document.createElement('td');
-  if (!Number(quantidade)) {
-    td.textContent = '—';
-    return td;
-  }
-  td.textContent = moeda.format(Number(valor) || 0);
-  if (alerta) td.className = 'negativo';
-  const qtd = document.createElement('span');
-  qtd.className = 'qtd';
-  qtd.textContent = contar(Number(quantidade), rotulo[0], rotulo[1]);
-  td.append(qtd);
-  return td;
+// ===== Funil dos pedidos por vendedor =====
+// Etapas do funil, pelo valor dos pedidos feitos no período:
+//   Pedidos feitos (tudo) -> Processados -> Viraram venda (nota fiscal ou caixa)
+// O que sai em cada passagem: ficou em orçamento / foi cancelado / está aguardando faturar.
+// (processados = aguardando + faturado em nota + vendido no caixa, mesma regra da tela de Faturamento)
+const PARTES_FUNIL = [
+  { chave: 'valor_notas', qtd: 'notas', nome: 'Faturado em nota', classe: 'nota', rotulo: ['nota', 'notas'] },
+  { chave: 'valor_cupons', qtd: 'cupons', nome: 'Vendido no caixa', classe: 'caixa', rotulo: ['cupom', 'cupons'] },
+  { chave: 'valor_aguardando', qtd: 'aguardando', nome: 'Aguardando faturar', classe: 'aguardando', rotulo: ['pedido', 'pedidos'] },
+  { chave: 'valor_orcamentos', qtd: 'orcamentos', nome: 'Ficou em orçamento', classe: 'orcamento', rotulo: ['pedido', 'pedidos'] },
+  { chave: 'valor_cancelados', qtd: 'cancelados', nome: 'Cancelado', classe: 'cancelado', rotulo: ['pedido', 'pedidos'] },
+];
+const num = (v) => Number(v) || 0;
+const pctTexto = (parte, todo) => (todo > 0 ? `${(parte / todo * 100).toFixed(1).replace('.', ',')}%` : '—');
+
+// Números do funil de um vendedor (ou da equipe, somando todos)
+function etapasDoFunil(v) {
+  const feitos = num(v.valor_orcamentos) + num(v.valor_processados) + num(v.valor_cancelados);
+  const qtdFeitos = num(v.orcamentos) + num(v.processados) + num(v.cancelados);
+  const venda = num(v.valor_notas) + num(v.valor_cupons);
+  return {
+    feitos, qtdFeitos,
+    processados: num(v.valor_processados), qtdProcessados: num(v.processados),
+    venda, qtdVenda: num(v.notas) + num(v.cupons),
+    conversao: feitos > 0 ? venda / feitos : 0,
+    perda: num(v.valor_orcamentos) + num(v.valor_cancelados),
+  };
 }
 
 function mostrarFatVendedores() {
-  // Cabeçalho com botões: clicar ordena; clicar de novo inverte (A→Z / Z→A, maior / menor)
-  const cab = document.createElement('tr');
-  for (const coluna of COLUNAS_FAT_VENDEDOR) {
-    const th = document.createElement('th');
-    th.scope = 'col';
-    const ativa = fatOrdem.coluna === coluna.chave;
-    const crescente = fatOrdem.direcao === 'asc';
-    if (ativa) th.setAttribute('aria-sort', crescente ? 'ascending' : 'descending');
-    const botao = document.createElement('button');
-    botao.type = 'button';
-    botao.className = ativa ? 'ordenar ordenar--ativo' : 'ordenar';
-    botao.title = coluna.texto ? 'Ordenar em ordem alfabética' : 'Ordenar pelo valor';
-    const seta = document.createElement('span');
-    seta.className = 'ordenar__seta';
-    seta.setAttribute('aria-hidden', 'true');
-    seta.textContent = ativa ? (crescente ? '▲' : '▼') : '↕';
-    botao.append(coluna.titulo, seta);
-    botao.addEventListener('click', () => {
-      // Primeiro clique: nome em A→Z, valores do maior para o menor
-      const inicial = coluna.texto ? 'asc' : 'desc';
-      fatOrdem = { coluna: coluna.chave, direcao: ativa ? (crescente ? 'desc' : 'asc') : inicial };
-      mostrarFatVendedores();
-    });
-    th.append(botao);
-    cab.append(th);
+  // Equipe: soma de todos os vendedores
+  const soma = {};
+  for (const campo of ['valor_orcamentos', 'orcamentos', 'valor_processados', 'processados', 'valor_aguardando',
+    'aguardando', 'valor_notas', 'notas', 'valor_cupons', 'cupons', 'valor_cancelados', 'cancelados']) {
+    soma[campo] = fatVendedores.reduce((t, v) => t + num(v[campo]), 0);
   }
-  el('fat-vend-cab').replaceChildren(cab);
-
-  const fator = fatOrdem.direcao === 'asc' ? 1 : -1;
-  const nomeDe = (v) => v.vendedor || `Vendedor ${v.cod_vendedor ?? ''}`;
-  const lista = [...fatVendedores].sort((a, b) => {
-    if (fatOrdem.coluna === 'vendedor') {
-      return nomeDe(a).localeCompare(nomeDe(b), 'pt-BR', { sensitivity: 'base' }) * fator;
+  const e = etapasDoFunil(soma);
+  const equipe = el('funil-equipe');
+  if (!fatVendedores.length || !e.feitos) {
+    equipe.textContent = 'Nenhum pedido no período.';
+    el('funil-vendedores').replaceChildren();
+    el('funil-legenda').replaceChildren();
+    return;
+  }
+  const etapa = (nome, valor, qtd, rotulo, largura, conversao, saida) => {
+    const linha = document.createElement('div');
+    linha.className = 'funil__etapa';
+    const barra = document.createElement('div');
+    barra.className = 'funil__barra';
+    barra.style.width = `${Math.max(18, largura * 100)}%`;
+    const titulo = document.createElement('span');
+    titulo.className = 'funil__nome';
+    titulo.textContent = nome;
+    const valorTexto = document.createElement('strong');
+    valorTexto.textContent = moeda.format(valor);
+    const qtdTexto = document.createElement('span');
+    qtdTexto.className = 'funil__qtd';
+    qtdTexto.textContent = contar(qtd, rotulo[0], rotulo[1]) + (conversao ? ` · ${conversao}` : '');
+    barra.append(titulo, valorTexto, qtdTexto);
+    linha.append(barra);
+    if (saida) {
+      const lado = document.createElement('div');
+      lado.className = 'funil__saida';
+      for (const s of saida) {
+        if (!s.valor) continue;
+        const item = document.createElement('span');
+        item.className = `funil__perda funil__perda--${s.classe}`;
+        item.textContent = `${s.nome}: ${moeda.format(s.valor)} (${contar(s.qtd, 'pedido', 'pedidos')})`;
+        lado.append(item);
+      }
+      linha.append(lado);
     }
-    return ((Number(a[fatOrdem.coluna]) || 0) - (Number(b[fatOrdem.coluna]) || 0)) * fator;
-  });
-  const PEDIDOS = ['pedido', 'pedidos'];
-  const linhas = lista.map((v) => {
-    const tr = document.createElement('tr');
-    const nome = document.createElement('td');
-    const botao = document.createElement('button');
-    botao.type = 'button';
-    botao.className = 'link-pedido';
-    botao.textContent = v.vendedor || `Vendedor ${v.cod_vendedor ?? 'sem código'}`;
-    botao.title = 'Ver os pedidos deste vendedor';
-    botao.addEventListener('click', () => abrirFatVendedor(v));
-    nome.append(botao);
-    tr.append(
-      nome,
-      celulaEtapa(v.valor_orcamentos, v.orcamentos, PEDIDOS),
-      celulaEtapa(v.valor_processados, v.processados, PEDIDOS),
-      celulaEtapa(v.valor_aguardando, v.aguardando, PEDIDOS, true),
-      celulaEtapa(v.valor_notas, v.notas, ['nota', 'notas']),
-      celulaEtapa(v.valor_cupons, v.cupons, ['cupom', 'cupons']),
-      celulaEtapa(v.valor_cancelados, v.cancelados, PEDIDOS),
-    );
-    return tr;
-  });
-  if (!linhas.length) {
-    const tr = document.createElement('tr');
-    const td = document.createElement('td');
-    td.colSpan = 7;
-    td.className = 'vazio';
-    td.textContent = 'Nenhum pedido no período.';
-    tr.append(td);
-    linhas.push(tr);
-  }
-  el('fat-vend').replaceChildren(...linhas);
-
-  const soma = (campo) => lista.reduce((t, v) => t + (Number(v[campo]) || 0), 0);
-  const total = document.createElement('tr');
-  const rotulo = document.createElement('td');
-  rotulo.textContent = `Total (${contar(lista.length, 'vendedor', 'vendedores')})`;
-  total.append(
-    rotulo,
-    celulaEtapa(soma('valor_orcamentos'), soma('orcamentos'), ['pedido', 'pedidos']),
-    celulaEtapa(soma('valor_processados'), soma('processados'), ['pedido', 'pedidos']),
-    celulaEtapa(soma('valor_aguardando'), soma('aguardando'), ['pedido', 'pedidos'], true),
-    celulaEtapa(soma('valor_notas'), soma('notas'), ['nota', 'notas']),
-    celulaEtapa(soma('valor_cupons'), soma('cupons'), ['cupom', 'cupons']),
-    celulaEtapa(soma('valor_cancelados'), soma('cancelados'), ['pedido', 'pedidos']),
+    return linha;
+  };
+  equipe.replaceChildren(
+    etapa('Pedidos feitos', e.feitos, e.qtdFeitos, ['pedido', 'pedidos'], 1, null, [
+      { nome: 'ficou em orçamento', valor: soma.valor_orcamentos, qtd: soma.orcamentos, classe: 'orcamento' },
+      { nome: 'cancelado', valor: soma.valor_cancelados, qtd: soma.cancelados, classe: 'cancelado' },
+    ]),
+    etapa('Processados', e.processados, e.qtdProcessados, ['pedido', 'pedidos'], e.processados / e.feitos,
+      `${pctTexto(e.processados, e.feitos)} dos pedidos feitos`, [
+        { nome: 'aguardando faturar', valor: soma.valor_aguardando, qtd: soma.aguardando, classe: 'aguardando' },
+      ]),
+    etapa('Viraram venda', e.venda, e.qtdVenda, ['documento', 'documentos'], e.venda / e.feitos,
+      `${pctTexto(e.venda, e.feitos)} dos pedidos feitos`, [
+        { nome: 'em nota', valor: soma.valor_notas, qtd: soma.notas, classe: 'nota' },
+        { nome: 'no caixa', valor: soma.valor_cupons, qtd: soma.cupons, classe: 'caixa' },
+      ]),
   );
-  el('fat-vend-total').replaceChildren(total);
+  // Nas saídas de "Viraram venda" a quantidade é de notas/cupons, não de pedidos
+  const vendaSaidas = equipe.lastElementChild.querySelectorAll('.funil__perda');
+  if (vendaSaidas[0]) vendaSaidas[0].textContent = `em nota: ${moeda.format(soma.valor_notas)} (${contar(soma.notas, 'nota', 'notas')})`;
+  if (vendaSaidas[1]) vendaSaidas[1].textContent = `no caixa: ${moeda.format(soma.valor_cupons)} (${contar(soma.cupons, 'cupom', 'cupons')})`;
+
+  // Legenda das cores
+  el('funil-legenda').replaceChildren(...PARTES_FUNIL.map((p) => {
+    const li = document.createElement('li');
+    const cor = document.createElement('span');
+    cor.className = `funil__cor funil__cor--${p.classe}`;
+    li.append(cor, p.nome);
+    return li;
+  }));
+
+  // Vendedores: uma barra empilhada com onde os pedidos pararam
+  const ordem = el('funil-ordem').value;
+  const nomeDe = (v) => v.vendedor || `Vendedor ${v.cod_vendedor ?? ''}`;
+  const lista = fatVendedores.map((v) => ({ v, f: etapasDoFunil(v) })).filter((x) => x.f.feitos > 0);
+  lista.sort((a, b) => {
+    if (ordem === 'nome') return nomeDe(a.v).localeCompare(nomeDe(b.v), 'pt-BR', { sensitivity: 'base' });
+    if (ordem === 'conversao') return b.f.conversao - a.f.conversao;
+    if (ordem === 'perda') return b.f.perda - a.f.perda;
+    if (ordem === 'aguardando') return num(b.v.valor_aguardando) - num(a.v.valor_aguardando);
+    return b.f.feitos - a.f.feitos;
+  });
+  const maior = Math.max(...lista.map((x) => x.f.feitos), 1);
+  el('funil-vendedores').replaceChildren(...lista.map(({ v, f }) => {
+    const linha = document.createElement('div');
+    linha.className = 'funil-vendedor';
+    const nome = document.createElement('button');
+    nome.type = 'button';
+    nome.className = 'link-pedido funil-vendedor__nome';
+    nome.textContent = nomeDe(v);
+    nome.title = 'Ver os pedidos deste vendedor';
+    nome.addEventListener('click', () => abrirFatVendedor(v));
+    // A barra tem o tamanho do total do vendedor (comparável entre vendedores)
+    const trilho = document.createElement('div');
+    trilho.className = 'funil-vendedor__trilho';
+    const barra = document.createElement('div');
+    barra.className = 'funil-vendedor__barra';
+    barra.style.width = `${Math.max(3, (f.feitos / maior) * 100)}%`;
+    for (const p of PARTES_FUNIL) {
+      const valor = num(v[p.chave]);
+      if (!valor) continue;
+      const pedaco = document.createElement('span');
+      pedaco.className = `funil__cor funil__cor--${p.classe}`;
+      pedaco.style.width = `${(valor / f.feitos) * 100}%`;
+      pedaco.title = `${p.nome}: ${moeda.format(valor)} · ${contar(num(v[p.qtd]), p.rotulo[0], p.rotulo[1])} (${pctTexto(valor, f.feitos)})`;
+      barra.append(pedaco);
+    }
+    trilho.append(barra);
+    const numeros = document.createElement('div');
+    numeros.className = 'funil-vendedor__numeros';
+    const conv = document.createElement('strong');
+    conv.textContent = `${pctTexto(f.venda, f.feitos)} virou venda`;
+    const det = document.createElement('span');
+    det.textContent = `${moeda.format(f.venda)} de ${moeda.format(f.feitos)}`;
+    numeros.append(conv, det);
+    const avisos = [];
+    if (num(v.valor_aguardando)) avisos.push(`aguardando ${moeda.format(num(v.valor_aguardando))}`);
+    if (f.perda) avisos.push(`perdido ${moeda.format(f.perda)}`);
+    if (avisos.length) {
+      const a = document.createElement('span');
+      a.className = 'funil-vendedor__aviso';
+      a.textContent = avisos.join(' · ');
+      numeros.append(a);
+    }
+    linha.append(nome, trilho, numeros);
+    return linha;
+  }));
 }
 
 // Janela com os pedidos do vendedor, separados por etapa
@@ -1872,6 +1919,7 @@ function iniciarAtalhosDasPartes() {
 document.addEventListener('DOMContentLoaded', () => {
   iniciarAtalhosDasPartes();
   el('fat-janela-fechar').addEventListener('click', () => el('fat-janela').close());
+  el('funil-ordem').addEventListener('change', () => mostrarFatVendedores());
   const hoje = new Date();
   el('inicio').value = formatarData(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
   el('fim').value = formatarData(hoje);
