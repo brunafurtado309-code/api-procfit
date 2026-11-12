@@ -12,6 +12,7 @@
   <script src="js/graficos.js" defer></script>
   <script src="js/app.js" defer></script>
   <script src="js/vendas-vendedores.js" defer></script>
+  <script src="js/vendas-clientes.js" defer></script>
 </head>
 <body class="tela-vendas">
   <header class="topo">
@@ -76,6 +77,7 @@
       <nav class="abas" id="abas-vendas" aria-label="Partes das vendas">
         <button class="aba aba--ativa" type="button" data-aba="resumo" aria-current="page">Resumo</button>
         <button class="aba" type="button" data-aba="vendedores">Vendedores</button>
+        <button class="aba" type="button" data-aba="clientes">Clientes</button>
         <button class="aba" type="button" data-aba="caixa">Caixa das lojas</button>
       </nav>
 
@@ -221,6 +223,27 @@
         </div>
         <div id="funil-vendedores" class="funil-vendedores"></div>
       </section>
+      </div>
+
+      <!-- CLIENTES: a carteira e a análise de cada cliente (js/vendas-clientes.js) -->
+      <div id="parte-clientes" class="parte" data-parte="clientes" hidden>
+        <p id="cc-status" class="status" role="status" aria-live="polite"></p>
+        <dl id="cc-kpis" class="cv-kpis" aria-label="Números da carteira"></dl>
+        <div class="cv-mestre">
+          <section class="bloco cv-lista" aria-labelledby="titulo-cc-lista">
+            <h2 id="titulo-cc-lista">Clientes</h2>
+            <p id="cc-descricao" class="bloco__descricao"></p>
+            <div class="cc-filtros">
+              <input id="cc-busca" type="search" placeholder="Encontrar cliente por nome ou código" autocomplete="off">
+              <div class="cv-chips" id="cc-chips"></div>
+            </div>
+            <div class="tabela-rolagem"><table class="tabela tabela-cartoes tabela--compacta" id="cc-tabela"><thead></thead><tbody></tbody></table></div>
+            <button type="button" class="botao-secundario cv-mais" id="cc-mais" hidden>Mostrar mais</button>
+          </section>
+          <section class="bloco cv-detalhe" id="cc-detalhe" aria-live="polite">
+            <p class="explica cv-detalhe__vazio">Escolha um cliente na lista para ver o histórico, os produtos e os vendedores dele.</p>
+          </section>
+        </div>
       </div>
 
       <!-- 3. CAIXA DAS LOJAS -->

@@ -44,6 +44,21 @@ router.get('/controle-vendedores', async (req, res, next) => {
     next(err);
   }
 });
+// Sub-tela Clientes: a carteira e o histórico de um cliente
+router.get('/carteira-clientes', async (req, res, next) => {
+  try {
+    res.json(await require('../services/vendas-vendedores.service').carteiraClientes(req.query));
+  } catch (err) {
+    next(err);
+  }
+});
+router.get('/historico-cliente', async (req, res, next) => {
+  try {
+    res.json(await require('../services/vendas-vendedores.service').historicoCliente(req.query));
+  } catch (err) {
+    next(err);
+  }
+});
 // Análise de um vendedor e dos clientes dele (painel da direita da sub-tela Vendedores)
 router.get('/analise-vendedor', async (req, res, next) => {
   try {

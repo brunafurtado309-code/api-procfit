@@ -66,6 +66,7 @@ const modulos = (() => {
       // Sub-telas da tela de vendas (abas: só a parte escolhida aparece). Os gráficos ficam no Resumo.
       { titulo: 'Resumo', pagina: 'index.html#resumo', aba: 'resumo' },
       { titulo: 'Vendedores', pagina: 'index.html#vendedores', aba: 'vendedores' },
+      { titulo: 'Clientes', pagina: 'index.html#clientes', aba: 'clientes' },
       { titulo: 'Caixa das lojas', pagina: 'index.html#caixa', aba: 'caixa' },
     ],
     financeiro: [

@@ -10,6 +10,11 @@
 //     são venda de vendedor.
 //   - conferência: 1.148 notas e R$ 1.107.969,52, igual à soma das notas de venda (tipo 8 da
 //     VENDAS_ANALITICAS) mais 24 notas geradas no checkout que a analítica não marcou como tipo 8.
+//   - nov/2026, conferido pelo CFOP (NF_FATURAMENTO_PRODUTOS.CFOP): essas 24 notas NÃO são venda.
+//       5.405 e 5.102 = venda (o PROCFIT conta 100% delas)
+//       5.910 = bonificação/brinde, 5.908 = freezer em comodato, 5.408/5.409 = transferência
+//     Regra: VENDA = nota que o PROCFIT conta como venda (tipo 8 na VENDAS_ANALITICAS), a mesma base
+//     do Resumo de Vendas. Bonificação e comodato saem do faturamento e viram colunas à parte.
 //   - devolução (conferido em nov/2026): NF_FATURAMENTO_DEVOLUCOES aponta a nota original
 //     (NF_FATURAMENTO_ORIGEM); o valor vem da própria nota de devolução,
 //     NF_FATURAMENTO_DEVOLUCOES_TOTAIS.TOTAL_GERAL (ligada por NF_FATURAMENTO_DEVOLUCAO).
@@ -58,17 +63,43 @@ async function consultar(pedido, filtros) {
     .query(`
       SET NOCOUNT ON;
       IF OBJECT_ID('tempdb..#N') IS NOT NULL DROP TABLE #N;
+      IF OBJECT_ID('tempdb..#NALL') IS NOT NULL DROP TABLE #NALL;
+      IF OBJECT_ID('tempdb..#VA8') IS NOT NULL DROP TABLE #VA8;
+      IF OBJECT_ID('tempdb..#REM') IS NOT NULL DROP TABLE #REM;
       IF OBJECT_ID('tempdb..#NOTAS') IS NOT NULL DROP TABLE #NOTAS;
       IF OBJECT_ID('tempdb..#ANT') IS NOT NULL DROP TABLE #ANT;
       IF OBJECT_ID('tempdb..#DEV') IS NOT NULL DROP TABLE #DEV;
 
-      -- 1. As notas de venda do período (sem canceladas e sem transferências)
+      -- 0. Notas que o PROCFIT conta como venda (tipo 8 da VENDAS_ANALITICAS), uma leitura só,
+      --    cobrindo o período e o mesmo intervalo do mês anterior (com folga de 3 dias)
+      SELECT DISTINCT VA.DOCUMENTO_NUMERO, VA.EMPRESA
+      INTO #VA8
+      FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
+      WHERE VA.DOCUMENTO_TIPO = 8
+        AND ((VA.MOVIMENTO >= DATEADD(day, -3, CAST(@inicio AS date))
+              AND VA.MOVIMENTO < DATEADD(day, 4, CAST(@fim AS date)))
+          OR (VA.MOVIMENTO >= DATEADD(day, -3, DATEADD(month, -1, CAST(@inicio AS date)))
+              AND VA.MOVIMENTO < DATEADD(day, 4, DATEADD(month, -1, CAST(@fim AS date)))))
+        AND (@empresa IS NULL OR VA.EMPRESA = @empresa)
+      OPTION (RECOMPILE);
+      CREATE CLUSTERED INDEX IX_VA8 ON #VA8 (DOCUMENTO_NUMERO, EMPRESA);
+
+      -- 1. As notas do período (sem canceladas e sem transferências), com o tipo de cada uma:
+      --    venda / bonificação (CFOP x.910) / comodato de freezer (x.908) / outra remessa
       SELECT N.NF_FATURAMENTO, N.NF_NUMERO, N.EMPRESA, N.MOVIMENTO, N.VENDEDOR, N.ENTIDADE,
              TRY_CAST(LTRIM(RTRIM(N.PEDIDO_CLIENTE)) AS numeric(18, 0)) AS PEDIDO,
              ISNULL(T.TOTAL_PRODUTOS, 0) AS TOTAL_PRODUTOS,
              ISNULL(T.TOTAL_DESCONTOS, 0) AS TOTAL_DESCONTOS,
-             ISNULL(T.TOTAL_GERAL, 0) AS TOTAL_GERAL
-      INTO #N
+             ISNULL(T.TOTAL_GERAL, 0) AS TOTAL_GERAL,
+             CASE
+               WHEN EXISTS (SELECT 1 FROM #VA8 V WHERE V.DOCUMENTO_NUMERO = N.NF_NUMERO AND V.EMPRESA = N.EMPRESA) THEN 'venda'
+               WHEN EXISTS (SELECT 1 FROM NF_FATURAMENTO_PRODUTOS NP WITH (NOLOCK)
+                            WHERE NP.NF_FATURAMENTO = N.NF_FATURAMENTO AND NP.CFOP IN ('5.910', '6.910')) THEN 'bonificacao'
+               WHEN EXISTS (SELECT 1 FROM NF_FATURAMENTO_PRODUTOS NP WITH (NOLOCK)
+                            WHERE NP.NF_FATURAMENTO = N.NF_FATURAMENTO AND NP.CFOP IN ('5.908', '6.908')) THEN 'comodato'
+               ELSE 'outra'
+             END AS CATEGORIA
+      INTO #NALL
       FROM NF_FATURAMENTO N WITH (NOLOCK)
       JOIN NF_FATURAMENTO_TOTAIS T WITH (NOLOCK) ON T.NF_FATURAMENTO = N.NF_FATURAMENTO
       WHERE N.MOVIMENTO >= CAST(@inicio AS date)
@@ -79,7 +110,27 @@ async function consultar(pedido, filtros) {
         AND NOT EXISTS (SELECT 1 FROM NF_FATURAMENTO_TRANSF X WITH (NOLOCK)
                         WHERE X.NF_FATURAMENTO = N.NF_FATURAMENTO)
       OPTION (RECOMPILE);
+
+      -- Faturamento = só as notas de venda
+      SELECT NF_FATURAMENTO, NF_NUMERO, EMPRESA, MOVIMENTO, VENDEDOR, ENTIDADE, PEDIDO,
+             TOTAL_PRODUTOS, TOTAL_DESCONTOS, TOTAL_GERAL
+      INTO #N
+      FROM #NALL
+      WHERE CATEGORIA = 'venda';
       CREATE CLUSTERED INDEX IX_N ON #N (NF_FATURAMENTO);
+
+      -- Bonificação, comodato e outras remessas por vendedor (fora do faturamento)
+      SELECT VENDEDOR,
+             SUM(CASE WHEN CATEGORIA = 'bonificacao' THEN 1 ELSE 0 END)           AS notas_bonificacao,
+             SUM(CASE WHEN CATEGORIA = 'bonificacao' THEN TOTAL_GERAL ELSE 0 END) AS bonificado,
+             SUM(CASE WHEN CATEGORIA = 'comodato' THEN 1 ELSE 0 END)              AS comodatos,
+             SUM(CASE WHEN CATEGORIA = 'comodato' THEN TOTAL_GERAL ELSE 0 END)    AS valor_comodato,
+             SUM(CASE WHEN CATEGORIA = 'outra' THEN 1 ELSE 0 END)                 AS outras_remessas,
+             SUM(CASE WHEN CATEGORIA = 'outra' THEN TOTAL_GERAL ELSE 0 END)       AS valor_outras_remessas
+      INTO #REM
+      FROM #NALL
+      WHERE CATEGORIA <> 'venda'
+      GROUP BY VENDEDOR;
 
       -- 2. Devoluções das notas do período, somadas por nota numa leitura só
       SELECT DV.NF_FATURAMENTO_ORIGEM AS NF_FATURAMENTO,
@@ -92,6 +143,9 @@ async function consultar(pedido, filtros) {
       LEFT JOIN NF_FATURAMENTO_DEVOLUCOES_TOTAIS DT WITH (NOLOCK)
         ON DT.NF_FATURAMENTO_DEVOLUCAO = DV.NF_FATURAMENTO_DEVOLUCAO
       WHERE DV.NF_FATURAMENTO_ORIGEM IN (SELECT NF_FATURAMENTO FROM #N)
+        -- devolução cancelada (CANCELAMENTOS_NOTAS_FISCAIS TIPO 3) não desconta do faturado
+        AND NOT EXISTS (SELECT 1 FROM CANCELAMENTOS_NOTAS_FISCAIS NC WITH (NOLOCK)
+                        WHERE NC.TIPO = 3 AND NC.CHAVE = DV.NF_FATURAMENTO_DEVOLUCAO AND NC.PROTOCOLO IS NOT NULL)
       GROUP BY DV.NF_FATURAMENTO_ORIGEM;
 
       -- 3. Cada nota com cliente, vendedor e devolução
@@ -135,12 +189,21 @@ async function consultar(pedido, filtros) {
                         WHERE NC.TIPO = 1 AND NC.CHAVE = N.NF_FATURAMENTO AND NC.PROTOCOLO IS NOT NULL)
         AND NOT EXISTS (SELECT 1 FROM NF_FATURAMENTO_TRANSF X WITH (NOLOCK)
                         WHERE X.NF_FATURAMENTO = N.NF_FATURAMENTO)
+        AND EXISTS (SELECT 1 FROM #VA8 V WHERE V.DOCUMENTO_NUMERO = N.NF_NUMERO AND V.EMPRESA = N.EMPRESA)
       GROUP BY N.VENDEDOR
       OPTION (RECOMPILE);
 
       -- Resumo por vendedor: sempre todos os vendedores do período (a escolha de um vendedor
       -- e a pesquisa filtram só a lista de notas)
-      SELECT R.*, A.notas AS notas_anterior, A.valor AS valor_anterior
+      SELECT COALESCE(R.cod_vendedor, RM.VENDEDOR) AS cod_vendedor,
+             COALESCE(R.vendedor, (SELECT LTRIM(RTRIM(V.NOME)) FROM VENDEDORES V WITH (NOLOCK) WHERE V.VENDEDOR = RM.VENDEDOR)) AS vendedor,
+             ISNULL(R.notas, 0) AS notas, ISNULL(R.valor, 0) AS valor, ISNULL(R.desconto, 0) AS desconto,
+             ISNULL(R.notas_devolvidas, 0) AS notas_devolvidas, ISNULL(R.devolvido, 0) AS devolvido,
+             ISNULL(R.liquido, 0) AS liquido, ISNULL(R.clientes, 0) AS clientes, ISNULL(R.dias_com_nota, 0) AS dias_com_nota,
+             A.notas AS notas_anterior, A.valor AS valor_anterior,
+             ISNULL(RM.notas_bonificacao, 0) AS notas_bonificacao, ISNULL(RM.bonificado, 0) AS bonificado,
+             ISNULL(RM.comodatos, 0) AS comodatos, ISNULL(RM.valor_comodato, 0) AS valor_comodato,
+             ISNULL(RM.outras_remessas, 0) AS outras_remessas, ISNULL(RM.valor_outras_remessas, 0) AS valor_outras_remessas
       FROM (
       SELECT cod_vendedor,
              MAX(vendedor)                                 AS vendedor,
@@ -155,8 +218,9 @@ async function consultar(pedido, filtros) {
       FROM #NOTAS
       GROUP BY cod_vendedor
       ) R
-      LEFT JOIN #ANT A ON A.VENDEDOR = R.cod_vendedor
-      ORDER BY R.valor DESC;
+      FULL JOIN #REM RM ON RM.VENDEDOR = R.cod_vendedor
+      LEFT JOIN #ANT A ON A.VENDEDOR = COALESCE(R.cod_vendedor, RM.VENDEDOR)
+      ORDER BY ISNULL(R.valor, 0) DESC;
 
       -- Lista de notas (do vendedor escolhido, da pesquisa e, se pedido, só as com devolução)
       SELECT TOP ${LIMITE_LISTA} *, valor - devolvido AS liquido

@@ -118,13 +118,22 @@ const vendasVendedores = (() => {
     const v = dados.vendedores;
     const soma = (campo) => v.reduce((t, x) => t + num(x[campo]), 0);
     const ativos = v.filter((x) => num(x.notas) > 0).length;
-    const casosDuplicados = new Set(dados.duplicadas.map((d) => `${d.motivo}|${d.grupo}`)).size;
+    // Duplicada de verdade = venda repetida; venda com bonificação de 100% do valor é contada à parte
+    const casosDuplicados = new Set(dados.duplicadas.filter((d) => d.motivo !== 'bonificacao_igual').map((d) => `${d.motivo}|${d.grupo}`)).size;
+    const casosBonificacao = new Set(dados.duplicadas.filter((d) => d.motivo === 'bonificacao_igual').map((d) => d.grupo)).size;
     el('cv-kpis').replaceChildren(
       numero('Faturado em nota', dinheiro(soma('valor')), `${contar(soma('notas'), 'nota', 'notas')} · ${contar(ativos, 'vendedor', 'vendedores')}`),
       numero('Líquido', dinheiro(soma('liquido')), soma('devolvido') > 0.009 ? `devolvido ${dinheiro(soma('devolvido'))}` : 'sem devolução'),
       numero('Em orçamento', dinheiro(soma('valor_orcamentos')), contar(soma('orcamentos'), 'pedido', 'pedidos')),
       numero('Cancelados', dinheiro(soma('valor_cancelados')), contar(soma('cancelados'), 'pedido', 'pedidos'),
         soma('cancelados') ? 'negativo' : null),
+      numero('Bonificado', dinheiro(soma('bonificado')),
+        soma('notas_bonificacao')
+          ? `${contar(soma('notas_bonificacao'), 'nota', 'notas')} · ${pct(soma('bonificado'), soma('valor'))} do faturado${casosBonificacao ? ` · ${contar(casosBonificacao, 'venda bonificada 100%', 'vendas bonificadas 100%')}` : ''}`
+          : 'sem bonificação',
+        casosBonificacao ? 'negativo' : null),
+      numero('Freezer em comodato', contar(soma('comodatos'), 'nota', 'notas'),
+        soma('comodatos') ? `${dinheiro(soma('valor_comodato'))} em equipamento (fora do faturado)` : 'nenhum no período'),
       numero('Pontos de atenção', inteiro.format(casosDuplicados + dados.devolucoesCanceladas.length),
         `${contar(casosDuplicados, 'nota duplicada?', 'notas duplicadas?')} · ${contar(dados.devolucoesCanceladas.length, 'devolução cancelada', 'devoluções canceladas')}`,
         casosDuplicados + dados.devolucoesCanceladas.length ? 'negativo' : null),
@@ -134,7 +143,7 @@ const vendasVendedores = (() => {
   // ---------- Lista de vendedores ----------
   function mostrarVendedores() {
     const tabela = el('cv-tabela-vendedores');
-    const lista = dados.vendedores.filter((v) => num(v.notas) || num(v.orcamentos) || num(v.cancelados));
+    const lista = dados.vendedores.filter((v) => num(v.notas) || num(v.orcamentos) || num(v.cancelados) || num(v.notas_bonificacao) || num(v.comodatos));
     const colunas = [['Vendedor', true], ['Faturado'], ['Part.', true], ['Orçamento'], ['Cancelado']];
     cabecalho(tabela, colunas);
     if (!lista.length) {
@@ -159,6 +168,7 @@ const vendasVendedores = (() => {
       part.append(barra, criar('span', 'cv-part__texto', pct(num(v.valor), total, 0)));
       const avisos = [];
       if (num(v.duplicadas)) avisos.push('duplicada?');
+      if (num(v.bonificacao_igual)) avisos.push('bonif. 100%');
       if (num(v.devolucoes_canceladas)) avisos.push('dev. cancelada');
       // Aviso (nota duplicada, devolução cancelada) vai embaixo do nome, em laranja, no lugar do código
       tr.append(
@@ -272,6 +282,13 @@ const vendasVendedores = (() => {
     const ativos = equipe.filter((x) => num(x.notas) > 0);
     const mediaVendedor = ativos.length ? somaEquipe('valor') / ativos.length : 0;
     const ranking = equipe.findIndex((x) => String(x.cod_vendedor) === vendedorAtual) + 1;
+    // Fora do faturamento: bonificação (CFOP x.910) e freezer em comodato (x.908)
+    const bonificado = num(eu.bonificado) || num(v.bonificado);
+    const notasBonif = num(eu.notas_bonificacao) || num(v.notas_bonificacao);
+    const comodatos = num(eu.comodatos) || num(v.comodatos);
+    const bonifPct = valor ? bonificado / valor * 100 : 0;
+    const bonifEquipe = somaEquipe('valor') ? somaEquipe('bonificado') / somaEquipe('valor') * 100 : 0;
+    const bonifAlta = bonificado > 0.009 && bonifPct > Math.max(2, bonifEquipe * 1.5);
 
     // Clientes
     const clientes = (analise.clientes ?? []).map((c) => ({ ...c, tipo: classificarCliente(c) }));
@@ -313,6 +330,11 @@ const vendasVendedores = (() => {
         parados.length ? 'negativo' : null),
       numero('Devolução', pct(devolvido, valor), `equipe ${devEquipe.toFixed(1).replace('.', ',')}%`,
         devPct > Math.max(1, devEquipe * 1.5) ? 'negativo' : null),
+      numero('Bonificado', dinheiro(bonificado),
+        notasBonif ? `${contar(notasBonif, 'nota', 'notas')} · ${pct(bonificado, valor)} do faturado (equipe ${bonifEquipe.toFixed(1).replace('.', ',')}%)` : 'sem bonificação',
+        bonifAlta ? 'negativo' : null),
+      numero('Freezer em comodato', contar(comodatos, 'nota', 'notas'),
+        comodatos ? `${dinheiro(num(eu.valor_comodato) || num(v.valor_comodato))} em equipamento` : 'nenhum no período'),
     );
     conteudo.push(dl);
 
@@ -349,6 +371,9 @@ const vendasVendedores = (() => {
     if (valor && valorCancelado / (valor + valorCancelado) >= 0.05) atencao.push(`Cancelou ${dinheiro(valorCancelado)} em pedidos (${pct(valorCancelado, valor + valorCancelado, 0)} do que vendeu).`);
     if (devolvido > 0.009 && devPct > Math.max(1, devEquipe * 1.5)) atencao.push(`Devolução de ${devPct.toFixed(1).replace('.', ',')}%, acima da equipe: conferir o pedido com o cliente antes de fechar.`);
     if (num(v.duplicadas)) atencao.push(`${contar(num(v.duplicadas), 'nota parece duplicada', 'notas parecem duplicadas')}: conferir no PROCFIT.`);
+    if (bonifAlta) atencao.push(`Bonificou ${dinheiro(bonificado)} (${bonifPct.toFixed(1).replace('.', ',')}% do faturado), acima da equipe (${bonifEquipe.toFixed(1).replace('.', ',')}%): conferir as bonificações.`);
+    if (num(v.bonificacao_igual)) atencao.push(`${contar(num(v.bonificacao_igual), 'venda com bonificação de 100% do valor', 'vendas com bonificação de 100% do valor')}: o cliente recebeu de brinde o mesmo valor que comprou.`);
+    if (comodatos) fortes.push(`${contar(comodatos, 'freezer colocado', 'freezers colocados')} em comodato no período.`);
     if (semNota.length >= 2) atencao.push(`${contar(semNota.length, 'dia útil', 'dias úteis')} sem nenhuma nota: ${semNota.slice(-4).map((d) => dataBR(d.dia).slice(0, 5)).join(', ')}${semNota.length > 4 ? '…' : ''}.`);
     if (pico && valor) fortes.push(`Pico em ${DIAS_SEMANA[diaDaSemana(pico.dia)]}, ${dataBR(pico.dia).slice(0, 5)}: ${dinheiro(pico.valor)}.`);
     const leitura = criar('div', 'cv-leitura');
@@ -580,7 +605,12 @@ const vendasVendedores = (() => {
       if (!grupos.has(k)) grupos.set(k, []);
       grupos.get(k).push(n);
     }
-    el('titulo-cv-duplicadas').textContent = `Notas que parecem duplicadas (${contar(grupos.size, 'caso', 'casos')})`;
+    const bonif = [...grupos.keys()].filter((k) => k.startsWith('bonificacao_igual|')).length;
+    const dup = grupos.size - bonif;
+    el('titulo-cv-duplicadas').textContent = dup && bonif
+      ? `Notas que parecem duplicadas (${contar(dup, 'caso', 'casos')}) e vendas com bonificação de 100% do valor (${bonif})`
+      : dup ? `Notas que parecem duplicadas (${contar(dup, 'caso', 'casos')})`
+        : `Vendas com bonificação de 100% do valor (${contar(bonif, 'caso', 'casos')})`;
     const tabela = el('cv-tabela-duplicadas');
     cabecalho(tabela, [['Notas', true], ['Dia', true], ['Cliente', true], ['Vendedor', true], ['Motivo', true], ['Valor de cada'], ['Somado']]);
     tabela.tBodies[0].replaceChildren(...[...grupos.values()].map((g) => {
@@ -588,8 +618,11 @@ const vendasVendedores = (() => {
       const numeros = criar('span');
       g.forEach((x, i) => {
         if (i) numeros.append(', ');
-        const nf = criar('span', x.conta_como_venda ? null : 'cv-fora', `NF ${x.nota}`);
-        if (!x.conta_como_venda) nf.title = 'O PROCFIT não conta esta nota como venda (não está como venda na VENDAS_ANALITICAS)';
+        const bonificacao = x.tipo === 'bonificacao';
+        const nf = criar('span', x.conta_como_venda ? null : 'cv-fora', `NF ${x.nota}${bonificacao ? ' (bonificação)' : ''}`);
+        if (!x.conta_como_venda) nf.title = bonificacao
+          ? 'Nota de bonificação (CFOP 5.910): não entra no faturamento'
+          : 'O PROCFIT não conta esta nota como venda (não está como venda na VENDAS_ANALITICAS)';
         numeros.append(nf);
       });
       const tr = document.createElement('tr');
@@ -598,9 +631,13 @@ const vendasVendedores = (() => {
         td(dataBR(n.dia), 'esquerda sem-quebra'),
         td(nomeCliente(n), 'esquerda cel-largo'),
         td([...new Set(g.map(nomeVendedor))].join(', '), 'esquerda cel-largo'),
-        td(n.motivo === 'pedido' ? `Mesmo pedido (${n.pedido})` : 'Mesmo cliente, dia e valor', 'esquerda'),
+        td(n.motivo === 'pedido' ? `Mesmo pedido (${n.pedido})`
+          : n.motivo === 'bonificacao_igual' ? 'Venda com bonificação de 100% do valor'
+            : 'Mesmo cliente, dia e valor', 'esquerda'),
         td(dinheiro(n.valor)),
-        td(dinheiro(g.reduce((t, x) => t + num(x.valor), 0)), 'negativo'),
+        n.motivo === 'bonificacao_igual'
+          ? td(dinheiro(g.filter((x) => x.tipo === 'bonificacao').reduce((t, x) => t + num(x.valor), 0)), null, 'bonificado')
+          : td(dinheiro(g.reduce((t, x) => t + num(x.valor), 0)), 'negativo'),
       );
       return tr;
     }));

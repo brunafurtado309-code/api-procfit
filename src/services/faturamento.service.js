@@ -182,6 +182,10 @@ async function exportarNotasVendedor(query) {
       { titulo: 'Notas com devolução', chave: 'notas_devolvidas', tipo: 'inteiro', largura: 12, somar: true },
       { titulo: 'Devolvido', chave: 'devolvido', tipo: 'moeda', largura: 14, somar: true },
       { titulo: 'Líquido', chave: 'liquido', tipo: 'moeda', largura: 16, somar: true },
+      // fora do faturamento: bonificação (CFOP x.910) e freezer em comodato (x.908)
+      { titulo: 'Notas de bonificação', chave: 'notas_bonificacao', tipo: 'inteiro', largura: 12, somar: true },
+      { titulo: 'Bonificado', chave: 'bonificado', tipo: 'moeda', largura: 14, somar: true },
+      { titulo: 'Freezer em comodato', chave: 'comodatos', tipo: 'inteiro', largura: 12, somar: true },
     ],
     linhas: resumo,
     totais: true,

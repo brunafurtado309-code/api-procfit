@@ -29,7 +29,7 @@ async function consultarControle(qual, filtros) {
     const repo = require('../repositories/vendas-vendedores.repository');
     const dados = qual === 'clientes'
       ? await repo.clientesDoVendedor(filtros, filtros.vendedor)
-      : await repo[qual](filtros);
+      : await repo[qual](filtros); // controle, duplicadas, carteiraClientes, historicoCliente
     guardadas.set(chave, { quando: Date.now(), dados });
     while (guardadas.size > 30) guardadas.delete(guardadas.keys().next().value);
     return dados;
@@ -133,4 +133,21 @@ async function analiseVendedor(query) {
   };
 }
 
-module.exports = { controle, analiseVendedor };
+// ===== Vendas > Clientes =====
+// A carteira inteira (lista da esquerda): a tela calcula os números, a curva ABC e os filtros.
+async function carteiraClientes(query) {
+  const filtros = faturamento.montarFiltros(query);
+  const base = { inicio: filtros.inicio, fim: filtros.fim, empresa: filtros.empresa ?? null };
+  return { periodo: base, clientes: await consultarControle('carteiraClientes', base) };
+}
+
+// Um cliente (painel da direita)
+async function historicoCliente(query) {
+  const filtros = faturamento.montarFiltros(query);
+  const cliente = Number(query.cliente);
+  if (!Number.isInteger(cliente) || cliente <= 0) throw new AppError('"cliente" deve ser um número');
+  const base = { inicio: filtros.inicio, fim: filtros.fim, empresa: filtros.empresa ?? null, cliente };
+  return { periodo: base, ...(await consultarControle('historicoCliente', base)) };
+}
+
+module.exports = { controle, analiseVendedor, carteiraClientes, historicoCliente };

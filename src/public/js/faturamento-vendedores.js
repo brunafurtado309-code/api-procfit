@@ -27,17 +27,22 @@ let soDevolucao = false; // botão "Só com devolução": a lista mostra só as 
 
 const TEMPO_LIMITE_MS = 60000;
 
-async function buscar(rota, parametros = {}) {
+let cargaAtual = 0;      // cada carga tem um número: resposta de carga antiga é ignorada
+let cargaControle = null; // a carga anterior é cancelada quando outra começa (clique rápido)
+
+async function buscar(rota, parametros = {}, sinalExterno = null) {
   const url = new URL(`/faturamento/${rota}`, window.location.origin);
   for (const [nome, valor] of Object.entries(parametros)) {
     if (valor !== null && valor !== undefined && valor !== '') url.searchParams.set(nome, valor);
   }
   const controle = new AbortController();
   const limite = setTimeout(() => controle.abort(), TEMPO_LIMITE_MS);
+  sinalExterno?.addEventListener('abort', () => controle.abort(), { once: true });
   let resposta;
   try {
     resposta = await fetch(url, { headers: { 'x-api-key': chave.ler() ?? '' }, signal: controle.signal });
   } catch (erro) {
+    if (sinalExterno?.aborted) throw erro; // trocou de filtro no meio: a carga nova assume
     if (erro.name === 'AbortError') {
       throw new Error(`A API não respondeu em ${TEMPO_LIMITE_MS / 1000} segundos. Tente um período menor.`);
     }
@@ -54,8 +59,8 @@ async function buscar(rota, parametros = {}) {
   return resposta;
 }
 
-async function buscarJson(rota, parametros) {
-  const resposta = await buscar(rota, parametros);
+async function buscarJson(rota, parametros, sinal) {
+  const resposta = await buscar(rota, parametros, sinal);
   const corpo = await resposta.json().catch(() => ({}));
   if (!resposta.ok) throw new Error(corpo.erro ?? 'Não foi possível carregar os dados.');
   return corpo;
@@ -179,16 +184,19 @@ async function carregar() {
   estado.salvar('faturamento-vendedores', filtrosAtuais());
   mostrarStatus('Carregando as notas…');
   const inicioCarga = Date.now();
+  const minhaCarga = ++cargaAtual;
+  cargaControle?.abort();
+  cargaControle = new AbortController();
   try {
-    const dados = await buscarJson('notas-vendedor', filtrosAtuais());
-    vendedores = dados.vendedores;
-    notas = dados.notas;
+    const dados = await buscarJson('notas-vendedor', filtrosAtuais(), cargaControle.signal);
+    if (minhaCarga !== cargaAtual) return; // já pediram outra coisa: esta resposta não vale mais
+    vendedores = dados.vendedores ?? [];
+    notas = dados.notas ?? [];
     pagina = 1;
-    preencherSeletor();
-    mostrarResumo();
-    mostrarVendedores();
-    mostrarAnalise(dados);
-    mostrarNotas();
+    // Cada parte da tela é desenhada separada: se uma der problema, as outras aparecem
+    parte('vendedores', () => { preencherSeletor(); mostrarResumo(); mostrarVendedores(); });
+    parte('analise', () => mostrarAnalise(el('analise'), dados, el('filtro-vendedor').value));
+    parte('notas', () => mostrarNotas());
     const passou = dados.totalNotas > notas.length;
     el('aviso-limite').hidden = !passou;
     el('aviso-limite').textContent = passou
@@ -200,7 +208,28 @@ async function carregar() {
     mostrarStatus(`atualizado às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
       + ` · carregou em ${segundos} s`);
   } catch (erro) {
+    if (minhaCarga !== cargaAtual || erro.name === 'AbortError') return;
     mostrarStatus(erro.message, true);
+  }
+}
+
+// Desenha uma parte da tela sem deixar um erro dela apagar as outras
+function parte(nome, desenhar) {
+  try {
+    desenhar();
+  } catch (erro) {
+    console.error(`Faturados por vendedor: falha ao montar "${nome}"`, erro);
+    const alvo = el({ vendedores: 'tabela-vendedores', analise: 'analise', notas: 'tabela-notas' }[nome]);
+    const texto = 'Esta parte não pôde ser montada agora. Clique em Atualizar; se continuar, avise o TI.';
+    if (alvo?.tBodies) {
+      const linha = document.createElement('tr');
+      const celula = td(texto, 'vazio');
+      celula.colSpan = 9;
+      linha.append(celula);
+      alvo.tBodies[0].replaceChildren(linha);
+    } else if (alvo) {
+      alvo.replaceChildren(span(texto, 'negativo'));
+    }
   }
 }
 
@@ -260,7 +289,7 @@ function mostrarVendedores() {
     const devolvido = Number(v.devolvido) || 0;
     const linha = document.createElement('tr');
     linha.className = `linha-dia${ativo ? ' linha-dia--aberta' : ''}`;
-    linha.title = ativo ? 'Voltar para as notas de todos' : 'Ver as notas deste vendedor';
+    linha.title = 'Abrir a análise deste vendedor';
     const celulaNotas = td(inteiro(v.notas));
     // "2 com devolução": abre só as notas devolvidas deste vendedor
     if (Number(v.notas_devolvidas)) {
@@ -287,16 +316,10 @@ function mostrarVendedores() {
       td(Number(v.notas) ? dinheiro(Number(v.valor) / Number(v.notas)) : '—'),
       td(devolvido > 0.009 ? dinheiro(devolvido) : '—', devolvido > 0.009 ? 'negativo' : null),
       td(dinheiro(v.liquido), 'coluna-final'),
-      td(span(ativo ? 'Mostrar todos' : 'Ver notas →', 'atencao__ver'), 'esquerda sem-quebra cel-acao'),
+      td(span('Ver análise →', 'atencao__ver'), 'esquerda sem-quebra cel-acao'),
     );
-    linha.addEventListener('click', () => {
-      el('filtro-vendedor').value = ativo ? '' : String(v.cod_vendedor);
-      if (ativo) { soDevolucao = false; marcarDevolucao(); }
-      // Ao escolher um vendedor, a tela desce até a análise dele
-      carregar().then(() => {
-        if (!ativo) el('titulo-analise').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-    });
+    // Abre a análise numa janela por cima: a tela de trás não recarrega nem sai do lugar
+    linha.addEventListener('click', () => abrirAnaliseVendedor(v));
     return linha;
   }));
 
@@ -379,10 +402,12 @@ function variacao(atual, anterior) {
   return ((Number(atual) - Number(anterior)) / Number(anterior)) * 100;
 }
 
-function mostrarAnalise(dados) {
+// raiz: onde desenhar (a seção da tela ou a janela); escolhido: código do vendedor ('' = equipe)
+function mostrarAnalise(raiz, dados, escolhido) {
+  raiz.replaceChildren(el('modelo-analise').content.cloneNode(true));
+  const parte = (nome) => raiz.querySelector(`.an-${nome}`);
   const inicio = el('inicio').value;
   const fim = el('fim').value;
-  const escolhido = el('filtro-vendedor').value;
   const v = escolhido ? vendedores.find((x) => String(x.cod_vendedor) === escolhido) : null;
   const campoValor = escolhido ? 'valor_vendedor' : 'valor';
   const campoNotas = escolhido ? 'notas_vendedor' : 'notas';
@@ -457,8 +482,8 @@ function mostrarAnalise(dados) {
   }
 
   // ---- Título e descrição ----
-  el('titulo-analise').textContent = v ? `Análise de ${nome}` : 'Pico de vendas da equipe';
-  el('analise-descricao').textContent = v
+  parte('titulo').textContent = v ? `Análise de ${nome}` : 'Pico de vendas da equipe';
+  parte('descricao').textContent = v
     ? `Como ${primeiroNome} está vendendo de ${dataBR(inicio)} a ${dataBR(fim)}, comparado com a equipe `
       + `e com o mesmo intervalo do mês anterior (${dataBR(dados.anterior?.inicio)} a ${dataBR(dados.anterior?.fim)}).`
     : `Quando a equipe mais vende, de ${dataBR(inicio)} a ${dataBR(fim)}. Clique num vendedor acima para ver a análise dele.`;
@@ -489,7 +514,7 @@ function mostrarAnalise(dados) {
   if (projecao !== null) {
     numeros.push(numero('Se mantiver o ritmo', dinheiro(projecao), 'projeção do mês (dias úteis)'));
   }
-  el('analise-numeros').replaceChildren(...numeros);
+  parte('numeros').replaceChildren(...numeros);
 
   // ---- Leitura do gestor ----
   const fortes = [];
@@ -563,15 +588,17 @@ function mostrarAnalise(dados) {
     caixa.append(h, ul);
     return caixa;
   };
-  el('analise-leitura').replaceChildren(
+  parte('leitura').replaceChildren(
     bloco('Pontos fortes', fortes.length ? fortes : ['Sem destaque no período.'], 'leitura--forte'),
     bloco('Pontos de atenção', atencao.length ? atencao : ['Nada fora do normal no período.'], 'leitura--atencao'),
   );
 
   // ---- Gráfico por dia: o pico em destaque ----
-  el('titulo-grafico-dias').textContent = v ? `Faturado por dia: ${primeiroNome}` : 'Faturado por dia: equipe';
-  graficos.colunas(el('grafico-dias'), {
-    titulo: el('titulo-grafico-dias').textContent,
+  parte('titulo-grafico').textContent = v ? `Faturado por dia: ${primeiroNome}` : 'Faturado por dia: equipe';
+  if (typeof graficos === 'undefined') {
+    parte('grafico').textContent = 'O gráfico não carregou agora (o resto da análise continua valendo).';
+  } else graficos.colunas(parte('grafico'), {
+    titulo: parte('titulo-grafico').textContent,
     altura: 230,
     // No celular só o dia (05), para os rótulos não se encostarem
     rotulos: serie.map((d) => (window.matchMedia('(max-width: 720px)').matches ? d.dia.slice(8, 10) : dataBR(d.dia).slice(0, 5))),
@@ -586,23 +613,63 @@ function mostrarAnalise(dados) {
 
   // ---- Dia da semana ----
   const maiorMedia = Math.max(0, ...semana.map((s) => s.media));
-  el('analise-semana').replaceChildren(...semana.map((s) => linhaBarra(
+  parte('semana').replaceChildren(...semana.map((s) => linhaBarra(
     s.nome, `${plural(s.dias, 'dia', 'dias')} no período`, dinheiro(s.media), `total ${dinheiro(s.total)}`,
     maiorMedia ? s.media / maiorMedia : 0, s === melhorSemana,
   )));
-  if (!semana.length) el('analise-semana').textContent = 'Sem dias no período.';
+  if (!semana.length) parte('semana').textContent = 'Sem dias no período.';
 
   // ---- Clientes ----
-  el('titulo-clientes').textContent = v ? `Principais clientes de ${primeiroNome}` : 'Principais clientes da equipe';
+  parte('titulo-clientes').textContent = v ? `Principais clientes de ${primeiroNome}` : 'Principais clientes da equipe';
   const maiorCliente = Math.max(0, ...clientes.map((c) => Number(c.valor) || 0));
-  el('analise-clientes').replaceChildren(...clientes.map((c, i) => linhaBarra(
+  parte('clientes').replaceChildren(...clientes.map((c, i) => linhaBarra(
     c.cliente ?? `Cliente ${c.cod_cliente}`,
     `${plural(c.notas, 'nota', 'notas')} · última ${dataBR(c.ultima_compra).slice(0, 5)}`
       + `${Number(c.devolvido) > 0.009 ? ` · devolveu ${dinheiro(c.devolvido)}` : ''}`,
     dinheiro(c.valor), alvo.valor ? `${pct((Number(c.valor) / alvo.valor) * 100)} do faturado` : null,
     maiorCliente ? (Number(c.valor) || 0) / maiorCliente : 0, i === 0,
   )));
-  if (!clientes.length) el('analise-clientes').textContent = 'Sem clientes no período.';
+  if (!clientes.length) parte('clientes').textContent = 'Sem clientes no período.';
+}
+
+// ===== Janela da análise do vendedor =====
+let vendedorNaJanela = null;
+let cargaJanela = 0;
+
+async function abrirAnaliseVendedor(v) {
+  const janela = el('janela-vendedor');
+  vendedorNaJanela = v;
+  const minha = ++cargaJanela;
+  const nome = v.vendedor ?? `Vendedor ${v.cod_vendedor}`;
+  el('janela-vendedor-titulo').textContent = `Análise de ${nome}`;
+  el('janela-vendedor-resumo').textContent = `código ${v.cod_vendedor} · ${dataBR(el('inicio').value)} a ${dataBR(el('fim').value)}`;
+  el('janela-vendedor-corpo').replaceChildren();
+  el('janela-vendedor-status').textContent = 'Montando a análise…';
+  el('janela-vendedor-status').classList.remove('status--erro');
+  if (!janela.open) {
+    janela.showModal();
+    document.body.classList.add('com-janela'); // a tela de trás não rola junto
+  }
+  try {
+    // Mesmo período e loja da tela; sem pesquisa nem filtro de devolução (a venda inteira dele)
+    const { busca, devolucao, ...filtros } = filtrosAtuais();
+    const dados = await buscarJson('notas-vendedor', { ...filtros, vendedor: v.cod_vendedor });
+    if (minha !== cargaJanela || !janela.open) return;
+    el('janela-vendedor-status').textContent = '';
+    mostrarAnalise(el('janela-vendedor-corpo'), dados, String(v.cod_vendedor));
+    const titulo = el('janela-vendedor-corpo').querySelector('.an-titulo');
+    if (titulo) titulo.hidden = true; // o nome já está no topo da janela
+    el('janela-vendedor-corpo').scrollTop = 0;
+  } catch (erro) {
+    if (minha !== cargaJanela) return;
+    el('janela-vendedor-status').textContent = erro.message;
+    el('janela-vendedor-status').classList.add('status--erro');
+  }
+}
+
+function fecharAnaliseVendedor() {
+  const janela = el('janela-vendedor');
+  if (janela.open) janela.close();
 }
 
 // ===== 4. Lista de notas =====
@@ -829,6 +896,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   el('filtro-vendedor').addEventListener('change', () => carregar());
   el('baixar-excel').addEventListener('click', baixarExcel);
+  // Janela do vendedor: fechar (botão, Esc ou clique fora) e "ver as notas na lista"
+  const janela = el('janela-vendedor');
+  janela.addEventListener('close', () => { document.body.classList.remove('com-janela'); cargaJanela += 1; });
+  janela.addEventListener('click', (evento) => { if (evento.target === janela) fecharAnaliseVendedor(); });
+  el('janela-vendedor-fechar').addEventListener('click', fecharAnaliseVendedor);
+  el('janela-vendedor-notas').addEventListener('click', () => {
+    if (!vendedorNaJanela) return;
+    el('filtro-vendedor').value = String(vendedorNaJanela.cod_vendedor);
+    fecharAnaliseVendedor();
+    carregar().then(() => el('titulo-notas').scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  });
+
   el('so-devolucao').addEventListener('click', () => {
     soDevolucao = !soDevolucao;
     marcarDevolucao();
