@@ -39,6 +39,8 @@ const montarBase = (ondePedidos) => `
   SET NOCOUNT ON;
   IF OBJECT_ID('tempdb..#P') IS NOT NULL DROP TABLE #P;
   IF OBJECT_ID('tempdb..#NF') IS NOT NULL DROP TABLE #NF;
+  IF OBJECT_ID('tempdb..#NFT') IS NOT NULL DROP TABLE #NFT;
+  IF OBJECT_ID('tempdb..#NFC') IS NOT NULL DROP TABLE #NFC;
   IF OBJECT_ID('tempdb..#BASE') IS NOT NULL DROP TABLE #BASE;
   IF OBJECT_ID('tempdb..#VADEV') IS NOT NULL DROP TABLE #VADEV;
   IF OBJECT_ID('tempdb..#DEV') IS NOT NULL DROP TABLE #DEV;
@@ -60,9 +62,9 @@ const montarBase = (ondePedidos) => `
   -- 2. As notas desses pedidos, numa leitura só da NF_FATURAMENTO.
   --    A nota se liga ao pedido por PEDIDO_VENDA ou pelo texto de PEDIDO_CLIENTE (ver acima);
   --    fica a nota mais recente de cada pedido, como antes.
-  SELECT X.pedido, X.NF_NUMERO, X.NF_FATURAMENTO, X.MOVIMENTO,
-         ROW_NUMBER() OVER (PARTITION BY X.pedido ORDER BY X.NF_FATURAMENTO DESC) AS ordem
-  INTO #NF
+  --    Todas as notas do pedido, com a data do cancelamento quando a nota foi cancelada na SEFAZ.
+  SELECT X.pedido, X.NF_NUMERO, X.NF_FATURAMENTO, X.MOVIMENTO, NCX.DATA_HORA AS cancelada_em
+  INTO #NFT
   FROM (
     SELECT N.PEDIDO_VENDA AS pedido, N.NF_NUMERO, N.NF_FATURAMENTO, N.MOVIMENTO
     FROM NF_FATURAMENTO N WITH (NOLOCK)
@@ -78,12 +80,28 @@ const montarBase = (ondePedidos) => `
     ) C
     JOIN #P PP ON PP.PEDIDO_PREVENDA = C.pedido
   ) X
-  -- Nota cancelada (com protocolo na SEFAZ) não conta como faturada, como no Follow-up do PROCFIT
-  WHERE NOT EXISTS (
-    SELECT 1 FROM CANCELAMENTOS_NOTAS_FISCAIS NC WITH (NOLOCK)
+  OUTER APPLY (
+    SELECT TOP 1 NC.DATA_HORA
+    FROM CANCELAMENTOS_NOTAS_FISCAIS NC WITH (NOLOCK)
     WHERE NC.TIPO = 1 AND NC.CHAVE = X.NF_FATURAMENTO AND NC.PROTOCOLO IS NOT NULL
-  );
+    ORDER BY NC.DATA_HORA DESC
+  ) NCX;
+
+  -- Nota cancelada (com protocolo na SEFAZ) não conta como faturada, como no Follow-up do PROCFIT
+  SELECT pedido, NF_NUMERO, NF_FATURAMENTO, MOVIMENTO,
+         ROW_NUMBER() OVER (PARTITION BY pedido ORDER BY NF_FATURAMENTO DESC) AS ordem
+  INTO #NF
+  FROM #NFT
+  WHERE cancelada_em IS NULL;
   CREATE CLUSTERED INDEX IX_NF ON #NF (pedido, ordem);
+
+  -- Nota cancelada do pedido (a mais recente): aparece na lista para conferir
+  SELECT pedido, NF_NUMERO, cancelada_em,
+         ROW_NUMBER() OVER (PARTITION BY pedido ORDER BY NF_FATURAMENTO DESC) AS ordem
+  INTO #NFC
+  FROM #NFT
+  WHERE cancelada_em IS NOT NULL;
+  CREATE CLUSTERED INDEX IX_NFC ON #NFC (pedido, ordem);
 
   -- 2b. Os cupons do caixa desses pedidos, numa leitura só.
   --     O pedido vira uma PRÉ-VENDA do PDV (PDV_PREVENDAS.PEDIDO_INTERNET = pedido),
@@ -176,6 +194,8 @@ const montarBase = (ondePedidos) => `
       NF.NF_NUMERO                                       AS nota,
       CONVERT(varchar(10), NF.MOVIMENTO, 23)             AS nota_dia,
       NF.NF_FATURAMENTO                                  AS nota_id,
+      NFC.NF_NUMERO                                      AS nota_cancelada,
+      CONVERT(varchar(10), NFC.cancelada_em, 23)         AS nota_cancelada_em,
       CUP.ECF_CUPOM                                      AS cupom,
       CUP.CAIXA                                          AS caixa,
       CONVERT(varchar(10), CUP.MOVIMENTO, 23)            AS cupom_dia,
@@ -183,6 +203,10 @@ const montarBase = (ondePedidos) => `
       ISNULL(TIT.valor_titulos, 0)                       AS valor_titulos,
       ISNULL(TIT.recebido, 0)                            AS recebido,
       ISNULL(TIT.pendente, 0)                            AS pendente,
+      -- Títulos que ainda têm saldo a receber (número e o vencimento mais antigo)
+      ISNULL(TIT.abertos, 0)                             AS titulos_abertos,
+      TIT.numeros_abertos                                AS titulos_abertos_numeros,
+      CONVERT(varchar(10), TIT.vence_aberto, 23)         AS titulos_abertos_vencimento,
       CAN.CANCELAMENTO_PEDIDOS_PREVENDA                  AS cancelamento,
       CONVERT(varchar(10), CAN.DATA_HORA, 23)            AS cancelado_em,
       -- Em que etapa a venda está hoje
@@ -201,8 +225,10 @@ const montarBase = (ondePedidos) => `
                                                          AS pago_com_titulo_aberto,
       CASE WHEN NF.NF_NUMERO IS NOT NULL AND CUP.ECF_CUPOM IS NULL AND ISNULL(TIT.titulos, 0) = 0
            THEN 1 ELSE 0 END                             AS nota_sem_cobranca,
+      -- Pedido cancelado que ainda tem nota VÁLIDA ou título com saldo EM ABERTO (nov/2026: antes
+      -- acendia com qualquer título, mesmo já zerado, o que não é erro)
       CASE WHEN (CAN.CANCELAMENTO_PEDIDOS_PREVENDA IS NOT NULL OR TOT.STATUS = 'Cancelado')
-            AND (NF.NF_NUMERO IS NOT NULL OR ISNULL(TIT.titulos, 0) > 0)
+            AND (NF.NF_NUMERO IS NOT NULL OR ISNULL(TIT.pendente, 0) > 0.009)
            THEN 1 ELSE 0 END                             AS cancelado_com_nota,
       CASE WHEN CAN.CANCELAMENTO_PEDIDOS_PREVENDA IS NULL AND ISNULL(TOT.STATUS, '') = 'Pedido Processado'
             AND NF.NF_NUMERO IS NULL AND CUP.ECF_CUPOM IS NULL
@@ -233,6 +259,7 @@ const montarBase = (ondePedidos) => `
     ORDER BY C.CHECKOUT_PREVENDA DESC
   ) CK
   LEFT JOIN #NF NF ON NF.pedido = P.PEDIDO_PREVENDA AND NF.ordem = 1
+  LEFT JOIN #NFC NFC ON NFC.pedido = P.PEDIDO_PREVENDA AND NFC.ordem = 1
   -- Cupom do caixa (lido em #CUPS, passo 2b). Cupom cancelado (STATUS 'C') não conta. Mesma ligação da consulta Follow-up de pedidos do PROCFIT (validado em out/2026:
   -- a ligação antiga "PDV_VENDAS.PREVENDA = nº do pedido" achava 636 pedidos em 30 dias,
   -- TODOS errados, e deixava de achar os 825 certos).
@@ -245,7 +272,10 @@ const montarBase = (ondePedidos) => `
   ) CUP
   OUTER APPLY (
     SELECT COUNT(*) AS titulos, SUM(ISNULL(TR.VALOR, 0)) AS valor_titulos,
-           SUM(ISNULL(S.RECEBIDO, 0)) AS recebido, SUM(ISNULL(S.PENDENTE, TR.VALOR)) AS pendente
+           SUM(ISNULL(S.RECEBIDO, 0)) AS recebido, SUM(ISNULL(S.PENDENTE, TR.VALOR)) AS pendente,
+           SUM(CASE WHEN ISNULL(S.PENDENTE, TR.VALOR) > 0.009 THEN 1 ELSE 0 END) AS abertos,
+           STRING_AGG(CASE WHEN ISNULL(S.PENDENTE, TR.VALOR) > 0.009 THEN LTRIM(RTRIM(TR.TITULO)) END, ', ') AS numeros_abertos,
+           MIN(CASE WHEN ISNULL(S.PENDENTE, TR.VALOR) > 0.009 THEN TR.VENCIMENTO END) AS vence_aberto
     FROM TITULOS_RECEBER TR WITH (NOLOCK)
     OUTER APPLY (
       SELECT SUM(ISNULL(TX.CREDITO, 0)) - SUM(ISNULL(TX.DEBITO, 0)) AS PENDENTE,

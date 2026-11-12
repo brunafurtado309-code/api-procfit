@@ -94,13 +94,17 @@ async function exportar(query) {
       { titulo: 'Desconto', chave: 'desconto', tipo: 'moeda', largura: 13, somar: true },
       { titulo: 'Checkout', chave: 'checkout_em', largura: 17 },
       { titulo: 'Nota', chave: 'nota', tipo: 'codigo', largura: 10 },
+      { titulo: 'Nota cancelada', chave: 'nota_cancelada', tipo: 'codigo', largura: 11 },
+      { titulo: 'Cancelada em', chave: 'nota_cancelada_em', tipo: 'data', largura: 12 },
       { titulo: 'Cupom', chave: 'cupom', tipo: 'codigo', largura: 10 },
       { titulo: 'Títulos', chave: 'titulos', tipo: 'inteiro', largura: 8 },
       { titulo: 'Recebido', chave: 'recebido', tipo: 'moeda', largura: 14, somar: true },
       { titulo: 'Em aberto', chave: 'pendente', tipo: 'moeda', largura: 14, somar: true },
+      { titulo: 'Títulos em aberto', chave: 'titulos_abertos_numeros', largura: 18 },
+      { titulo: 'Vencimento em aberto', chave: 'titulos_abertos_vencimento', tipo: 'data', largura: 13 },
       { titulo: 'Pago no caixa com título aberto', valor: (p) => (p.pago_com_titulo_aberto ? 'Sim' : ''), largura: 14 },
       { titulo: 'Nota sem cobrança', valor: (p) => (p.nota_sem_cobranca ? 'Sim' : ''), largura: 14 },
-      { titulo: 'Cancelado com nota', valor: (p) => (p.cancelado_com_nota ? 'Sim' : ''), largura: 14 },
+      { titulo: 'Cancelado com nota ou título em aberto', valor: (p) => (p.cancelado_com_nota ? 'Sim' : ''), largura: 14 },
       { titulo: 'Parado sem faturar', valor: (p) => (p.parado_sem_faturar ? 'Sim' : ''), largura: 14 },
       { titulo: 'Devolução', valor: (p) => DEVOLUCAO_TEXTO[p.devolucao] ?? '', largura: 14 },
       { titulo: 'Valor devolvido', chave: 'devolvido', tipo: 'moeda', largura: 14, somar: true },
@@ -189,6 +193,8 @@ async function exportarNotasVendedor(query) {
       + `${filtros.busca ? ` · pesquisa "${filtros.busca}"` : ''} · ${periodo}`,
     colunas: [
       { titulo: 'Nota', chave: 'nota', tipo: 'codigo', largura: 10 },
+      { titulo: 'Nota cancelada', chave: 'nota_cancelada', tipo: 'codigo', largura: 11 },
+      { titulo: 'Cancelada em', chave: 'nota_cancelada_em', tipo: 'data', largura: 12 },
       { titulo: 'Data', chave: 'dia', tipo: 'data', largura: 12 },
       { titulo: 'Empresa', chave: 'empresa', tipo: 'codigo', largura: 9 },
       { titulo: 'Pedido', chave: 'pedido', tipo: 'codigo', largura: 10 },
@@ -211,4 +217,5 @@ async function exportarNotasVendedor(query) {
 
 module.exports = {
   analise, detalhe, vendedores, exportar, notasVendedor, exportarNotasVendedor, ETAPA_TEXTO,
+  montarFiltros, // usado também pelo Vendas > Vendedores (vendas-vendedores.service.js)
 };

@@ -193,7 +193,7 @@ const NOMES_FILTRO = {
   orcamento: 'Orçamentos', aprovacao: 'Pendentes de aprovação', pedido: 'Pedidos sem checkout',
   checkout: 'Com checkout', faturado: 'Faturados', pago: 'Pagos', cancelado: 'Cancelados',
   pago_com_titulo_aberto: 'Pago no caixa com título aberto', nota_sem_cobranca: 'Nota sem cobrança',
-  cancelado_com_nota: 'Cancelado com nota', parado_sem_faturar: 'Parado sem faturar',
+  cancelado_com_nota: 'Cancelado com nota ou título em aberto', parado_sem_faturar: 'Parado sem faturar',
   devolvido: 'Com devolução',
 };
 
@@ -269,8 +269,8 @@ function mostrarDivergencias() {
     },
     {
       id: 'cancelado_com_nota',
-      titulo: 'Cancelado, mas com nota ou título ativo',
-      explica: 'o documento continua valendo',
+      titulo: 'Cancelado, mas com nota válida ou título em aberto',
+      explica: 'nota sem cancelar ou cobrança ainda aberta',
       qtd: resumo.div_cancelado_com_nota,
       valor: resumo.valor_cancelado_com_nota,
       alerta: true,
@@ -422,15 +422,26 @@ function mostrarLista() {
     const alertas = [
       p.pago_com_titulo_aberto ? 'pago com título aberto' : null,
       p.nota_sem_cobranca ? 'nota sem cobrança' : null,
-      p.cancelado_com_nota ? 'cancelado com nota' : null,
+      p.cancelado_com_nota
+        ? (p.nota ? 'cancelado com nota válida' : 'cancelado com título em aberto') : null,
       p.parado_sem_faturar ? 'parado sem faturar' : null,
       p.devolucao ? `${DEVOLUCAO[p.devolucao] ?? 'devolução'}${p.devolucao === 'PARCIAL' ? ` ${dinheiro(p.devolvido)}` : ''}` : null,
     ].filter(Boolean);
     const documentos = [
       p.nota ? `NF ${p.nota}` : null,
       p.cupom ? `cupom ${p.cupom}` : null,
-      Number(p.titulos) ? `${inteiro(p.titulos)} título(s)` : null,
+      Number(p.titulos)
+        ? `${inteiro(p.titulos)} título(s)${Number(p.titulos_abertos) ? ` · ${inteiro(p.titulos_abertos)} em aberto` : ''}`
+        : null,
     ].filter(Boolean).join(' · ');
+    // Nota cancelada do pedido: aparece embaixo, para conferir (não conta como faturada)
+    const notaCancelada = p.nota_cancelada
+      ? `NF ${p.nota_cancelada} cancelada${p.nota_cancelada_em ? ` em ${dataBR(p.nota_cancelada_em)}` : ''}` : null;
+    // Em aberto: quais títulos e o vencimento mais antigo
+    const pendente = Number(p.pendente) || 0;
+    const tituloAberto = pendente > 0.009 && p.titulos_abertos_numeros
+      ? `título ${p.titulos_abertos_numeros}${p.titulos_abertos_vencimento ? ` · vence ${dataBR(p.titulos_abertos_vencimento)}` : ''}`
+      : null;
     const botao = document.createElement('button');
     botao.type = 'button';
     botao.className = 'botao-expandir';
@@ -444,9 +455,9 @@ function mostrarLista() {
       td(p.vendedor ?? '—', 'esquerda'),
       comAuxiliar(ETAPAS[p.etapa] ?? p.etapa, alertas.join(' · ') || null, 'esquerda',
         alertas.length ? 'qtd negativo' : 'qtd'),
-      td(documentos || 'nenhum', 'esquerda'),
+      comAuxiliar(documentos || (notaCancelada ? 'sem nota válida' : 'nenhum'), notaCancelada, 'esquerda', 'qtd negativo'),
       td(dinheiro(p.valor), 'coluna-final'),
-      td(Number(p.pendente) > 0.009 ? dinheiro(p.pendente) : '—', Number(p.pendente) > 0.009 ? 'negativo' : null),
+      comAuxiliar(pendente > 0.009 ? dinheiro(pendente) : '—', tituloAberto, pendente > 0.009 ? 'negativo' : null),
       td(botao, 'esquerda'),
     );
     const alternar = async () => {
@@ -509,6 +520,7 @@ async function abrirLinhaDoTempo(numero) {
       p.processado_em ? { quando: p.processado_em, o_que: 'Pedido processado', quem: null, detalhe: p.status } : null,
       p.checkout_em ? { quando: p.checkout_em, o_que: 'Checkout', quem: p.usuario_checkout, detalhe: `checkout ${p.checkout}` } : null,
       p.nota ? { quando: p.nota_dia, o_que: 'Nota fiscal emitida', quem: null, detalhe: `NF ${p.nota}` } : null,
+      p.nota_cancelada ? { quando: p.nota_cancelada_em, o_que: 'Nota fiscal cancelada', quem: null, detalhe: `NF ${p.nota_cancelada}` } : null,
       p.cupom ? { quando: p.cupom_dia, o_que: 'Pago no caixa', quem: null, detalhe: `cupom ${p.cupom}${p.caixa ? ` · caixa ${p.caixa}` : ''}` } : null,
       Number(p.titulos) ? { quando: null, o_que: 'Títulos gerados', quem: null, detalhe: `${inteiro(p.titulos)} título(s) · ${dinheiro(p.valor_titulos)}` } : null,
       Number(p.recebido) > 0.009 ? { quando: null, o_que: 'Recebido', quem: null, detalhe: dinheiro(p.recebido) } : null,
