@@ -43,7 +43,7 @@
 @media (max-width: 720px) {
   .tela-fat-vendedores .conteudo { padding-left: 0.75rem; padding-right: 0.75rem; }
 
-  /* Filtros: datas lado a lado, atalhos rolando de lado, botões largos */
+  /* Filtros: datas lado a lado, atalhos quebrando linha (nada rola de lado), botões largos */
   .tela-fat-vendedores .filtros { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
   .tela-fat-vendedores .filtros label { min-width: 0; }
   .tela-fat-vendedores .filtros input,
@@ -51,13 +51,10 @@
   .tela-fat-vendedores .filtros .atalhos {
     grid-column: 1 / -1;
     display: flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 0.4rem;
-    overflow-x: auto;
-    padding-bottom: 0.2rem;
-    scrollbar-width: none;
   }
-  .tela-fat-vendedores .filtros .atalhos button { flex: 0 0 auto; }
+  .tela-fat-vendedores .filtros .atalhos button { flex: 1 1 auto; }
   .tela-fat-vendedores .filtros .campo,
   .tela-fat-vendedores .filtros #so-devolucao,
   .tela-fat-vendedores .filtros .filtros__aplicar { grid-column: 1 / -1; width: 100%; min-height: 2.6rem; }
