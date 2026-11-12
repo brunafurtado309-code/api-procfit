@@ -27,7 +27,9 @@ async function consultarControle(qual, filtros) {
   }
   const consulta = (async () => {
     const repo = require('../repositories/vendas-vendedores.repository');
-    const dados = await repo[qual](filtros);
+    const dados = qual === 'clientes'
+      ? await repo.clientesDoVendedor(filtros, filtros.vendedor)
+      : await repo[qual](filtros);
     guardadas.set(chave, { quando: Date.now(), dados });
     while (guardadas.size > 30) guardadas.delete(guardadas.keys().next().value);
     return dados;
@@ -103,4 +105,32 @@ async function controle(query) {
   };
 }
 
-module.exports = { controle };
+// Análise de UM vendedor (painel da direita em Vendas > Vendedores):
+//  - números e vendas por dia: mesma consulta da sub-tela Faturados por vendedor (guardada 1 min);
+//  - clientes do vendedor com o que compraram agora e no mesmo intervalo do mês anterior.
+// As duas partes rodam separadas: se uma falhar, a outra aparece.
+async function analiseVendedor(query) {
+  const filtros = faturamento.montarFiltros(query);
+  const vendedor = Number(query.vendedor);
+  if (!Number.isInteger(vendedor)) throw new AppError('"vendedor" deve ser um número');
+  const base = { inicio: filtros.inicio, fim: filtros.fim, empresa: filtros.empresa ?? null, vendedor };
+  const [notas, clientes] = await Promise.allSettled([
+    faturamento.notasVendedor({ inicio: base.inicio, fim: base.fim, empresa: query.empresa, vendedor }),
+    consultarControle('clientes', base),
+  ]);
+  const motivo = (r) => (r.status === 'rejected' ? (r.reason?.status ? r.reason.message : 'Não foi possível carregar agora.') : null);
+  if (notas.status === 'rejected' && !notas.reason?.status) console.error('Análise do vendedor (notas):', notas.reason);
+  if (clientes.status === 'rejected' && !clientes.reason?.status) console.error('Análise do vendedor (clientes):', clientes.reason);
+  const n = notas.status === 'fulfilled' ? notas.value : null;
+  return {
+    periodo: base,
+    // todos os vendedores do período (para comparar com a equipe)
+    vendedores: n?.vendedores ?? [],
+    porDia: n?.porDia ?? [],
+    anterior: n?.anterior ?? null,
+    clientes: clientes.status === 'fulfilled' ? clientes.value : [],
+    erros: { notas: motivo(notas), clientes: motivo(clientes) },
+  };
+}
+
+module.exports = { controle, analiseVendedor };

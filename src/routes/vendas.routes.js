@@ -44,5 +44,13 @@ router.get('/controle-vendedores', async (req, res, next) => {
     next(err);
   }
 });
+// Análise de um vendedor e dos clientes dele (painel da direita da sub-tela Vendedores)
+router.get('/analise-vendedor', async (req, res, next) => {
+  try {
+    res.json(await require('../services/vendas-vendedores.service').analiseVendedor(req.query));
+  } catch (err) {
+    next(err);
+  }
+});
 
 module.exports = router;

@@ -149,44 +149,53 @@
       <!-- Controle por vendedor (js/vendas-vendedores.js): consultas leves, cada bloco aparece sozinho -->
       <p id="cv-status" class="status" role="status" aria-live="polite"></p>
 
+      <!-- Números da equipe numa faixa só -->
+      <dl id="cv-kpis" class="cv-kpis" aria-label="Números da equipe"></dl>
+
       <!-- Aviso: notas que parecem duplicadas (só aparece quando há) -->
       <section id="cv-duplicadas" class="bloco cv-alerta" aria-labelledby="titulo-cv-duplicadas" hidden>
         <h2 id="titulo-cv-duplicadas">Notas que parecem duplicadas</h2>
         <p class="bloco__descricao">O mesmo pedido em mais de uma nota, ou o mesmo cliente com notas de mesmo valor no
-          mesmo dia. Confira no PROCFIT: pode ser nota emitida duas vezes ou uma compra que se repetiu de verdade.
-          Elas continuam somadas no faturamento.</p>
-        <div class="tabela-rolagem"><table class="tabela tabela-cartoes" id="cv-tabela-duplicadas"><thead></thead><tbody></tbody></table></div>
+          mesmo dia. Confira no PROCFIT. Elas continuam somadas no faturamento.</p>
+        <div class="tabela-rolagem"><table class="tabela tabela-cartoes tabela--compacta" id="cv-tabela-duplicadas"><thead></thead><tbody></tbody></table></div>
       </section>
 
-      <section class="bloco" aria-labelledby="titulo-cv-vendedores">
-        <h2 id="titulo-cv-vendedores">Faturamento por vendedor</h2>
-        <p class="bloco__descricao">Notas fiscais de venda do período pelo vendedor da nota (sem canceladas e sem
-          transferências), com os pedidos que estão em orçamento e os que foram cancelados. Clique no nome para ver os pedidos.</p>
-        <p id="cv-aviso-notas" class="status status--erro" hidden></p>
-        <div class="tabela-rolagem"><table class="tabela tabela-cartoes" id="cv-tabela-vendedores"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
-      </section>
+      <!-- Vendedores (esquerda) e a análise do escolhido (direita) -->
+      <div class="cv-mestre">
+        <section class="bloco cv-lista" aria-labelledby="titulo-cv-vendedores">
+          <h2 id="titulo-cv-vendedores">Vendedores</h2>
+          <p class="bloco__descricao">Faturado em nota no período, pelo vendedor da nota. Clique no vendedor para ver a análise.</p>
+          <p id="cv-aviso-notas" class="status status--erro" hidden></p>
+          <div class="tabela-rolagem"><table class="tabela tabela-cartoes tabela--compacta" id="cv-tabela-vendedores"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
+        </section>
+        <section class="bloco cv-detalhe" id="cv-detalhe" aria-live="polite">
+          <p class="explica cv-detalhe__vazio">Escolha um vendedor na lista para ver a análise dele e dos clientes.</p>
+        </section>
+      </div>
 
-      <section class="bloco" aria-labelledby="titulo-cv-orcamentos">
-        <h2 id="titulo-cv-orcamentos">Pedidos em orçamento</h2>
-        <p class="bloco__descricao">Pedidos feitos no período que ainda estão em orçamento ou pendentes de aprovação: venda que
-          ainda pode acontecer. Os maiores primeiro; "parado há" conta desde o dia do pedido.</p>
+      <!-- Pedidos e devoluções: uma lista por vez -->
+      <section class="bloco" aria-labelledby="titulo-cv-listas">
+        <div class="cv-listas-topo">
+          <h2 id="titulo-cv-listas">Pedidos e devoluções</h2>
+          <nav class="cv-abas" id="cv-abas" aria-label="Listas de pedidos">
+            <button type="button" class="botao-secundario atalho--ativo" data-lista="orcamentos" id="titulo-cv-orcamentos">Em orçamento</button>
+            <button type="button" class="botao-secundario" data-lista="cancelados" id="titulo-cv-cancelados">Cancelados</button>
+            <button type="button" class="botao-secundario" data-lista="devcanceladas" id="titulo-cv-devcanceladas">Devoluções canceladas</button>
+          </nav>
+        </div>
+        <p id="cv-lista-descricao" class="bloco__descricao"></p>
         <p id="cv-aviso-pedidos" class="status status--erro" hidden></p>
-        <div class="tabela-rolagem"><table class="tabela tabela-cartoes" id="cv-tabela-orcamentos"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
-        <button type="button" class="botao-secundario cv-mais" id="cv-mais-orcamentos" hidden>Mostrar mais</button>
-      </section>
-
-      <section class="bloco" aria-labelledby="titulo-cv-cancelados">
-        <h2 id="titulo-cv-cancelados">Pedidos cancelados</h2>
-        <p class="bloco__descricao">Pedidos feitos no período que foram cancelados, os mais recentes primeiro.</p>
-        <div class="tabela-rolagem"><table class="tabela tabela-cartoes" id="cv-tabela-cancelados"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
-        <button type="button" class="botao-secundario cv-mais" id="cv-mais-cancelados" hidden>Mostrar mais</button>
-      </section>
-
-      <section class="bloco" aria-labelledby="titulo-cv-devcanceladas">
-        <h2 id="titulo-cv-devcanceladas">Notas de devolução canceladas</h2>
-        <p class="bloco__descricao">Devoluções que foram canceladas no período: a mercadoria não voltou, então a venda
-          original continua valendo. Uma devolução cancelada não desconta do faturamento.</p>
-        <div class="tabela-rolagem"><table class="tabela tabela-cartoes" id="cv-tabela-devcanceladas"><thead></thead><tbody></tbody></table></div>
+        <div data-lista-painel="orcamentos">
+          <div class="tabela-rolagem"><table class="tabela tabela-cartoes tabela--compacta" id="cv-tabela-orcamentos"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
+          <button type="button" class="botao-secundario cv-mais" id="cv-mais-orcamentos" hidden>Mostrar mais</button>
+        </div>
+        <div data-lista-painel="cancelados" hidden>
+          <div class="tabela-rolagem"><table class="tabela tabela-cartoes tabela--compacta" id="cv-tabela-cancelados"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
+          <button type="button" class="botao-secundario cv-mais" id="cv-mais-cancelados" hidden>Mostrar mais</button>
+        </div>
+        <div data-lista-painel="devcanceladas" hidden>
+          <div class="tabela-rolagem"><table class="tabela tabela-cartoes tabela--compacta" id="cv-tabela-devcanceladas"><thead></thead><tbody></tbody></table></div>
+        </div>
       </section>
 
       <!-- Funil dos pedidos por vendedor: do orçamento ao pagamento (consulta pesada do módulo

@@ -37,6 +37,7 @@ async function comLimite(filtros, texto) {
       .input('inicio', sql.VarChar(10), filtros.inicio)
       .input('fim', sql.VarChar(10), filtros.fim)
       .input('empresa', sql.Int, filtros.empresa ?? null)
+      .input('vendedor', sql.Int, filtros.vendedor ?? null)
       .query(texto);
     return recordsets;
   } catch (err) {
@@ -202,4 +203,58 @@ async function duplicadas(filtros) {
   return recordsets[0];
 }
 
-module.exports = { controle, duplicadas };
+// Clientes de UM vendedor: o que cada um comprou em nota no período e no MESMO intervalo do mês
+// anterior (se o período passar de um mês, compara com o período do mesmo tamanho logo antes,
+// para não contar a mesma nota duas vezes). Mesma regra de nota da sub-tela Faturados por
+// vendedor: sem canceladas e sem transferências, pelo vendedor gravado na nota.
+async function clientesDoVendedor(filtros, vendedor) {
+  const recordsets = await comLimite({ ...filtros, vendedor }, `
+        SET NOCOUNT ON;
+        IF OBJECT_ID('tempdb..#C') IS NOT NULL DROP TABLE #C;
+        DECLARE @ini date = CAST(@inicio AS date);
+        DECLARE @fim_d date = CAST(@fim AS date);
+        DECLARE @ini_ant date = DATEADD(month, -1, @ini);
+        DECLARE @fim_ant date = DATEADD(month, -1, @fim_d);
+        IF @fim_ant >= @ini
+        BEGIN
+          SET @fim_ant = DATEADD(day, -1, @ini);
+          SET @ini_ant = DATEADD(day, -(DATEDIFF(day, @ini, @fim_d) + 1), @ini);
+        END;
+
+        SELECT N.ENTIDADE AS cod_cliente,
+               SUM(CASE WHEN N.MOVIMENTO >= @ini THEN ISNULL(T.TOTAL_GERAL, 0) ELSE 0 END) AS atual,
+               SUM(CASE WHEN N.MOVIMENTO >= @ini THEN 1 ELSE 0 END)                        AS notas_atual,
+               SUM(CASE WHEN N.MOVIMENTO < @ini THEN ISNULL(T.TOTAL_GERAL, 0) ELSE 0 END)  AS anterior,
+               SUM(CASE WHEN N.MOVIMENTO < @ini THEN 1 ELSE 0 END)                         AS notas_anterior
+        INTO #C
+        FROM NF_FATURAMENTO N WITH (NOLOCK)
+        JOIN NF_FATURAMENTO_TOTAIS T WITH (NOLOCK) ON T.NF_FATURAMENTO = N.NF_FATURAMENTO
+        WHERE N.VENDEDOR = @vendedor
+          AND ((N.MOVIMENTO >= @ini AND N.MOVIMENTO < DATEADD(day, 1, @fim_d))
+            OR (N.MOVIMENTO >= @ini_ant AND N.MOVIMENTO < DATEADD(day, 1, @fim_ant)))
+          AND (@empresa IS NULL OR N.EMPRESA = @empresa)
+          AND NOT EXISTS (SELECT 1 FROM CANCELAMENTOS_NOTAS_FISCAIS NC WITH (NOLOCK)
+                          WHERE NC.TIPO = 1 AND NC.CHAVE = N.NF_FATURAMENTO AND NC.PROTOCOLO IS NOT NULL)
+          AND NOT EXISTS (SELECT 1 FROM NF_FATURAMENTO_TRANSF X WITH (NOLOCK)
+                          WHERE X.NF_FATURAMENTO = N.NF_FATURAMENTO)
+        GROUP BY N.ENTIDADE
+        OPTION (RECOMPILE);
+
+        SELECT C.cod_cliente, LTRIM(RTRIM(E.NOME)) AS cliente,
+               C.atual, C.notas_atual, C.anterior, C.notas_anterior,
+               -- última nota do cliente com este vendedor (até 6 meses para trás)
+               (SELECT CONVERT(varchar(10), MAX(N2.MOVIMENTO), 23)
+                  FROM NF_FATURAMENTO N2 WITH (NOLOCK)
+                 WHERE N2.ENTIDADE = C.cod_cliente AND N2.VENDEDOR = @vendedor
+                   AND N2.MOVIMENTO >= DATEADD(month, -6, @ini)
+                   AND N2.MOVIMENTO < DATEADD(day, 1, @fim_d)) AS ultima_compra,
+               CONVERT(varchar(10), @ini_ant, 23) AS inicio_anterior,
+               CONVERT(varchar(10), @fim_ant, 23) AS fim_anterior
+        FROM #C C
+        LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = C.cod_cliente
+        ORDER BY C.atual DESC, C.anterior DESC;
+      `);
+  return recordsets[0];
+}
+
+module.exports = { controle, duplicadas, clientesDoVendedor };

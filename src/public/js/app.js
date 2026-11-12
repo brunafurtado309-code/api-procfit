@@ -1463,7 +1463,7 @@ function mostrarAbasVendedor() {
     const valor = lista.reduce((t, p) => t + (Number(p.valor) || 0), 0);
     const botao = document.createElement('button');
     botao.type = 'button';
-    botao.className = `atalho${fatAba === aba.id ? ' atalho--ativo' : ''}`;
+    botao.className = `botao-secundario${fatAba === aba.id ? ' atalho--ativo' : ''}`;
     botao.setAttribute('aria-pressed', String(fatAba === aba.id));
     botao.textContent = fatPedidos.length ? `${aba.texto} · ${inteiro.format(lista.length)} · ${moeda.format(valor)}` : aba.texto;
     botao.addEventListener('click', () => {
