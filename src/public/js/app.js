@@ -1242,7 +1242,11 @@ const ABAS_VENDEDOR = [
   { id: 'orcamentos', texto: 'Orçamentos', filtro: (p) => ['ORCAMENTO', 'APROVACAO'].includes(p.etapa) },
   { id: 'processados', texto: 'Processados', filtro: (p) => ['PEDIDO', 'CHECKOUT', 'FATURADO', 'PAGO'].includes(p.etapa) },
   { id: 'aguardando', texto: 'Aguardando faturar', filtro: (p) => ['PEDIDO', 'CHECKOUT'].includes(p.etapa) },
+  // Só pedidos com nota fiscal: todas as notas, as já pagas e as que ainda faltam receber
+  // (Notas faturadas = Notas pagas + Notas pendentes)
   { id: 'notas', texto: 'Notas faturadas', filtro: (p) => p.nota != null && p.etapa !== 'CANCELADO' },
+  { id: 'notas_pagas', texto: 'Notas pagas', filtro: (p) => p.nota != null && p.etapa === 'PAGO' },
+  { id: 'notas_pendentes', texto: 'Notas pendentes', filtro: (p) => p.nota != null && p.etapa === 'FATURADO' },
   { id: 'cancelados', texto: 'Cancelados', filtro: (p) => p.etapa === 'CANCELADO' },
 ];
 let fatVendedores = [];
@@ -1424,6 +1428,25 @@ function mostrarAbasVendedor() {
   }));
 }
 
+// Etapa do pedido; no "Faturado (nota)", embaixo, quanto ainda falta receber do cliente
+function etapaComSaldo(p) {
+  const td = document.createElement('td');
+  td.textContent = ETAPAS_PEDIDO[p.etapa] ?? p.etapa ?? '—';
+  const pendente = Number(p.pendente) || 0;
+  if (p.etapa === 'FATURADO' && pendente > 0.009) {
+    const qtd = document.createElement('span');
+    qtd.className = 'qtd negativo';
+    qtd.textContent = `${Number(p.recebido) > 0.009 ? 'pago em parte · ' : ''}falta ${moeda.format(pendente)}`;
+    td.append(qtd);
+  } else if (p.etapa === 'FATURADO' && !Number(p.titulos)) {
+    const qtd = document.createElement('span');
+    qtd.className = 'qtd negativo';
+    qtd.textContent = 'sem título de cobrança';
+    td.append(qtd);
+  }
+  return td;
+}
+
 function mostrarPedidosVendedor() {
   const aba = ABAS_VENDEDOR.find((a) => a.id === fatAba) ?? ABAS_VENDEDOR[0];
   const lista = fatPedidos.filter(aba.filtro);
@@ -1448,7 +1471,7 @@ function mostrarPedidosVendedor() {
       celula(dataBR(p.dia)),
       cliente,
       celula(moeda.format(Number(p.valor) || 0)),
-      celula(ETAPAS_PEDIDO[p.etapa] ?? p.etapa),
+      etapaComSaldo(p),
       celula(p.nota != null ? `NF ${p.nota}${p.nota_dia ? ` · ${dataBR(p.nota_dia)}` : ''}` : '—'),
       celula(p.cupom != null ? `${p.cupom}${p.cupom_dia ? ` · ${dataBR(p.cupom_dia)}` : ''}` : '—'),
       celula(p.processado_em ? `${dataBR(p.processado_em.slice(0, 10))} ${p.processado_em.slice(11, 16)}` : '—'),
@@ -1467,7 +1490,9 @@ function mostrarPedidosVendedor() {
   const total = document.createElement('tr');
   const rotulo = celula(`Total (${contar(lista.length, 'pedido', 'pedidos')})`);
   rotulo.colSpan = 3;
-  total.append(rotulo, celula(moeda.format(lista.reduce((t, p) => t + (Number(p.valor) || 0), 0))), celula(''),
+  const faltaReceber = lista.reduce((t, p) => t + (p.etapa === 'FATURADO' ? (Number(p.pendente) || 0) : 0), 0);
+  total.append(rotulo, celula(moeda.format(lista.reduce((t, p) => t + (Number(p.valor) || 0), 0))),
+    celula(faltaReceber > 0.009 ? `falta receber ${moeda.format(faltaReceber)}` : ''),
     celula(''), celula(''), celula(''));
   el('fat-janela-total').replaceChildren(total);
 }
