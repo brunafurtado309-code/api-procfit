@@ -935,6 +935,64 @@ DETALHES.descontos = listaMista({
   situacoes: ['Faturada', 'Emitido'],
 });
 
+// Notas de bonificação e de freezer em comodato (quadros do Resumo). Não são venda: não têm itens
+// na VENDAS_ANALITICAS, por isso os produtos vêm numa coluna (sem abrir a nota).
+function listaRemessa({ rota, carregando, vazio, bonificacao = false }) {
+  return {
+    rota: () => rota,
+    rotaExcel: null,
+    pessoa: (d) => ({ nome: d.titulo }),
+    linhas: (d) => d.notas,
+    carregando,
+    vazio,
+    situacoes: [],
+    dicaBusca: 'Refinar: nota, pedido, cliente, vendedor ou produto…',
+    busca: (l) => [l.nota, l.pedido, l.vendedor, l.codigo_cliente, l.cliente, l.fantasia, l.produtos, l.venda_mesmo_valor],
+    resumo: (t) => [
+      contar(t.notas_qtd, 'nota', 'notas'),
+      bonificacao && t.mesmo_valor
+        ? `${contar(t.mesmo_valor, 'com o mesmo valor de uma venda', 'com o mesmo valor de uma venda')} (bonificação de 100%)`
+        : null,
+      'fora da venda',
+    ].filter(Boolean),
+    colunas: [
+      {
+        titulo: 'Nº da nota',
+        celula: (l) => {
+          const td = celulaTexto(l.nota);
+          if (l.venda_mesmo_valor != null) {
+            const aviso = document.createElement('span');
+            aviso.className = 'origem nota--alerta';
+            aviso.textContent = `100% da venda NF ${l.venda_mesmo_valor}`;
+            aviso.title = 'O cliente recebeu em bonificação o mesmo valor desta nota de venda';
+            td.append(aviso);
+          }
+          return td;
+        },
+      },
+      { titulo: 'Data', celula: (l) => celulaTexto(dataBR(l.data), 'sem-quebra') },
+      { titulo: 'Nº do pedido', celula: (l) => (l.pedido != null ? celulaPedido(l.pedido) : celulaTexto('—')) },
+      { titulo: 'Vendedor', esquerda: true, celula: (l) => celulaTexto(l.vendedor || 'Não informado', 'esquerda coluna-pessoa') },
+      { titulo: 'Cliente', esquerda: true, celula: celulaCliente },
+      { titulo: 'Produtos', esquerda: true, celula: (l) => celulaTexto(l.produtos || '—', 'esquerda cel-largo') },
+      { titulo: 'Valor', soma: 'valor', celula: (l) => celulaValor(l.valor) },
+    ],
+  };
+}
+
+DETALHES.bonificacoes = listaRemessa({
+  rota: 'bonificacoes',
+  carregando: 'Carregando notas de bonificação…',
+  vazio: 'Nenhuma nota de bonificação no período.',
+  bonificacao: true,
+});
+
+DETALHES.comodatos = listaRemessa({
+  rota: 'comodatos',
+  carregando: 'Carregando notas de freezer em comodato…',
+  vazio: 'Nenhuma nota de freezer em comodato no período.',
+});
+
 function montarCabecalho(config) {
   const tr = document.createElement('tr');
   for (const coluna of config.colunas) {
@@ -983,6 +1041,8 @@ function prepararFiltrosDetalhe(config) {
     return opcao;
   });
   situacao.replaceChildren(todas, ...opcoes);
+  // Lista sem situações (ex.: notas de bonificação): o filtro some
+  situacao.closest('label').hidden = !config.situacoes.length;
   el('detalhe-contagem').textContent = '';
 }
 

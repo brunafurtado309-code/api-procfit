@@ -30,6 +30,8 @@ router.get('/notas', controller.todasNotas);
 router.get('/cupons', controller.todosCupons);
 router.get('/devolucoes', controller.listaDevolucoes);
 router.get('/descontos', controller.listaDescontos);
+router.get('/bonificacoes', controller.listaBonificacoes); // quadro Bonificação do Resumo
+router.get('/comodatos', controller.listaComodatos);       // quadro Freezer em comodato do Resumo
 router.get('/itens', controller.itensDoDocumento);
 router.get('/exportar/excel', controller.excelPainel);              // botão "Baixar Excel" do painel
 router.get('/faturamento-vendedores', faturamento.vendedores);       // resumo por vendedor
@@ -40,21 +42,6 @@ router.get('/pedidos/:pedido', pedidos.detalhe);                     // janela d
 router.get('/controle-vendedores', async (req, res, next) => {
   try {
     res.json(await require('../services/vendas-vendedores.service').controle(req.query));
-  } catch (err) {
-    next(err);
-  }
-});
-// Sub-tela Clientes: a carteira e o histórico de um cliente
-router.get('/carteira-clientes', async (req, res, next) => {
-  try {
-    res.json(await require('../services/vendas-vendedores.service').carteiraClientes(req.query));
-  } catch (err) {
-    next(err);
-  }
-});
-router.get('/historico-cliente', async (req, res, next) => {
-  try {
-    res.json(await require('../services/vendas-vendedores.service').historicoCliente(req.query));
   } catch (err) {
     next(err);
   }

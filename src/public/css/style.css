@@ -3306,3 +3306,6 @@ html, body { max-width: 100%; overflow-x: clip; }
   /* O botão ▸ de abrir a linha some: no celular o cartão inteiro abre */
   .cartoes-celular .tabela td:has(> .botao-expandir) { display: none; }
 }
+
+/* Notas de bonificação (Resumo): "100% da venda NF x" em laranja */
+.origem.nota--alerta { color: var(--alerta); font-weight: 600; }

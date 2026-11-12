@@ -278,6 +278,25 @@ const listaDescontos = (query) =>
     cupons: { categoria: 'CAIXA', comDesconto: true },
   });
 
+// Notas de bonificação e de freezer em comodato (quadros do Resumo)
+async function listaRemessas(query, tipo) {
+  const filtros = montarFiltros(query);
+  const notas = await repo.notasRemessa(filtros, tipo);
+  return {
+    titulo: tipo === 'comodato' ? 'Notas de freezer em comodato' : 'Notas de bonificação',
+    periodo: { inicio: filtros.inicio, fim: filtros.fim },
+    limite_atingido: notas.length >= repo.LIMITE_NOTAS,
+    total: {
+      notas_qtd: notas.length,
+      valor: Math.round(notas.reduce((t, n) => t + (Number(n.valor) || 0), 0) * 100) / 100,
+      mesmo_valor: notas.filter((n) => n.venda_mesmo_valor != null).length,
+    },
+    notas,
+  };
+}
+const listaBonificacoes = (query) => listaRemessas(query, 'bonificacao');
+const listaComodatos = (query) => listaRemessas(query, 'comodato');
+
 // Produtos de uma nota ou cupom
 const CATEGORIAS = { nota: ['NOTA', 'DEVOLUCAO'], cupom: ['CAIXA', 'DEVOLUCAO_CAIXA'] };
 
@@ -358,6 +377,6 @@ const maioresVendas = (query) =>
 module.exports = {
   resumo, porDia, porLoja, porOrigem, porVendedor, notasDoVendedor,
   porOperador, cuponsDoOperador, caixasDoOperador, pesquisar, topProdutos, maioresVendas, variacaoClientes,
-  todasNotas, todosCupons, listaDevolucoes, listaDescontos, itensDoDocumento,
+  todasNotas, todosCupons, listaDevolucoes, listaDescontos, listaBonificacoes, listaComodatos, itensDoDocumento,
   montarFiltros, montarLimite,
 };

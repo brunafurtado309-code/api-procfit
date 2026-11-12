@@ -48,6 +48,8 @@ module.exports = {
   todosCupons: acao(service.todosCupons),
   listaDevolucoes: acao(service.listaDevolucoes),
   listaDescontos: acao(service.listaDescontos),
+  listaBonificacoes: acao(service.listaBonificacoes),
+  listaComodatos: acao(service.listaComodatos),
   itensDoDocumento: acao(service.itensDoDocumento),
   // Excel
   excelPainel: download(exportacao.exportarPainel),

@@ -220,6 +220,71 @@ async function remessas(filtros) {
   return recordset[0];
 }
 
+// As notas de bonificação (tipo 'bonificacao', CFOP 5.910/6.910) ou de freezer em comodato
+// (tipo 'comodato', CFOP 5.908/6.908) do período, uma linha por nota, com os produtos da nota.
+// Mesma regra de remessas(): sem canceladas, sem transferências e sem as que contam como venda.
+// Na bonificação, aponta a nota de VENDA do mesmo cliente com o mesmo valor (até 3 dias):
+// é a "venda com bonificação de 100% do valor".
+async function notasRemessa(filtros, tipo) {
+  const cfops = tipo === 'comodato' ? "('5.908', '6.908')" : "('5.910', '6.910')";
+  const request = await criarRequest(filtros);
+  const { recordset } = await request.query(`
+    SET NOCOUNT ON;
+    IF OBJECT_ID('tempdb..#R') IS NOT NULL DROP TABLE #R;
+    SELECT N.NF_FATURAMENTO, N.NF_NUMERO, N.EMPRESA, CAST(N.MOVIMENTO AS date) AS dia, N.ENTIDADE, N.VENDEDOR,
+           TRY_CAST(LTRIM(RTRIM(N.PEDIDO_CLIENTE)) AS numeric(18, 0)) AS pedido,
+           ISNULL(T.TOTAL_GERAL, 0) AS valor
+    INTO #R
+    FROM NF_FATURAMENTO N WITH (NOLOCK)
+    JOIN NF_FATURAMENTO_TOTAIS T WITH (NOLOCK) ON T.NF_FATURAMENTO = N.NF_FATURAMENTO
+    WHERE N.MOVIMENTO >= CAST(@inicio AS date)
+      AND N.MOVIMENTO < DATEADD(day, 1, CAST(@fim AS date))
+      AND (@empresa IS NULL OR N.EMPRESA = @empresa)
+      AND EXISTS (SELECT 1 FROM NF_FATURAMENTO_PRODUTOS NP WITH (NOLOCK)
+                  WHERE NP.NF_FATURAMENTO = N.NF_FATURAMENTO AND NP.CFOP IN ${cfops})
+      AND NOT EXISTS (SELECT 1 FROM CANCELAMENTOS_NOTAS_FISCAIS NC WITH (NOLOCK)
+                      WHERE NC.TIPO = 1 AND NC.CHAVE = N.NF_FATURAMENTO AND NC.PROTOCOLO IS NOT NULL)
+      AND NOT EXISTS (SELECT 1 FROM NF_FATURAMENTO_TRANSF X WITH (NOLOCK)
+                      WHERE X.NF_FATURAMENTO = N.NF_FATURAMENTO)
+      AND NOT EXISTS (SELECT 1 FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
+                      WHERE VA.DOCUMENTO_TIPO = 8 AND VA.DOCUMENTO_NUMERO = N.NF_NUMERO AND VA.EMPRESA = N.EMPRESA)
+    OPTION (RECOMPILE);
+
+    SELECT TOP (${LIMITE_NOTAS})
+      R.NF_NUMERO                                   AS nota,
+      R.EMPRESA                                     AS empresa,
+      CONVERT(varchar(10), R.dia, 23)               AS data,
+      R.pedido,
+      R.VENDEDOR                                    AS cod_vendedor,
+      LTRIM(RTRIM(V.NOME))                          AS vendedor,
+      R.ENTIDADE                                    AS codigo_cliente,
+      LTRIM(RTRIM(E.NOME))                          AS cliente,
+      LTRIM(RTRIM(E.NOME_FANTASIA))                 AS fantasia,
+      R.valor,
+      -- Produtos da nota (descrição; "×2" quando o produto aparece em mais de uma linha)
+      (SELECT STRING_AGG(CONCAT(P.descricao, CASE WHEN P.linhas > 1 THEN CONCAT(' ×', P.linhas) ELSE '' END), ' · ')
+         FROM (SELECT LTRIM(RTRIM(PR.DESCRICAO)) AS descricao, COUNT(*) AS linhas
+                 FROM NF_FATURAMENTO_PRODUTOS NP WITH (NOLOCK)
+                 LEFT JOIN PRODUTOS PR WITH (NOLOCK) ON PR.PRODUTO = NP.PRODUTO
+                WHERE NP.NF_FATURAMENTO = R.NF_FATURAMENTO
+                GROUP BY LTRIM(RTRIM(PR.DESCRICAO))) P)  AS produtos,
+      ${tipo === 'comodato' ? 'NULL' : `(SELECT TOP 1 S.NF_NUMERO
+         FROM NF_FATURAMENTO S WITH (NOLOCK)
+         JOIN NF_FATURAMENTO_TOTAIS ST WITH (NOLOCK) ON ST.NF_FATURAMENTO = S.NF_FATURAMENTO
+        WHERE S.ENTIDADE = R.ENTIDADE AND S.NF_FATURAMENTO <> R.NF_FATURAMENTO
+          AND S.MOVIMENTO >= DATEADD(day, -3, R.dia) AND S.MOVIMENTO < DATEADD(day, 4, R.dia)
+          AND ABS(ISNULL(ST.TOTAL_GERAL, 0) - R.valor) < 0.01
+          AND EXISTS (SELECT 1 FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
+                      WHERE VA.DOCUMENTO_TIPO = 8 AND VA.DOCUMENTO_NUMERO = S.NF_NUMERO AND VA.EMPRESA = S.EMPRESA)
+        ORDER BY ABS(DATEDIFF(day, S.MOVIMENTO, R.dia)))`}  AS venda_mesmo_valor
+    FROM #R R
+    LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = R.ENTIDADE
+    LEFT JOIN VENDEDORES V WITH (NOLOCK) ON V.VENDEDOR = R.VENDEDOR
+    ORDER BY R.dia, R.NF_NUMERO;
+  `);
+  return recordset;
+}
+
 // Evolução dia a dia
 async function porDia(filtros) {
   const request = await criarRequest(filtros);
@@ -902,7 +967,7 @@ async function variacaoClientes(filtros, limite) {
 }
 
 module.exports = {
-  resumo, remessas, porDia, porLoja, porOrigem, porVendedor, notasDoVendedor, nomeDoVendedor,
+  resumo, remessas, notasRemessa, porDia, porLoja, porOrigem, porVendedor, notasDoVendedor, nomeDoVendedor,
   porOperador, cuponsDoOperador, caixasDoOperador, nomeDoOperador, itensDoDocumento, topProdutos,
   maioresVendas, variacaoClientes,
   LIMITE_NOTAS,
