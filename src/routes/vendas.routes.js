@@ -33,5 +33,14 @@ router.get('/exportar/excel', controller.excelPainel);              // botão "B
 router.get('/faturamento-vendedores', faturamento.vendedores);       // resumo por vendedor
 router.get('/faturamento-vendedores/pedidos', faturamento.analise);  // pedidos de um vendedor
 router.get('/pedidos/:pedido', pedidos.detalhe);                     // janela do pedido
+// Sub-tela Vendedores: faturado em nota, orçamentos, cancelados, devoluções canceladas e
+// notas duplicadas por vendedor (carregado com proteção: se faltar, o resto de /vendas funciona)
+router.get('/controle-vendedores', async (req, res, next) => {
+  try {
+    res.json(await require('../services/vendas-vendedores.service').controle(req.query));
+  } catch (err) {
+    next(err);
+  }
+});
 
 module.exports = router;

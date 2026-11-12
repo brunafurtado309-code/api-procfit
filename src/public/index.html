@@ -11,6 +11,7 @@
   <script src="js/pedido.js" defer></script>
   <script src="js/graficos.js" defer></script>
   <script src="js/app.js" defer></script>
+  <script src="js/vendas-vendedores.js" defer></script>
 </head>
 <body class="tela-vendas">
   <header class="topo">
@@ -146,10 +147,54 @@
 
       <!-- 2. VENDEDORES -->
       <div id="parte-vendedores" class="parte" data-parte="vendedores" hidden>
-      <!-- Faturamento por vendedor: do orçamento à nota (dados do módulo faturamento) -->
+      <!-- Controle por vendedor (js/vendas-vendedores.js): consultas leves, cada bloco aparece sozinho -->
+      <p id="cv-status" class="status" role="status" aria-live="polite"></p>
+
+      <!-- Aviso: notas que parecem duplicadas (só aparece quando há) -->
+      <section id="cv-duplicadas" class="bloco cv-alerta" aria-labelledby="titulo-cv-duplicadas" hidden>
+        <h2 id="titulo-cv-duplicadas">Notas que parecem duplicadas</h2>
+        <p class="bloco__descricao">O mesmo pedido em mais de uma nota, ou o mesmo cliente com notas de mesmo valor no
+          mesmo dia. Confira no PROCFIT: pode ser nota emitida duas vezes ou uma compra que se repetiu de verdade.
+          Elas continuam somadas no faturamento.</p>
+        <div class="tabela-rolagem"><table class="tabela tabela-cartoes" id="cv-tabela-duplicadas"><thead></thead><tbody></tbody></table></div>
+      </section>
+
+      <section class="bloco" aria-labelledby="titulo-cv-vendedores">
+        <h2 id="titulo-cv-vendedores">Faturamento por vendedor</h2>
+        <p class="bloco__descricao">Notas fiscais de venda do período pelo vendedor da nota (sem canceladas e sem
+          transferências), com os pedidos que estão em orçamento e os que foram cancelados. Clique no nome para ver os pedidos.</p>
+        <p id="cv-aviso-notas" class="status status--erro" hidden></p>
+        <div class="tabela-rolagem"><table class="tabela tabela-cartoes" id="cv-tabela-vendedores"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
+      </section>
+
+      <section class="bloco" aria-labelledby="titulo-cv-orcamentos">
+        <h2 id="titulo-cv-orcamentos">Pedidos em orçamento</h2>
+        <p class="bloco__descricao">Pedidos feitos no período que ainda estão em orçamento ou pendentes de aprovação: venda que
+          ainda pode acontecer. Os maiores primeiro; "parado há" conta desde o dia do pedido.</p>
+        <p id="cv-aviso-pedidos" class="status status--erro" hidden></p>
+        <div class="tabela-rolagem"><table class="tabela tabela-cartoes" id="cv-tabela-orcamentos"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
+        <button type="button" class="botao-secundario cv-mais" id="cv-mais-orcamentos" hidden>Mostrar mais</button>
+      </section>
+
+      <section class="bloco" aria-labelledby="titulo-cv-cancelados">
+        <h2 id="titulo-cv-cancelados">Pedidos cancelados</h2>
+        <p class="bloco__descricao">Pedidos feitos no período que foram cancelados, os mais recentes primeiro.</p>
+        <div class="tabela-rolagem"><table class="tabela tabela-cartoes" id="cv-tabela-cancelados"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
+        <button type="button" class="botao-secundario cv-mais" id="cv-mais-cancelados" hidden>Mostrar mais</button>
+      </section>
+
+      <section class="bloco" aria-labelledby="titulo-cv-devcanceladas">
+        <h2 id="titulo-cv-devcanceladas">Notas de devolução canceladas</h2>
+        <p class="bloco__descricao">Devoluções que foram canceladas no período: a mercadoria não voltou, então a venda
+          original continua valendo. Uma devolução cancelada não desconta do faturamento.</p>
+        <div class="tabela-rolagem"><table class="tabela tabela-cartoes" id="cv-tabela-devcanceladas"><thead></thead><tbody></tbody></table></div>
+      </section>
+
+      <!-- Funil dos pedidos por vendedor: do orçamento ao pagamento (consulta pesada do módulo
+           faturamento). Só carrega quando esta sub-tela é aberta, para não pesar o resto. -->
       <section class="bloco" aria-labelledby="titulo-fat-vendedores">
-        <h2 id="titulo-fat-vendedores">Faturamento por vendedor</h2>
-        <p class="bloco__descricao">Pedidos feitos no período, pelo vendedor do pedido: orçamentos, pedidos processados e o que já virou nota fiscal. Clique no nome para ver os pedidos.</p>
+        <h2 id="titulo-fat-vendedores">Funil dos pedidos por vendedor</h2>
+        <p class="bloco__descricao">Pedidos feitos no período, pelo vendedor do pedido: orçamentos, pedidos processados e o que já virou nota fiscal. Clique no nome para ver os pedidos. Esta parte é a mais demorada da tela.</p>
         <p id="fat-vend-status" class="status" role="status" aria-live="polite"></p>
         <div class="tabela-rolagem">
           <table class="tabela">

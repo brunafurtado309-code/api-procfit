@@ -1502,8 +1502,10 @@ async function carregar({ automatico = false } = {}) {
     mostrarTabela(TABELA_CAIXA, porOperador.operadores, porOperador.total);
     // Gráficos carregam à parte: se falharem, o resto do painel continua
     carregarGraficos(filtros, minhaCarga);
-    // Faturamento por vendedor também carrega à parte (consulta mais pesada)
-    carregarFatVendedores(filtros, minhaCarga);
+    // Sub-tela Vendedores (controle e funil): só busca quando ela está aberta; se estiver
+    // escondida, busca na hora em que for aberta (abrirParte). Assim o resto não espera por ela.
+    vendedoresPendente = { filtros, minhaCarga };
+    if (parteAtual === 'vendedores') carregarParteVendedores();
 
     filtrosCarregados = { ...filtros };
     diaDaUltimaCarga = hojeISO();
@@ -1627,6 +1629,15 @@ function marcarAtalho(ativo) {
 // antigos (#parte-caixa) continuam funcionando.
 const PARTES_VENDAS = ['resumo', 'vendedores', 'caixa', 'graficos'];
 let parteAtual = 'resumo';
+let vendedoresPendente = null; // carga da sub-tela Vendedores esperando ela ser aberta
+
+function carregarParteVendedores() {
+  if (!vendedoresPendente) return;
+  const { filtros, minhaCarga } = vendedoresPendente;
+  vendedoresPendente = null;
+  if (typeof vendasVendedores !== 'undefined') vendasVendedores.carregar(filtros, minhaCarga);
+  carregarFatVendedores(filtros, minhaCarga);
+}
 
 function abrirParte(nome) {
   parteAtual = PARTES_VENDAS.includes(nome) ? nome : 'resumo';
@@ -1640,6 +1651,7 @@ function abrirParte(nome) {
   if (window.location.hash !== `#${parteAtual}`) window.history.replaceState(null, '', `#${parteAtual}`);
   // Gráfico desenhado com a parte escondida fica sem largura: redesenha ao abrir
   if (parteAtual === 'graficos') desenharGraficos();
+  if (parteAtual === 'vendedores') carregarParteVendedores();
   window.scrollTo({ top: 0 });
 }
 

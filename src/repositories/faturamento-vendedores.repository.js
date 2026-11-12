@@ -18,14 +18,37 @@
 //     devolução conta mesmo que tenha sido feita depois do período da nota.
 
 const { sql, getPool } = require('../config/db');
+const AppError = require('../utils/AppError');
 
 // Até quantas notas a lista devolve de uma vez (o resumo por vendedor sempre soma todas)
 const LIMITE_LISTA = 5000;
+// Tempo máximo desta consulta. Passou disso, ela é cancelada no banco e a conexão volta
+// para as outras telas (o limite geral do painel é 90 s; esta tela não pode segurar tanto).
+const LIMITE_MS = Number(process.env.FAT_VENDEDORES_TIMEOUT_MS) || 45000;
 
 async function notasPorVendedor(filtros) {
   const pool = await getPool();
-  const { recordsets } = await pool
-    .request()
+  const pedido = pool.request();
+  let cancelada = false;
+  const relogio = setTimeout(() => {
+    cancelada = true;
+    pedido.cancel();
+  }, LIMITE_MS);
+  try {
+    return await consultar(pedido, filtros);
+  } catch (err) {
+    if (cancelada || err.code === 'ECANCEL') {
+      throw new AppError(`A consulta passou de ${Math.round(LIMITE_MS / 1000)} segundos e foi cancelada para não travar o painel. `
+        + 'Tente um período menor ou escolha uma loja.', 504);
+    }
+    throw err;
+  } finally {
+    clearTimeout(relogio);
+  }
+}
+
+async function consultar(pedido, filtros) {
+  const { recordsets } = await pedido
     .input('inicio', sql.VarChar(10), filtros.inicio)
     .input('fim', sql.VarChar(10), filtros.fim)
     .input('empresa', sql.Int, filtros.empresa ?? null)
@@ -37,6 +60,7 @@ async function notasPorVendedor(filtros) {
       IF OBJECT_ID('tempdb..#N') IS NOT NULL DROP TABLE #N;
       IF OBJECT_ID('tempdb..#NOTAS') IS NOT NULL DROP TABLE #NOTAS;
       IF OBJECT_ID('tempdb..#ANT') IS NOT NULL DROP TABLE #ANT;
+      IF OBJECT_ID('tempdb..#DEV') IS NOT NULL DROP TABLE #DEV;
 
       -- 1. As notas de venda do período (sem canceladas e sem transferências)
       SELECT N.NF_FATURAMENTO, N.NF_NUMERO, N.EMPRESA, N.MOVIMENTO, N.VENDEDOR, N.ENTIDADE,
@@ -57,7 +81,20 @@ async function notasPorVendedor(filtros) {
       OPTION (RECOMPILE);
       CREATE CLUSTERED INDEX IX_N ON #N (NF_FATURAMENTO);
 
-      -- 2. Cada nota com cliente, vendedor e devolução
+      -- 2. Devoluções das notas do período, somadas por nota numa leitura só
+      SELECT DV.NF_FATURAMENTO_ORIGEM AS NF_FATURAMENTO,
+             COUNT(*)            AS qtd,
+             MAX(DV.NF_NUMERO)   AS numero,
+             MAX(DV.DATA_HORA)   AS dia,
+             SUM(DT.TOTAL_GERAL) AS valor
+      INTO #DEV
+      FROM NF_FATURAMENTO_DEVOLUCOES DV WITH (NOLOCK)
+      LEFT JOIN NF_FATURAMENTO_DEVOLUCOES_TOTAIS DT WITH (NOLOCK)
+        ON DT.NF_FATURAMENTO_DEVOLUCAO = DV.NF_FATURAMENTO_DEVOLUCAO
+      WHERE DV.NF_FATURAMENTO_ORIGEM IN (SELECT NF_FATURAMENTO FROM #N)
+      GROUP BY DV.NF_FATURAMENTO_ORIGEM;
+
+      -- 3. Cada nota com cliente, vendedor e devolução
       SELECT
           N.NF_NUMERO                                     AS nota,
           N.NF_FATURAMENTO                                AS nota_id,
@@ -72,26 +109,19 @@ async function notasPorVendedor(filtros) {
           N.TOTAL_DESCONTOS                               AS desconto,
           N.TOTAL_GERAL                                   AS valor,
           CASE WHEN DVI.qtd > 0 THEN 1 ELSE 0 END         AS tem_devolucao,
-          DVI.qtd                                         AS devolucoes,
+          ISNULL(DVI.qtd, 0)                              AS devolucoes,
           DVI.numero                                      AS nota_devolucao,
           CONVERT(varchar(10), DVI.dia, 23)               AS devolucao_dia,
           ISNULL(DVI.valor, 0)                            AS devolvido,
           -- total = voltou a nota inteira; parcial = voltou só uma parte
-          CASE WHEN DVI.qtd = 0 THEN NULL
+          CASE WHEN ISNULL(DVI.qtd, 0) = 0 THEN NULL
                WHEN ISNULL(DVI.valor, 0) >= N.TOTAL_GERAL - 0.01 THEN 'total'
                ELSE 'parcial' END                         AS devolucao_tipo
       INTO #NOTAS
       FROM #N N
       LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = N.ENTIDADE
       LEFT JOIN VENDEDORES V WITH (NOLOCK) ON V.VENDEDOR = N.VENDEDOR
-      OUTER APPLY (
-        SELECT COUNT(*) AS qtd, MAX(DV.NF_NUMERO) AS numero, MAX(DV.DATA_HORA) AS dia,
-               SUM(DT.TOTAL_GERAL) AS valor
-        FROM NF_FATURAMENTO_DEVOLUCOES DV WITH (NOLOCK)
-        LEFT JOIN NF_FATURAMENTO_DEVOLUCOES_TOTAIS DT WITH (NOLOCK)
-          ON DT.NF_FATURAMENTO_DEVOLUCAO = DV.NF_FATURAMENTO_DEVOLUCAO
-        WHERE DV.NF_FATURAMENTO_ORIGEM = N.NF_FATURAMENTO
-      ) DVI;
+      LEFT JOIN #DEV DVI ON DVI.NF_FATURAMENTO = N.NF_FATURAMENTO;
 
       -- Mesmo intervalo no mês anterior (ex.: 01 a 12/11 compara com 01 a 12/10), mesma regra de nota
       SELECT N.VENDEDOR, COUNT(*) AS notas, SUM(ISNULL(T.TOTAL_GERAL, 0)) AS valor

@@ -2933,3 +2933,41 @@ button:hover,
 /* Título do topo de todas as telas em caixa alta, como a marca "BELO NORTE" (nov/2026) */
 .topo h1,
 .login__titulo { text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* --- Vendas > Vendedores: controle por vendedor (js/vendas-vendedores.js) --- */
+.tela-vendas .cv-alerta { box-shadow: inset 3px 0 0 var(--alerta); padding-left: 1rem; }
+.tela-vendas .cv-alerta h2 { color: var(--alerta); }
+.tela-vendas td.cv-atencao { color: var(--alerta); font-weight: 600; font-size: var(--texto-mini); }
+.tela-vendas .cv-fora { color: var(--alerta); text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; }
+.tela-vendas .cv-mais { margin-top: 0.75rem; }
+/* No celular as tabelas do controle viram cartões (o nome da coluna vem em data-rotulo) */
+@media (max-width: 720px) {
+  .tela-vendas .tabela-cartoes,
+  .tela-vendas .tabela-cartoes tbody,
+  .tela-vendas .tabela-cartoes tfoot { display: block; width: 100%; min-width: 0; }
+  .tela-vendas .tabela-cartoes thead { display: none; }
+  .tela-vendas .tabela-cartoes tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem 0.9rem;
+    margin-bottom: 0.6rem;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid var(--linha);
+    border-radius: 10px;
+  }
+  .tela-vendas .tabela.tabela-cartoes td { display: block; min-width: 0; padding: 0; border: 0; text-align: left; white-space: normal; }
+  .tela-vendas .tabela-cartoes td:empty { display: none; }
+  .tela-vendas .tabela-cartoes td[data-rotulo]::before {
+    content: attr(data-rotulo);
+    display: block;
+    font-size: var(--texto-mini);
+    color: var(--tinta-suave);
+  }
+  .tela-vendas .tabela-cartoes td.cel-titulo,
+  .tela-vendas .tabela-cartoes td.cel-largo,
+  .tela-vendas .tabela-cartoes td.vazio { grid-column: 1 / -1; }
+  .tela-vendas .tabela-cartoes td.cel-titulo { font-weight: 600; }
+  .tela-vendas .tabela-cartoes td.cel-titulo::before { display: none; }
+  .tela-vendas .tabela-cartoes tfoot tr { background: var(--verde-suave); }
+  .tela-vendas .tabela-cartoes .qtd { display: block; }
+}

@@ -2,7 +2,6 @@
 
 const AppError = require('../utils/AppError');
 const repo = require('../repositories/faturamento.repository');
-const repoVendedores = require('../repositories/faturamento-vendedores.repository');
 const excel = require('../utils/excel');
 
 const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
@@ -121,11 +120,47 @@ function filtrosNotasVendedor(query) {
   return filtros;
 }
 
-const notasVendedor = (query) => repoVendedores.notasPorVendedor(filtrosNotasVendedor(query));
+// Proteção do resto da API (o banco tem 10 conexões para o painel inteiro):
+//  - a mesma consulta pedida de novo em até 1 minuto (clicar e voltar no vendedor, baixar o Excel)
+//    usa a resposta guardada, sem ir ao banco;
+//  - a mesma consulta pedida enquanto ainda está rodando espera a que já está em andamento;
+//  - no máximo 3 consultas diferentes desta tela ao mesmo tempo (tela + janela do vendedor): a quarta recebe "aguarde",
+//    em vez de ocupar mais conexões e deixar as outras telas lentas.
+// O arquivo da consulta é carregado só aqui dentro: se ele tiver problema, só esta tela falha.
+const GUARDAR_MS = 60 * 1000;
+const MAX_SIMULTANEAS = 3;
+const guardadas = new Map();   // chave -> { quando, dados }
+const emAndamento = new Map(); // chave -> Promise
+
+async function consultarNotasVendedor(filtros) {
+  const chave = JSON.stringify(filtros);
+  const guardada = guardadas.get(chave);
+  if (guardada && Date.now() - guardada.quando < GUARDAR_MS) return guardada.dados;
+  if (emAndamento.has(chave)) return emAndamento.get(chave);
+  if (emAndamento.size >= MAX_SIMULTANEAS) {
+    throw new AppError('Esta tela já está buscando outras informações no banco. Aguarde alguns segundos e clique em Atualizar.', 503);
+  }
+  const consulta = (async () => {
+    const repo = require('../repositories/faturamento-vendedores.repository');
+    const dados = await repo.notasPorVendedor(filtros);
+    guardadas.set(chave, { quando: Date.now(), dados });
+    // Não acumula memória: guarda só as 30 consultas mais recentes
+    while (guardadas.size > 30) guardadas.delete(guardadas.keys().next().value);
+    return dados;
+  })();
+  emAndamento.set(chave, consulta);
+  try {
+    return await consulta;
+  } finally {
+    emAndamento.delete(chave);
+  }
+}
+
+const notasVendedor = (query) => consultarNotasVendedor(filtrosNotasVendedor(query));
 
 async function exportarNotasVendedor(query) {
   const filtros = filtrosNotasVendedor(query);
-  const { vendedores: resumo, notas } = await repoVendedores.notasPorVendedor(filtros);
+  const { vendedores: resumo, notas } = await consultarNotasVendedor(filtros);
   const dataBR = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : null);
   const periodo = `de ${dataBR(filtros.inicio)} até ${dataBR(filtros.fim)}`
     + `${filtros.empresa ? ` · empresa ${filtros.empresa}` : ''} · gerado em ${new Date().toLocaleString('pt-BR')}`;
