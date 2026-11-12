@@ -54,7 +54,22 @@ function montarLimite(valor) {
   return limite;
 }
 
-const resumo = (query) => repo.resumo(montarFiltros(query));
+// Resumo + bonificação e freezer em comodato (fora da venda). Se a parte das remessas falhar,
+// o resumo aparece mesmo assim (os dois quadros mostram "—").
+async function resumo(query) {
+  const filtros = montarFiltros(query);
+  const [principal, extra] = await Promise.allSettled([repo.resumo(filtros), repo.remessas(filtros)]);
+  if (principal.status === 'rejected') throw principal.reason;
+  if (extra.status === 'rejected') console.error('Resumo de vendas (bonificação/comodato):', extra.reason);
+  const r = extra.status === 'fulfilled' ? extra.value ?? {} : null;
+  return {
+    ...principal.value,
+    notas_bonificacao: r ? r.notas_bonificacao ?? 0 : null,
+    bonificado: r ? r.bonificado ?? 0 : null,
+    comodatos: r ? r.comodatos ?? 0 : null,
+    valor_comodato: r ? r.valor_comodato ?? 0 : null,
+  };
+}
 const porDia = (query) => repo.porDia(montarFiltros(query));
 const porLoja = (query) => repo.porLoja(montarFiltros(query));
 const porOrigem = (query) => repo.porOrigem(montarFiltros(query));

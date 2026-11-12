@@ -81,9 +81,14 @@ const graficos = (() => {
       return;
     }
 
-    const minimo = rotulos.length * (empilhado ? 30 : 16 * series.length + 14) + 90;
+    // Celular (espaço estreito): o gráfico cabe na largura da tela, sem rolar de lado; as colunas
+    // ficam mais finas e o eixo mostra menos datas. No computador continua com a largura mínima.
+    const compacto = disponivel > 0 && disponivel < 560;
+    const minimo = compacto ? 0 : rotulos.length * (empilhado ? 30 : 16 * series.length + 14) + 90;
     const largura = Math.max(disponivel || 640, minimo);
-    const margem = { topo: 16, direita: 12, baixo: 44, esquerda: 72 };
+    const margem = compacto
+      ? { topo: 14, direita: 6, baixo: 36, esquerda: 50 }
+      : { topo: 16, direita: 12, baixo: 44, esquerda: 72 };
     const areaL = largura - margem.esquerda - margem.direita;
     const areaA = altura - margem.topo - margem.baixo;
 
@@ -111,7 +116,9 @@ const graficos = (() => {
     const faixa = areaL / rotulos.length;
     const larguraColuna = empilhado ? Math.min(40, faixa * 0.7) : Math.min(24, (faixa * 0.8) / series.length);
     // Mostra no máximo ~14 rótulos no eixo para não embolar
-    const saltoRotulo = Math.max(1, Math.ceil(rotulos.length / 14));
+    // (no celular, um rótulo a cada ~46px)
+    const maxRotulos = compacto ? Math.max(3, Math.floor(areaL / 46)) : 14;
+    const saltoRotulo = Math.max(1, Math.ceil(rotulos.length / maxRotulos));
 
     rotulos.forEach((rotulo, i) => {
       const x0 = margem.esquerda + faixa * i + faixa / 2;

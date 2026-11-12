@@ -96,7 +96,7 @@ body {
   background: var(--verde-escuro);
   color: #fff;
 }
-.topo > div:first-child {
+.topo > div:first-of-type {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
@@ -2681,16 +2681,23 @@ body.com-lateral #modulos { display: none !important; }
 
 /* Menu em pastas (modulos.js, SUBMENUS): Financeiro > Contas a receber > Títulos em aberto... */
 .no-menu { display: none !important; } /* abas de cima da tela que passaram para o menu */
-/* No celular o menu da esquerda mostra só os ícones (sem as funções das pastas): as abas de cima
-   voltam a aparecer, numa linha que rola de lado, para dar para trocar de sub-tela */
+/* No celular as abas de cima voltam a aparecer (atalho para trocar de sub-tela sem abrir o menu):
+   dividem a largura em partes iguais, sem rolar de lado */
 @media (max-width: 720px) {
   nav.abas.no-menu {
-    display: flex !important;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
+    display: grid !important;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    overflow: hidden;
   }
-  nav.abas.no-menu .aba { flex: 0 0 auto; padding: 0.65rem 0.8rem; }
+  nav.abas.no-menu .aba {
+    min-width: 0;
+    padding: 0.65rem 0.3rem;
+    text-align: center;
+    white-space: normal;
+    line-height: 1.2;
+    font-size: var(--texto-pequeno);
+  }
 }
 button.lateral__pasta-botao,
 button.lateral__pasta-botao:hover {
@@ -2755,16 +2762,8 @@ button.lateral__subitem { font-weight: 600; }
 /* Menu recolhido ou tela estreita: só os ícones, sem as funções */
 .lateral-recolhida .lateral__filhos,
 .lateral-recolhida .lateral__seta { display: none !important; }
-@media (max-width: 720px) {
-  .lateral__filhos, .lateral__seta { display: none !important; }
-}
-@media (max-width: 720px) {
-  body.com-lateral { padding-left: var(--lateral-recolhida); }
-  .lateral { width: var(--lateral-recolhida); }
-  .lateral__marca, .lateral__texto { display: none; }
-  .lateral__topo { justify-content: center; padding: 0; }
-  .lateral__item { justify-content: center; padding: 0.5rem 0; }
-}
+/* Botão ☰ do topo: só existe no celular */
+.topo__menu { display: none; }
 
 /* --- Tela inicial: cartões com o desenho do assunto de cada tela --- */
 .inicio-boas-vindas { padding: 1rem 0 0.25rem; }
@@ -3147,15 +3146,163 @@ button:hover,
   .tela-vendas .tabela-cartoes tr.linha-dia--aberta { border-color: var(--verde); }
 }
 
-/* --- Vendas > Clientes (js/vendas-clientes.js): usa o mesmo layout da sub-tela Vendedores --- */
-.tela-vendas .cc-filtros { display: grid; gap: 0.5rem; margin: 0.25rem 0 0.75rem; }
-.tela-vendas .cc-filtros input[type="search"] { width: 100%; }
-.tela-vendas .cv-selo--neutro { color: var(--tinta-suave); background: var(--fundo); }
-.tela-vendas .cc-curva {
-  display: inline-block; min-width: 1.1rem; padding: 0 0.3rem; border-radius: 4px;
-  font-size: 0.68rem; font-weight: 700; text-align: center; vertical-align: 0.05em;
-  color: var(--tinta-suave); box-shadow: inset 0 0 0 1px var(--linha-forte);
+
+/* ==========================================================
+   27. Celular (até 720px): tela travada na largura, menu em gaveta, sem zoom ao digitar
+   - a página não anda de lado (nada passa da largura da tela);
+   - o menu da esquerda vira uma gaveta que abre pelo ☰ do topo (js/modulos.js);
+   - campos com letra de 16px: o iPhone não dá zoom ao tocar num campo (era o zoom que
+     deixava "arrastar" a tela para os lados);
+   - tabelas marcadas com .tabela-cartoes viram cartões (nome da coluna em data-rotulo).
+   ========================================================== */
+html, body { max-width: 100%; overflow-x: clip; }
+@supports not (overflow: clip) { html, body { overflow-x: hidden; } }
+
+@media (max-width: 720px) {
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  body { overscroll-behavior-x: none; }
+  img, svg, video, canvas { max-width: 100%; }
+
+  /* Sem zoom automático ao tocar nos campos */
+  input, select, textarea { font-size: 16px !important; }
+
+  /* Página com a largura toda (a coluna de ícones sai) */
+  body.com-lateral,
+  body.com-lateral.lateral-recolhida { padding-left: 0; }
+
+  /* Topo fixo e compacto: ☰ · título · Sair */
+  .topo {
+    position: sticky;
+    top: 0;
+    z-index: 35;
+    gap: 0.6rem;
+    min-height: 3.25rem;
+    padding: 0.4rem 0.75rem;
+    box-shadow: 0 1px 0 var(--linha);
+  }
+  .topo > div:first-of-type { flex: 1 1 auto; min-width: 0; }
+  .topo .marca { display: none; }
+  .topo h1 {
+    overflow: hidden;
+    font-size: 1.05rem;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .topo-acoes { flex: 0 0 auto; gap: 0.5rem; }
+  .topo__menu,
+  .topo__menu:hover {
+    display: inline-flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    width: 2.6rem;
+    height: 2.6rem;
+    padding: 0 0.65rem;
+    border: 1px solid var(--linha);
+    border-radius: 10px;
+    background: transparent;
+    cursor: pointer;
+  }
+  .topo__menu span { display: block; height: 2px; border-radius: 2px; background: currentColor; color: var(--tinta, #fff); }
+  .topo__menu--solto { position: fixed; top: 0.5rem; left: 0.5rem; z-index: 36; background: var(--superficie); }
+
+  /* Gaveta */
+  .lateral,
+  .lateral-recolhida .lateral {
+    width: min(84vw, 19rem);
+    transform: translateX(-102%);
+    visibility: hidden;
+    transition: transform 0.22s ease, visibility 0s linear 0.22s;
+    box-shadow: none;
+    overscroll-behavior: contain;
+  }
+  body.menu-aberto .lateral {
+    transform: none;
+    visibility: visible;
+    transition: transform 0.22s ease;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.55);
+  }
+  .lateral-fundo {
+    position: fixed;
+    inset: 0;
+    z-index: 39;
+    background: rgba(0, 0, 0, 0.55);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.22s ease, visibility 0s linear 0.22s;
+  }
+  body.menu-aberto .lateral-fundo { opacity: 1; visibility: visible; transition: opacity 0.22s ease; }
+  body.menu-aberto { overflow: hidden; }
+  /* Na gaveta o menu aparece inteiro (nomes, pastas e funções), com toque confortável */
+  .lateral .lateral__marca, .lateral .lateral__texto { display: revert; }
+  .lateral .lateral__topo { justify-content: space-between; min-height: 3.25rem; padding: 0 0.5rem 0 1rem; }
+  .lateral .lateral__loja { display: grid; }
+  .lateral .lateral__item { justify-content: flex-start; min-height: 2.75rem; padding: 0.55rem 0.75rem; }
+  .lateral .lateral__subitem { min-height: 2.5rem; display: flex; align-items: center; }
+  .lateral .lateral__recolher svg { transform: none; }
 }
-.tela-vendas .cc-curva--A { color: var(--verde); box-shadow: inset 0 0 0 1px var(--verde); }
-.tela-vendas .cv-subtitulo--alerta { color: var(--alerta); }
-.tela-vendas #cc-tabela .cv-nome { white-space: normal; }
+@media (max-width: 720px) and (prefers-reduced-motion: reduce) {
+  .lateral, .lateral-fundo, body.menu-aberto .lateral { transition: none; }
+}
+/* Fora do celular a gaveta não existe */
+@media (min-width: 721px) { .lateral-fundo { display: none; } }
+
+/* Tabelas em cartões no celular. Valem para as tabelas marcadas com .tabela-cartoes e, nas telas
+   com <body class="cartoes-celular"> (Vendas e Faturamento), para todas as tabelas, inclusive as
+   das janelas e as que abrem dentro de uma linha. O nome de cada coluna é posto em data-rotulo pelo
+   js/modulos.js (a partir do cabeçalho). Assim nenhuma tabela passa da largura da tela. */
+@media (max-width: 720px) {
+  .cartoes-celular .tabela-rolagem:not(.detalhe__corpo),
+  .tabela-rolagem:has(> .tabela-cartoes) { overflow: visible; }
+  .cartoes-celular .detalhe__corpo { overflow-x: hidden; }
+  :is(.tabela-cartoes, .cartoes-celular .tabela),
+  :is(.tabela-cartoes, .cartoes-celular .tabela) > tbody,
+  :is(.tabela-cartoes, .cartoes-celular .tabela) > tfoot { display: block; width: 100%; min-width: 0; }
+  :is(.tabela-cartoes, .cartoes-celular .tabela) > thead { display: none; }
+  :is(.tabela-cartoes, .cartoes-celular .tabela) > :is(tbody, tfoot) > tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem 0.9rem;
+    margin-bottom: 0.6rem;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid var(--linha);
+    border-radius: 10px;
+  }
+  :is(.tabela-cartoes, .cartoes-celular .tabela) > :is(tbody, tfoot) > tr > :is(td, th) {
+    display: block;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    box-shadow: none;
+  }
+  :is(.tabela-cartoes, .cartoes-celular .tabela) td:empty { display: none; }
+  :is(.tabela-cartoes, .cartoes-celular .tabela) :is(td, th)[data-rotulo]::before {
+    content: attr(data-rotulo);
+    display: block;
+    margin-bottom: 0.1rem;
+    font-size: var(--texto-mini);
+    font-weight: 400;
+    color: var(--tinta-suave);
+  }
+  /* "Nome" do cartão (primeira célula), avisos e células que ocupam a largura toda */
+  :is(.tabela-cartoes, .cartoes-celular .tabela) > :is(tbody, tfoot) > tr > :first-child,
+  :is(.tabela-cartoes, .cartoes-celular .tabela) td:is(.cel-titulo, .cel-largo, .cel-acao, .vazio, [colspan]) { grid-column: 1 / -1; }
+  :is(.tabela-cartoes, .cartoes-celular .tabela) > :is(tbody, tfoot) > tr > :first-child { font-weight: 600; }
+  :is(.tabela-cartoes, .cartoes-celular .tabela) > :is(tbody, tfoot) > tr > :first-child::before,
+  :is(.tabela-cartoes, .cartoes-celular .tabela) td.vazio::before { display: none; }
+  :is(.tabela-cartoes, .cartoes-celular .tabela) > tfoot > tr { background: var(--verde-suave); }
+  :is(.tabela-cartoes, .cartoes-celular .tabela) .qtd { display: block; }
+  /* Linha que abre dentro de outra (linha do tempo do pedido, itens): sem moldura própria */
+  .cartoes-celular .tabela > tbody > tr:is(.linha-itens, .linha-detalhe) {
+    display: block;
+    margin-top: -0.4rem;
+    padding: 0.5rem 0 0.25rem;
+    border: 0;
+  }
+  /* O botão ▸ de abrir a linha some: no celular o cartão inteiro abre */
+  .cartoes-celular .tabela td:has(> .botao-expandir) { display: none; }
+}

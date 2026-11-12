@@ -66,7 +66,6 @@ const modulos = (() => {
       // Sub-telas da tela de vendas (abas: só a parte escolhida aparece). Os gráficos ficam no Resumo.
       { titulo: 'Resumo', pagina: 'index.html#resumo', aba: 'resumo' },
       { titulo: 'Vendedores', pagina: 'index.html#vendedores', aba: 'vendedores' },
-      { titulo: 'Clientes', pagina: 'index.html#clientes', aba: 'clientes' },
       { titulo: 'Caixa das lojas', pagina: 'index.html#caixa', aba: 'caixa' },
     ],
     financeiro: [
@@ -348,7 +347,7 @@ const modulos = (() => {
 
     botao.addEventListener('click', () => {
       // Menu recolhido (só ícones): não dá para mostrar a pasta, então vai para a primeira função
-      if (document.body.classList.contains('lateral-recolhida') || window.matchMedia('(max-width: 720px)').matches) {
+      if (document.body.classList.contains('lateral-recolhida')) {
         window.location.href = primeiraPagina(lista);
         return;
       }
@@ -395,12 +394,18 @@ const modulos = (() => {
     recolher.type = 'button';
     recolher.className = 'lateral__recolher';
     recolher.append(icone('recolher'));
+    // Celular: o menu vira uma gaveta que abre pelo botão ☰ do topo e fecha sozinha ao escolher
+    // uma tela (a página fica com a largura toda, sem a coluna de ícones)
+    const celular = window.matchMedia('(max-width: 720px)');
     const aplicar = (sim) => {
-      document.body.classList.toggle('lateral-recolhida', sim);
-      recolher.setAttribute('aria-label', sim ? 'Abrir o menu' : 'Recolher o menu');
-      recolher.title = sim ? 'Abrir o menu' : 'Recolher o menu';
+      const recolhido = sim && !celular.matches;
+      document.body.classList.toggle('lateral-recolhida', recolhido);
+      const texto = celular.matches ? 'Fechar o menu' : sim ? 'Abrir o menu' : 'Recolher o menu';
+      recolher.setAttribute('aria-label', texto);
+      recolher.title = texto;
     };
     recolher.addEventListener('click', () => {
+      if (celular.matches) { abrirGaveta(false); return; }
       const sim = !document.body.classList.contains('lateral-recolhida');
       aplicar(sim);
       guardarRecolhido(sim);
@@ -435,7 +440,47 @@ const modulos = (() => {
     menu.append(topo, loja, lista);
     document.body.prepend(menu);
     document.body.classList.add('com-lateral');
+
+    // Gaveta do celular: botão ☰ no topo da página e um fundo escuro que fecha ao tocar
+    document.querySelector('.topo__menu')?.remove();
+    document.querySelector('.lateral-fundo')?.remove();
+    const botaoMenu = document.createElement('button');
+    botaoMenu.type = 'button';
+    botaoMenu.className = 'topo__menu';
+    botaoMenu.setAttribute('aria-label', 'Abrir o menu');
+    botaoMenu.setAttribute('aria-controls', 'menu-lateral');
+    botaoMenu.setAttribute('aria-expanded', 'false');
+    botaoMenu.innerHTML = '<span></span><span></span><span></span>';
+    const topoPagina = document.querySelector('.topo');
+    if (topoPagina) topoPagina.prepend(botaoMenu);
+    else { botaoMenu.classList.add('topo__menu--solto'); document.body.append(botaoMenu); }
+    const fundo = document.createElement('div');
+    fundo.className = 'lateral-fundo';
+    document.body.append(fundo);
+    function abrirGaveta(sim) {
+      const aberto = sim && celular.matches;
+      document.body.classList.toggle('menu-aberto', aberto);
+      botaoMenu.setAttribute('aria-expanded', String(aberto));
+      // Fechada no celular, a gaveta sai da ordem do teclado e do leitor de tela
+      if (celular.matches && !aberto) menu.setAttribute('inert', '');
+      else menu.removeAttribute('inert');
+      if (aberto) menu.querySelector('.lateral__item, .lateral__subitem')?.focus({ preventScroll: true });
+    }
+    botaoMenu.addEventListener('click', () => abrirGaveta(!document.body.classList.contains('menu-aberto')));
+    fundo.addEventListener('click', () => abrirGaveta(false));
+    document.addEventListener('keydown', (evento) => {
+      if (evento.key === 'Escape' && document.body.classList.contains('menu-aberto')) {
+        abrirGaveta(false);
+        botaoMenu.focus();
+      }
+    });
+    // Escolheu uma tela (inclusive sub-tela na mesma página, ex.: index.html#vendedores): fecha
+    menu.addEventListener('click', (evento) => {
+      if (evento.target.closest('a[href]')) abrirGaveta(false);
+    });
+    celular.addEventListener('change', () => { aplicar(lerRecolhido()); abrirGaveta(false); });
     aplicar(lerRecolhido());
+    abrirGaveta(false);
 
     // Abas e divisões de cima da tela agora estão no menu
     for (const nav of document.querySelectorAll(NAVS_NO_MENU)) nav.classList.add('no-menu');
@@ -452,6 +497,47 @@ const modulos = (() => {
       .then((eu) => { if (eu?.mestre) usuarios.hidden = false; })
       .catch(() => {});
   }
+
+  // Celular: tabelas com .tabela-cartoes viram cartões (css/style.css, seção 27). Cada célula
+  // precisa do nome da coluna em data-rotulo; aqui ele vem do cabeçalho da tabela, sempre que
+  // as linhas mudam. Célula que já tem data-rotulo (posto pela própria tela) não é mexida.
+  function rotularTabela(tabela) {
+    const cabecalho = tabela.tHead?.rows[tabela.tHead.rows.length - 1];
+    if (!cabecalho) return;
+    const nomes = [];
+    for (const th of cabecalho.cells) {
+      const texto = th.textContent.replace(/[▲▼↕]/g, '').trim();
+      for (let i = 0; i < (th.colSpan || 1); i += 1) nomes.push(texto);
+    }
+    for (const corpo of [...tabela.tBodies, tabela.tFoot].filter(Boolean)) {
+      for (const linha of corpo.rows) {
+        let coluna = 0;
+        for (const celula of linha.cells) {
+          if (!celula.hasAttribute('data-rotulo') && nomes[coluna] && (celula.colSpan || 1) === 1) {
+            celula.setAttribute('data-rotulo', nomes[coluna]);
+          }
+          coluna += celula.colSpan || 1;
+        }
+      }
+    }
+  }
+  // Vale para as tabelas .tabela-cartoes e, nas telas com <body class="cartoes-celular">, para
+  // todas (inclusive as criadas depois, em janelas e linhas que abrem).
+  const SELETOR_CARTOES = 'table.tabela-cartoes, body.cartoes-celular table.tabela';
+  function rotularCartoes() {
+    for (const tabela of document.querySelectorAll(SELETOR_CARTOES)) rotularTabela(tabela);
+  }
+  function iniciarCartoes() {
+    rotularCartoes();
+    let agendado = false;
+    new MutationObserver(() => {
+      if (agendado) return;
+      agendado = true;
+      requestAnimationFrame(() => { agendado = false; rotularCartoes(); });
+    }).observe(document.body, { childList: true, subtree: true });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciarCartoes);
+  else iniciarCartoes();
 
   return { setoresDaChave, irPara, paginaDe, desenharMenu, PAGINAS,
     lojaAtual, escolherLoja, aoMudarLoja, seletorDeLoja, lerLojas, nomeDaLoja, marcarLoja, lojaNoFiltro };

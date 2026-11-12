@@ -155,6 +155,27 @@ function mostrarResumo(r) {
     nota.textContent = `Calculada sobre ${percentual(r.cobertura_custo_pct)} das vendas`;
     nota.classList.toggle('nota--alerta', r.cobertura_custo_pct < 100);
   }
+
+  // Bonificação e freezer em comodato: notas que saem da empresa mas não são venda
+  if (r.bonificado == null) {
+    el('bonificado').textContent = '—';
+    el('bonificado-nota').textContent = 'Não foi possível carregar agora.';
+    el('comodato').textContent = '—';
+    el('comodato-nota').textContent = '';
+  } else {
+    const venda = Number(r.venda_liquida) || 0;
+    const bonificado = Number(r.bonificado) || 0;
+    const notas = Number(r.notas_bonificacao) || 0;
+    el('bonificado').textContent = moeda.format(bonificado);
+    el('bonificado-nota').textContent = notas
+      ? `${inteiro.format(notas)} ${notas === 1 ? 'nota' : 'notas'}${venda > 0 ? ` · ${percentual(bonificado / venda * 100)} da venda` : ''} · fora da venda`
+      : 'Nenhuma bonificação no período.';
+    const freezers = Number(r.comodatos) || 0;
+    el('comodato').textContent = `${inteiro.format(freezers)} ${freezers === 1 ? 'nota' : 'notas'}`;
+    el('comodato-nota').textContent = freezers
+      ? `${moeda.format(Number(r.valor_comodato) || 0)} em equipamento · fora da venda`
+      : 'Nenhum freezer no período.';
+  }
 }
 
 function mostrarOrigens(origens) {
@@ -1586,8 +1607,6 @@ async function carregar({ automatico = false } = {}) {
     // escondida, busca na hora em que for aberta (abrirParte). Assim o resto não espera por ela.
     vendedoresPendente = { filtros, minhaCarga };
     if (parteAtual === 'vendedores') carregarParteVendedores();
-    clientesPendente = { filtros, minhaCarga };
-    if (parteAtual === 'clientes') carregarParteClientes();
 
     filtrosCarregados = { ...filtros };
     diaDaUltimaCarga = hojeISO();
@@ -1869,22 +1888,15 @@ function marcarAtalho(ativo) {
 }
 
 // ===== Início =====
-// Sub-telas das vendas: Resumo (com os gráficos) | Vendedores | Clientes | Caixa das lojas.
+// Sub-telas das vendas: Resumo (com os gráficos) | Vendedores | Caixa das lojas.
 // Só a parte escolhida aparece; os números já carregados continuam valendo (trocar de sub-tela
 // não vai ao banco de novo). O endereço guarda a sub-tela (index.html#caixa), e os endereços
 // antigos (#parte-caixa) continuam funcionando.
 // Os gráficos ficam no Resumo (nov/2026): o endereço antigo #graficos abre o Resumo
-const PARTES_VENDAS = ['resumo', 'vendedores', 'clientes', 'caixa'];
+const PARTES_VENDAS = ['resumo', 'vendedores', 'caixa'];
 let parteAtual = 'resumo';
 let vendedoresPendente = null; // carga da sub-tela Vendedores esperando ela ser aberta
-let clientesPendente = null;   // carga da sub-tela Clientes esperando ela ser aberta
 
-function carregarParteClientes() {
-  if (!clientesPendente) return;
-  const { filtros, minhaCarga } = clientesPendente;
-  clientesPendente = null;
-  if (typeof vendasClientes !== 'undefined') vendasClientes.carregar(filtros, minhaCarga);
-}
 
 function carregarParteVendedores() {
   if (!vendedoresPendente) return;
@@ -1908,7 +1920,6 @@ function abrirParte(nome) {
   // Gráfico desenhado com a parte escondida fica sem largura: redesenha ao abrir
   if (parteAtual === 'resumo') desenharGraficos();
   if (parteAtual === 'vendedores') carregarParteVendedores();
-  if (parteAtual === 'clientes') carregarParteClientes();
   // Endereço antigo dos gráficos: abre o Resumo já nos gráficos
   if (pedidoGraficos) el('parte-graficos').scrollIntoView({ block: 'start' });
   else window.scrollTo({ top: 0 });

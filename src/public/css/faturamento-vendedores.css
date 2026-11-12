@@ -212,3 +212,29 @@
   .tela-fat-vendedores .linha-barra { grid-template-columns: minmax(0, 1fr) auto; gap: 0.2rem 0.75rem; }
   .tela-fat-vendedores .linha-barra .barra-trilho { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* ===== Janela da análise do vendedor: abre pela direita, por cima da tela ===== */
+.tela-fat-vendedores .detalhe--lateral {
+  width: min(64rem, 100vw);
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0 0 0 auto;
+  border-radius: 0;
+  animation: janela-entra 0.18s ease-out;
+}
+.tela-fat-vendedores .detalhe--lateral .detalhe__corpo { overflow-y: auto; flex: 1; }
+.tela-fat-vendedores .detalhe--lateral .an-titulo[hidden] { display: none; }
+@keyframes janela-entra { from { transform: translateX(2rem); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .tela-fat-vendedores .detalhe--lateral { animation: none; } }
+/* Com a janela aberta, a tela de trás fica parada */
+body.com-janela { overflow: hidden; }
+
+@media (max-width: 720px) {
+  .tela-fat-vendedores .detalhe--lateral { width: 100vw; }
+  .tela-fat-vendedores .detalhe--lateral .detalhe__topo { padding: 0.9rem 1rem; gap: 0.6rem; }
+  .tela-fat-vendedores .detalhe--lateral .detalhe__acoes { width: 100%; display: flex; gap: 0.5rem; }
+  .tela-fat-vendedores .detalhe--lateral .detalhe__acoes button { flex: 1; min-height: 2.6rem; }
+  .tela-fat-vendedores .detalhe--lateral .detalhe__corpo { padding: 0 1rem 1.5rem; }
+  .tela-fat-vendedores .detalhe--lateral .status { margin: 0.4rem 1rem 0; }
+}

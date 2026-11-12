@@ -82,8 +82,8 @@
       <section class="bloco">
         <h2 id="titulo-vendedores">Notas por vendedor</h2>
         <p class="bloco__descricao">Notas fiscais de venda emitidas no período, pelo vendedor gravado na nota.
-          Ficam de fora as notas canceladas e as transferências entre lojas. Clique no vendedor para ver as notas dele,
-          ou em "com devolução" para ver só as que voltaram.</p>
+          Ficam de fora as notas canceladas e as transferências entre lojas. Clique no vendedor para abrir a análise dele,
+          ou em "com devolução" para ver só as notas que voltaram.</p>
         <div class="tabela-rolagem">
           <table class="tabela tabela-cartoes" id="tabela-vendedores">
             <thead></thead>
@@ -93,25 +93,8 @@
         </div>
       </section>
 
-      <!-- 3. Análise: sem vendedor = pico de vendas da equipe; com vendedor = análise do vendedor -->
-      <section class="bloco analise" id="analise">
-        <h2 id="titulo-analise">Pico de vendas</h2>
-        <p id="analise-descricao" class="bloco__descricao"></p>
-        <dl id="analise-numeros" class="analise-numeros"></dl>
-        <div class="analise-leitura" id="analise-leitura"></div>
-        <h3 class="analise-subtitulo" id="titulo-grafico-dias">Faturado por dia</h3>
-        <div id="grafico-dias" class="grafico-rolagem"></div>
-        <div class="analise-duas">
-          <div>
-            <h3 class="analise-subtitulo">Por dia da semana <small>(média por dia)</small></h3>
-            <div id="analise-semana"></div>
-          </div>
-          <div>
-            <h3 class="analise-subtitulo" id="titulo-clientes">Principais clientes</h3>
-            <div id="analise-clientes"></div>
-          </div>
-        </div>
-      </section>
+      <!-- 3. Pico de vendas da equipe (a análise de cada vendedor abre numa janela, ao clicar nele) -->
+      <section class="bloco analise" id="analise"></section>
 
       <!-- 4. As notas, uma página por vez -->
       <section class="bloco">
@@ -140,5 +123,41 @@
       </section>
     </div>
   </main>
+
+  <!-- Modelo da análise: usado na tela (equipe) e na janela do vendedor -->
+  <template id="modelo-analise">
+    <h2 class="an-titulo">Pico de vendas</h2>
+    <p class="bloco__descricao an-descricao"></p>
+    <dl class="analise-numeros an-numeros"></dl>
+    <div class="analise-leitura an-leitura"></div>
+    <h3 class="analise-subtitulo an-titulo-grafico">Faturado por dia</h3>
+    <div class="grafico-rolagem an-grafico"></div>
+    <div class="analise-duas">
+      <div>
+        <h3 class="analise-subtitulo">Por dia da semana <small>(média por dia)</small></h3>
+        <div class="an-semana"></div>
+      </div>
+      <div>
+        <h3 class="analise-subtitulo an-titulo-clientes">Principais clientes</h3>
+        <div class="an-clientes"></div>
+      </div>
+    </div>
+  </template>
+
+  <!-- Janela da análise do vendedor: abre por cima, sem recarregar a tela -->
+  <dialog id="janela-vendedor" class="detalhe detalhe--lateral" aria-labelledby="janela-vendedor-titulo">
+    <header class="detalhe__topo">
+      <div>
+        <h2 id="janela-vendedor-titulo">Análise do vendedor</h2>
+        <p id="janela-vendedor-resumo" class="detalhe__resumo"></p>
+      </div>
+      <div class="detalhe__acoes">
+        <button id="janela-vendedor-notas" type="button" class="botao-secundario">Ver as notas na lista</button>
+        <button id="janela-vendedor-fechar" type="button" class="botao-secundario">Fechar</button>
+      </div>
+    </header>
+    <p id="janela-vendedor-status" class="status" role="status" aria-live="polite"></p>
+    <div id="janela-vendedor-corpo" class="detalhe__corpo analise"></div>
+  </dialog>
 </body>
 </html>

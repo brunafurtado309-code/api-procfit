@@ -182,6 +182,44 @@ async function resumo(filtros) {
   return recordset[0];
 }
 
+// Remessas que NÃO são venda, para mostrar ao lado do Resumo (não entram na venda líquida):
+//   bonificação = nota com CFOP 5.910/6.910;  freezer em comodato = CFOP 5.908/6.908.
+// Mesma regra da sub-tela Faturados por vendedor: sem notas canceladas, sem transferências e sem
+// as notas que o PROCFIT conta como venda (tipo 8 da VENDAS_ANALITICAS).
+async function remessas(filtros) {
+  const request = await criarRequest(filtros);
+  const { recordset } = await request.query(`
+    SELECT
+      SUM(CASE WHEN X.tipo = 'bonificacao' THEN 1 ELSE 0 END)           AS notas_bonificacao,
+      SUM(CASE WHEN X.tipo = 'bonificacao' THEN X.valor ELSE 0 END)     AS bonificado,
+      SUM(CASE WHEN X.tipo = 'comodato' THEN 1 ELSE 0 END)              AS comodatos,
+      SUM(CASE WHEN X.tipo = 'comodato' THEN X.valor ELSE 0 END)        AS valor_comodato
+    FROM (
+      SELECT ISNULL(T.TOTAL_GERAL, 0) AS valor,
+             CASE
+               WHEN EXISTS (SELECT 1 FROM NF_FATURAMENTO_PRODUTOS NP WITH (NOLOCK)
+                            WHERE NP.NF_FATURAMENTO = N.NF_FATURAMENTO AND NP.CFOP IN ('5.910', '6.910')) THEN 'bonificacao'
+               WHEN EXISTS (SELECT 1 FROM NF_FATURAMENTO_PRODUTOS NP WITH (NOLOCK)
+                            WHERE NP.NF_FATURAMENTO = N.NF_FATURAMENTO AND NP.CFOP IN ('5.908', '6.908')) THEN 'comodato'
+             END AS tipo
+      FROM NF_FATURAMENTO N WITH (NOLOCK)
+      JOIN NF_FATURAMENTO_TOTAIS T WITH (NOLOCK) ON T.NF_FATURAMENTO = N.NF_FATURAMENTO
+      WHERE N.MOVIMENTO >= CAST(@inicio AS date)
+        AND N.MOVIMENTO < DATEADD(day, 1, CAST(@fim AS date))
+        AND (@empresa IS NULL OR N.EMPRESA = @empresa)
+        AND NOT EXISTS (SELECT 1 FROM CANCELAMENTOS_NOTAS_FISCAIS NC WITH (NOLOCK)
+                        WHERE NC.TIPO = 1 AND NC.CHAVE = N.NF_FATURAMENTO AND NC.PROTOCOLO IS NOT NULL)
+        AND NOT EXISTS (SELECT 1 FROM NF_FATURAMENTO_TRANSF X WITH (NOLOCK)
+                        WHERE X.NF_FATURAMENTO = N.NF_FATURAMENTO)
+        AND NOT EXISTS (SELECT 1 FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
+                        WHERE VA.DOCUMENTO_TIPO = 8 AND VA.DOCUMENTO_NUMERO = N.NF_NUMERO AND VA.EMPRESA = N.EMPRESA)
+    ) X
+    WHERE X.tipo IS NOT NULL
+    OPTION (RECOMPILE)
+  `);
+  return recordset[0];
+}
+
 // Evolução dia a dia
 async function porDia(filtros) {
   const request = await criarRequest(filtros);
@@ -864,7 +902,7 @@ async function variacaoClientes(filtros, limite) {
 }
 
 module.exports = {
-  resumo, porDia, porLoja, porOrigem, porVendedor, notasDoVendedor, nomeDoVendedor,
+  resumo, remessas, porDia, porLoja, porOrigem, porVendedor, notasDoVendedor, nomeDoVendedor,
   porOperador, cuponsDoOperador, caixasDoOperador, nomeDoOperador, itensDoDocumento, topProdutos,
   maioresVendas, variacaoClientes,
   LIMITE_NOTAS,
