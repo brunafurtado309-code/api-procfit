@@ -1534,6 +1534,7 @@ async function carregar({ automatico = false } = {}) {
     // Gráficos carregam à parte: se falharem, o resto do painel continua
     carregarGraficos(filtros, minhaCarga);
     carregarMaioresVendas(filtros, minhaCarga);
+    carregarVariacaoClientes(filtros, minhaCarga);
     // Sub-tela Vendedores (controle e funil): só busca quando ela está aberta; se estiver
     // escondida, busca na hora em que for aberta (abrirParte). Assim o resto não espera por ela.
     vendedoresPendente = { filtros, minhaCarga };
@@ -1658,6 +1659,80 @@ async function carregarMaioresVendas(filtros, minhaCarga) {
     if (minhaCarga !== cargaAtual || erro instanceof ChaveInvalida) return;
     console.error('Maiores vendas:', erro);
     alvo.textContent = 'Não foi possível carregar as maiores vendas agora.';
+  }
+}
+
+// ===== Clientes que compram menos ou deixaram de comprar =====
+// Compara com o MESMO intervalo do mês anterior (/vendas/variacao-clientes).
+function numeroVariacao(titulo, valor, nota, alerta = false) {
+  const caixa = document.createElement('div');
+  caixa.className = 'numero';
+  const dt = document.createElement('dt');
+  dt.textContent = titulo;
+  const dd = document.createElement('dd');
+  dd.textContent = valor;
+  if (alerta) dd.className = 'negativo';
+  caixa.append(dt, dd);
+  if (nota) {
+    const n = document.createElement('dd');
+    n.className = 'nota';
+    n.textContent = nota;
+    caixa.append(n);
+  }
+  return caixa;
+}
+
+async function carregarVariacaoClientes(filtros, minhaCarga) {
+  const vazio = (id, texto) => { el(id).textContent = texto; };
+  try {
+    const { resumo: r, deixaram, compramMenos } = await buscar('variacao-clientes', filtros);
+    if (minhaCarga !== cargaAtual) return;
+    const pct = (parte, todo) => (todo ? `${(parte / todo * 100).toFixed(1).replace('.', ',')}%` : '—');
+    el('variacao-descricao').textContent = `Clientes identificados de ${dataBR(filtros.inicio)} a ${dataBR(filtros.fim)}, `
+      + `comparados com o mesmo intervalo do mês anterior (${dataBR(r.inicio_anterior)} a ${dataBR(r.fim_anterior)}). `
+      + 'Venda líquida de notas e caixa; consumidor sem cadastro fica de fora.';
+    el('variacao-numeros').replaceChildren(
+      numeroVariacao('Clientes comprando', inteiro.format(r.clientes_atual ?? 0),
+        `eram ${inteiro.format(r.clientes_anterior ?? 0)} no mês anterior`),
+      numeroVariacao('Deixaram de comprar', inteiro.format(r.deixaram ?? 0),
+        `${pct(r.deixaram, r.clientes_anterior)} da carteira · compravam ${moeda.format(Number(r.valor_deixaram) || 0)}`, Number(r.deixaram) > 0),
+      numeroVariacao('Compram menos', inteiro.format(r.compram_menos ?? 0),
+        `deixaram de comprar ${moeda.format(Number(r.valor_menos) || 0)}`, Number(r.compram_menos) > 0),
+      numeroVariacao('Clientes novos', inteiro.format(r.novos ?? 0),
+        `${moeda.format(Number(r.valor_novos) || 0)} · ${inteiro.format(r.compram_mais ?? 0)} compram mais`),
+    );
+
+    el('titulo-deixaram').textContent = `Deixaram de comprar (${inteiro.format(r.deixaram ?? 0)})`;
+    if (!deixaram.length) vazio('barras-deixaram', 'Nenhum cliente deixou de comprar.');
+    else {
+      const maior = Number(deixaram[0].anterior) || 1;
+      el('barras-deixaram').replaceChildren(...deixaram.map((c) => linhaDeBarra(
+        c.cliente || `Cliente ${c.cod_cliente}`,
+        `${c.vendedor || 'Sem vendedor'} · última compra ${c.ultima_compra ? dataBR(c.ultima_compra) : 'há mais de 6 meses'}`,
+        moeda.format(Number(c.anterior) || 0), 'comprava no mês anterior', (Number(c.anterior) || 0) / maior,
+      )));
+    }
+
+    el('titulo-compram-menos').textContent = `Compram menos (${inteiro.format(r.compram_menos ?? 0)}, queda de 20% ou mais)`;
+    if (!compramMenos.length) vazio('barras-compram-menos', 'Nenhum cliente com queda de 20% ou mais.');
+    else {
+      const maior = Number(compramMenos[0].queda) || 1;
+      el('barras-compram-menos').replaceChildren(...compramMenos.map((c) => {
+        const queda = Number(c.anterior) ? (Number(c.queda) / Number(c.anterior)) * 100 : 0;
+        return linhaDeBarra(
+          c.cliente || `Cliente ${c.cod_cliente}`,
+          `${c.vendedor || 'Sem vendedor'} · era ${moeda.format(Number(c.anterior) || 0)}, agora ${moeda.format(Number(c.atual) || 0)}`,
+          `−${moeda.format(Number(c.queda) || 0)}`, `queda de ${queda.toFixed(0)}%`, (Number(c.queda) || 0) / maior,
+        );
+      }));
+    }
+    for (const id of ['barras-deixaram', 'barras-compram-menos']) el(id).classList.add('barras--queda');
+  } catch (erro) {
+    if (minhaCarga !== cargaAtual || erro instanceof ChaveInvalida) return;
+    console.error('Variação dos clientes:', erro);
+    el('variacao-numeros').replaceChildren();
+    vazio('barras-deixaram', 'Não foi possível carregar a variação dos clientes agora.');
+    vazio('barras-compram-menos', '');
   }
 }
 

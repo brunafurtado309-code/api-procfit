@@ -2977,6 +2977,10 @@ button:hover,
   font-size: var(--texto-mini);
   font-weight: 400;
   color: var(--tinta-suave);
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal; /* o detalhe (vendedor, última compra, era/agora) aparece inteiro */
 }
+/* Clientes que compram menos (Resumo): barras de queda em laranja */
+.variacao-listas { margin-top: 1rem; }
+.variacao-subtitulo { margin: 0.5rem 0 0.3rem; font-size: 0.95rem; font-weight: 600; }
+.barras--queda .barra-preenchida { background: var(--alerta); }
+.barras--queda .barra-valor { color: var(--alerta); }

@@ -333,13 +333,16 @@ async function pesquisar(query) {
 
 const topProdutos = (query) =>
   repo.topProdutos(montarFiltros(query), montarLimite(query.limite));
+// "Clientes que compram menos" (Resumo): até 15 em cada lista
+const variacaoClientes = (query) =>
+  repo.variacaoClientes(montarFiltros(query), query.limite ? montarLimite(query.limite) : 15);
 // Gráfico "Maiores vendas do período" (Resumo)
 const maioresVendas = (query) =>
   repo.maioresVendas(montarFiltros(query), montarLimite(query.limite));
 
 module.exports = {
   resumo, porDia, porLoja, porOrigem, porVendedor, notasDoVendedor,
-  porOperador, cuponsDoOperador, caixasDoOperador, pesquisar, topProdutos, maioresVendas,
+  porOperador, cuponsDoOperador, caixasDoOperador, pesquisar, topProdutos, maioresVendas, variacaoClientes,
   todasNotas, todosCupons, listaDevolucoes, listaDescontos, itensDoDocumento,
   montarFiltros, montarLimite,
 };

@@ -38,6 +38,7 @@ module.exports = {
   porOperador: acao(service.porOperador),
   topProdutos: acao(service.topProdutos),
   maioresVendas: acao(service.maioresVendas),
+  variacaoClientes: acao(service.variacaoClientes),
   // Janelas de detalhe da tela de vendas (o service ja tinha, faltava ligar)
   notasDoVendedor: acao(service.notasDoVendedor),
   cuponsDoOperador: acao(service.cuponsDoOperador),

@@ -17,6 +17,7 @@ router.get('/por-vendedor', controller.porVendedor);
 router.get('/por-operador', controller.porOperador); // NOVO: vendas por operador de caixa
 router.get('/top-produtos', controller.topProdutos);
 router.get('/maiores-vendas', controller.maioresVendas); // gráfico do Resumo
+router.get('/variacao-clientes', controller.variacaoClientes); // clientes que compram menos (Resumo)
 
 // Janelas de detalhe (clique no nome do vendedor/operador, nos cartões e na pesquisa)
 router.get('/vendedores/:vendedor/notas', controller.notasDoVendedor);

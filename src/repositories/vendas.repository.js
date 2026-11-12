@@ -790,10 +790,83 @@ async function maioresVendas(filtros, limite) {
   return recordset;
 }
 
+// Variação dos clientes: compara o que cada cliente comprou no período com o MESMO intervalo do
+// mês anterior (ex.: 01 a 12/11 contra 01 a 12/10). Venda líquida da VENDAS_ANALITICAS (notas e
+// caixa, menos devoluções), só de cliente identificado (venda de consumidor sem cadastro fica fora).
+//   - deixou de comprar: comprou no intervalo anterior e não comprou nada neste;
+//   - compra menos: comprou nos dois, mas caiu 20% ou mais.
+// A "última compra" do cliente que sumiu olha até 6 meses para trás.
+const QUEDA_MINIMA = 0.2;
+
+async function variacaoClientes(filtros, limite) {
+  const request = await criarRequest(filtros);
+  request.input('limite', sql.Int, limite);
+  request.input('queda', sql.Decimal(5, 2), QUEDA_MINIMA);
+  const { recordsets } = await request.query(`
+    SET NOCOUNT ON;
+    IF OBJECT_ID('tempdb..#CLI') IS NOT NULL DROP TABLE #CLI;
+    DECLARE @ini_ant date = DATEADD(month, -1, CAST(@inicio AS date));
+    DECLARE @fim_ant date = DATEADD(month, -1, CAST(@fim AS date));
+
+    SELECT VA.CLIENTE AS cliente,
+           SUM(CASE WHEN VA.MOVIMENTO >= CAST(@inicio AS date) THEN VA.VENDA_LIQUIDA ELSE 0 END) AS atual,
+           SUM(CASE WHEN VA.MOVIMENTO <= @fim_ant THEN VA.VENDA_LIQUIDA ELSE 0 END)              AS anterior,
+           -- vendedor que mais vendeu para o cliente no intervalo anterior (aproximação: o maior código)
+           MAX(CASE WHEN VA.MOVIMENTO <= @fim_ant THEN VA.VENDEDOR END)                          AS cod_vendedor
+    INTO #CLI
+    FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
+    WHERE ((VA.MOVIMENTO BETWEEN CAST(@inicio AS date) AND CAST(@fim AS date))
+        OR (VA.MOVIMENTO BETWEEN @ini_ant AND @fim_ant))
+      AND (@empresa IS NULL OR VA.EMPRESA = @empresa)
+      AND ISNULL(VA.DOCUMENTO_TIPO, 0) <> 20
+      AND VA.CLIENTE > 0
+    GROUP BY VA.CLIENTE
+    OPTION (RECOMPILE);
+
+    -- [0] Resumo
+    SELECT
+      CONVERT(varchar(10), @ini_ant, 23) AS inicio_anterior,
+      CONVERT(varchar(10), @fim_ant, 23) AS fim_anterior,
+      SUM(CASE WHEN anterior > 0 THEN 1 ELSE 0 END)                         AS clientes_anterior,
+      SUM(CASE WHEN atual > 0 THEN 1 ELSE 0 END)                            AS clientes_atual,
+      SUM(CASE WHEN anterior > 0 AND atual <= 0 THEN 1 ELSE 0 END)          AS deixaram,
+      SUM(CASE WHEN anterior > 0 AND atual <= 0 THEN anterior ELSE 0 END)   AS valor_deixaram,
+      SUM(CASE WHEN anterior > 0 AND atual > 0 AND atual <= anterior * (1 - @queda) THEN 1 ELSE 0 END) AS compram_menos,
+      SUM(CASE WHEN anterior > 0 AND atual > 0 AND atual <= anterior * (1 - @queda) THEN anterior - atual ELSE 0 END) AS valor_menos,
+      SUM(CASE WHEN anterior > 0 AND atual > anterior * (1 + @queda) THEN 1 ELSE 0 END) AS compram_mais,
+      SUM(CASE WHEN anterior <= 0 AND atual > 0 THEN 1 ELSE 0 END)          AS novos,
+      SUM(CASE WHEN anterior <= 0 AND atual > 0 THEN atual ELSE 0 END)      AS valor_novos
+    FROM #CLI;
+
+    -- [1] Deixaram de comprar (os que mais compravam primeiro)
+    SELECT TOP (@limite) C.cliente AS cod_cliente, LTRIM(RTRIM(E.NOME)) AS cliente, C.anterior,
+           C.cod_vendedor, LTRIM(RTRIM(V.NOME)) AS vendedor,
+           (SELECT CONVERT(varchar(10), MAX(X.MOVIMENTO), 23) FROM VENDAS_ANALITICAS X WITH (NOLOCK)
+             WHERE X.CLIENTE = C.cliente AND X.MOVIMENTO >= DATEADD(month, -6, CAST(@inicio AS date))
+               AND X.MOVIMENTO <= CAST(@fim AS date) AND X.VENDA_LIQUIDA > 0
+               AND (@empresa IS NULL OR X.EMPRESA = @empresa)) AS ultima_compra
+    FROM #CLI C
+    LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = C.cliente
+    LEFT JOIN VENDEDORES V WITH (NOLOCK) ON V.VENDEDOR = C.cod_vendedor
+    WHERE C.anterior > 0 AND C.atual <= 0
+    ORDER BY C.anterior DESC;
+
+    -- [2] Compram menos (as maiores quedas em reais primeiro)
+    SELECT TOP (@limite) C.cliente AS cod_cliente, LTRIM(RTRIM(E.NOME)) AS cliente, C.anterior, C.atual,
+           C.anterior - C.atual AS queda, C.cod_vendedor, LTRIM(RTRIM(V.NOME)) AS vendedor
+    FROM #CLI C
+    LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = C.cliente
+    LEFT JOIN VENDEDORES V WITH (NOLOCK) ON V.VENDEDOR = C.cod_vendedor
+    WHERE C.anterior > 0 AND C.atual > 0 AND C.atual <= C.anterior * (1 - @queda)
+    ORDER BY C.anterior - C.atual DESC;
+  `);
+  return { resumo: recordsets[0][0], deixaram: recordsets[1], compramMenos: recordsets[2] };
+}
+
 module.exports = {
   resumo, porDia, porLoja, porOrigem, porVendedor, notasDoVendedor, nomeDoVendedor,
   porOperador, cuponsDoOperador, caixasDoOperador, nomeDoOperador, itensDoDocumento, topProdutos,
-  maioresVendas,
+  maioresVendas, variacaoClientes,
   LIMITE_NOTAS,
   nomearTabelas, // usado também pelo detalhe do pedido
 };
