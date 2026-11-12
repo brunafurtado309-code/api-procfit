@@ -23,6 +23,7 @@ let notas = [];
 let ordem = { coluna: 'dia', direcao: 'desc' };
 let pagina = 1;
 let porPagina = paginacao.lembrar('faturamento-vendedores', 20);
+let soDevolucao = false; // botão "Só com devolução": a lista mostra só as notas que voltaram
 
 const TEMPO_LIMITE_MS = 60000;
 
@@ -65,6 +66,7 @@ const filtrosAtuais = () => ({
   fim: el('fim').value || null,
   busca: el('pesquisa-termo').value.trim() || null,
   vendedor: el('filtro-vendedor').value || null,
+  devolucao: soDevolucao ? 1 : null,
   empresa: (typeof modulos !== 'undefined' ? modulos.lojaAtual() : '') || null,
 });
 
@@ -92,6 +94,35 @@ function comAuxiliar(texto, auxiliar, classe, classeAuxiliar = 'qtd') {
   const celula = td(texto, classe);
   if (auxiliar) celula.append(span(auxiliar, classeAuxiliar));
   return celula;
+}
+
+// Celular: cada célula ganha o nome da coluna (o CSS mostra em cima do valor, no cartão)
+function rotular(tabela) {
+  const nomes = [...tabela.tHead.rows[0].cells].map((th) => th.textContent.replace(/[▲▼↕]/g, '').trim());
+  for (const linha of [...tabela.tBodies[0].rows, ...tabela.tFoot.rows]) {
+    let coluna = 0;
+    for (const celula of linha.cells) {
+      if (nomes[coluna]) celula.dataset.rotulo = nomes[coluna];
+      coluna += celula.colSpan || 1;
+    }
+  }
+}
+
+function marcarDevolucao() {
+  const botao = el('so-devolucao');
+  botao.classList.toggle('atalho--ativo', soDevolucao);
+  botao.setAttribute('aria-pressed', String(soDevolucao));
+}
+
+// Selo da devolução: "total" (voltou a nota inteira) ou "parcial"
+function seloDevolucao(n) {
+  const caixa = document.createDocumentFragment();
+  const tipo = n.devolucao_tipo === 'total' ? 'total' : 'parcial';
+  caixa.append(span(tipo === 'total' ? 'Total' : 'Parcial', `selo-devolucao selo-devolucao--${tipo}`));
+  const dia = n.devolucao_dia ? dataBR(n.devolucao_dia).slice(0, 5) : '';
+  const vezes = Number(n.devolucoes) > 1 ? ` (${n.devolucoes} devoluções)` : '';
+  caixa.append(span(`NF ${n.nota_devolucao ?? '—'}${dia ? ` · ${dia}` : ''}${vezes}`, 'devolucao-nf'));
+  return caixa;
 }
 
 function cabecalho(tabela, colunas, ordenar) {
@@ -156,6 +187,7 @@ async function carregar() {
     preencherSeletor();
     mostrarResumo();
     mostrarVendedores();
+    mostrarAnalise(dados);
     mostrarNotas();
     const passou = dados.totalNotas > notas.length;
     el('aviso-limite').hidden = !passou;
@@ -229,22 +261,40 @@ function mostrarVendedores() {
     const linha = document.createElement('tr');
     linha.className = `linha-dia${ativo ? ' linha-dia--aberta' : ''}`;
     linha.title = ativo ? 'Voltar para as notas de todos' : 'Ver as notas deste vendedor';
+    const celulaNotas = td(inteiro(v.notas));
+    // "2 com devolução": abre só as notas devolvidas deste vendedor
+    if (Number(v.notas_devolvidas)) {
+      const botao = document.createElement('button');
+      botao.type = 'button';
+      botao.className = 'link-devolucao';
+      botao.textContent = plural(v.notas_devolvidas, 'com devolução', 'com devolução');
+      botao.title = 'Ver só as notas deste vendedor que tiveram devolução';
+      botao.addEventListener('click', (evento) => {
+        evento.stopPropagation();
+        el('filtro-vendedor').value = String(v.cod_vendedor);
+        soDevolucao = true;
+        marcarDevolucao();
+        carregar().then(() => el('titulo-notas').scrollIntoView({ behavior: 'smooth', block: 'start' }));
+      });
+      celulaNotas.append(botao);
+    }
     linha.append(
-      comAuxiliar(v.vendedor ?? `Vendedor ${v.cod_vendedor}`, `código ${v.cod_vendedor}`, 'esquerda'),
-      comAuxiliar(inteiro(v.notas), Number(v.notas_devolvidas)
-        ? plural(v.notas_devolvidas, 'com devolução', 'com devolução') : null, null, 'qtd negativo'),
+      comAuxiliar(v.vendedor ?? `Vendedor ${v.cod_vendedor}`, `código ${v.cod_vendedor}`, 'esquerda cel-titulo'),
+      celulaNotas,
       td(inteiro(v.clientes)),
       td(dinheiro(v.valor)),
       td(porcento(Number(v.valor) || 0, total)),
       td(Number(v.notas) ? dinheiro(Number(v.valor) / Number(v.notas)) : '—'),
       td(devolvido > 0.009 ? dinheiro(devolvido) : '—', devolvido > 0.009 ? 'negativo' : null),
       td(dinheiro(v.liquido), 'coluna-final'),
-      td(span(ativo ? 'Mostrar todos' : 'Ver notas →', 'atencao__ver'), 'esquerda sem-quebra'),
+      td(span(ativo ? 'Mostrar todos' : 'Ver notas →', 'atencao__ver'), 'esquerda sem-quebra cel-acao'),
     );
     linha.addEventListener('click', () => {
       el('filtro-vendedor').value = ativo ? '' : String(v.cod_vendedor);
+      if (ativo) { soDevolucao = false; marcarDevolucao(); }
+      // Ao escolher um vendedor, a tela desce até a análise dele
       carregar().then(() => {
-        if (!ativo) el('titulo-notas').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (!ativo) el('titulo-analise').scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     });
     return linha;
@@ -254,7 +304,7 @@ function mostrarVendedores() {
   const qtd = somar(vendedores, 'notas');
   const devolvido = somar(vendedores, 'devolvido');
   rodape.append(
-    td('Total', 'esquerda'),
+    td('Total', 'esquerda cel-titulo'),
     td(inteiro(qtd)),
     td(''),
     td(dinheiro(total)),
@@ -265,9 +315,297 @@ function mostrarVendedores() {
     td(''),
   );
   tabela.tFoot.replaceChildren(rodape);
+  rotular(tabela);
 }
 
-// ===== 3. Lista de notas =====
+// ===== 3. Análise (olhar de gestor de vendas) =====
+// Sem vendedor escolhido: o pico de vendas da equipe. Com vendedor: a análise dele, comparada
+// com a equipe e com o mesmo intervalo do mês anterior. Tudo calculado com os dados já carregados.
+const DIAS_SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+const pct = (n, casas = 1) => `${(Number(n) || 0).toFixed(casas).replace('.', ',')}%`;
+const diaDaSemana = (iso) => new Date(`${iso}T12:00:00`).getDay();
+
+// Todos os dias do período (dia sem nota entra com zero no gráfico)
+function diasDoPeriodo(inicio, fim) {
+  const dias = [];
+  for (let d = new Date(`${inicio}T12:00:00`); formatarData(d) <= fim; d.setDate(d.getDate() + 1)) {
+    dias.push(formatarData(d));
+  }
+  return dias;
+}
+
+function numero(titulo, valor, detalhe, classeDetalhe) {
+  const caixa = document.createElement('div');
+  const dt = document.createElement('dt');
+  dt.textContent = titulo;
+  const dd = document.createElement('dd');
+  dd.textContent = valor;
+  if (detalhe) {
+    const pequeno = document.createElement('small');
+    pequeno.textContent = detalhe;
+    if (classeDetalhe) pequeno.className = classeDetalhe;
+    dd.append(pequeno);
+  }
+  caixa.append(dt, dd);
+  return caixa;
+}
+
+function linhaBarra(nome, detalheNome, valor, detalheValor, fracao, pico) {
+  const linha = document.createElement('div');
+  linha.className = `linha-barra${pico ? ' linha-barra--pico' : ''}`;
+  const rotulo = span(nome, 'linha-barra__nome');
+  rotulo.title = nome;
+  if (detalheNome) {
+    const pequeno = document.createElement('small');
+    pequeno.textContent = detalheNome;
+    rotulo.append(pequeno);
+  }
+  const trilho = span('', 'barra-trilho');
+  const cheio = span('', 'barra-preenchida');
+  cheio.style.width = `${Math.max(0, Math.min(100, fracao * 100))}%`;
+  trilho.append(cheio);
+  const caixaValor = span(valor, 'linha-barra__valor');
+  if (detalheValor) {
+    const pequeno = document.createElement('small');
+    pequeno.textContent = detalheValor;
+    caixaValor.append(pequeno);
+  }
+  linha.append(rotulo, trilho, caixaValor);
+  return linha;
+}
+
+function variacao(atual, anterior) {
+  if (!(Number(anterior) > 0)) return null;
+  return ((Number(atual) - Number(anterior)) / Number(anterior)) * 100;
+}
+
+function mostrarAnalise(dados) {
+  const inicio = el('inicio').value;
+  const fim = el('fim').value;
+  const escolhido = el('filtro-vendedor').value;
+  const v = escolhido ? vendedores.find((x) => String(x.cod_vendedor) === escolhido) : null;
+  const campoValor = escolhido ? 'valor_vendedor' : 'valor';
+  const campoNotas = escolhido ? 'notas_vendedor' : 'notas';
+  const nome = v?.vendedor ?? (escolhido ? `Vendedor ${escolhido}` : '');
+  const primeiroNome = nome.split(' ')[0] || 'O vendedor';
+
+  // Equipe
+  const equipe = {
+    valor: somar(vendedores, 'valor'),
+    notas: somar(vendedores, 'notas'),
+    devolvido: somar(vendedores, 'devolvido'),
+    anterior: somar(vendedores, 'valor_anterior'),
+  };
+  const ativos = vendedores.filter((x) => Number(x.notas) > 0);
+  const ticketEquipe = equipe.notas ? equipe.valor / equipe.notas : 0;
+  const mediaPorVendedor = ativos.length ? equipe.valor / ativos.length : 0;
+  const devolucaoEquipe = equipe.valor ? (equipe.devolvido / equipe.valor) * 100 : 0;
+
+  // Quem está sendo analisado (vendedor ou equipe toda)
+  const alvo = v
+    ? { valor: Number(v.valor) || 0, notas: Number(v.notas) || 0, devolvido: Number(v.devolvido) || 0,
+      clientes: Number(v.clientes) || 0, anterior: Number(v.valor_anterior) || 0,
+      notasAnterior: Number(v.notas_anterior) || 0 }
+    : { valor: equipe.valor, notas: equipe.notas, devolvido: equipe.devolvido, clientes: null,
+      anterior: equipe.anterior, notasAnterior: somar(vendedores, 'notas_anterior') };
+  const ticket = alvo.notas ? alvo.valor / alvo.notas : 0;
+  const devolucaoPct = alvo.valor ? (alvo.devolvido / alvo.valor) * 100 : 0;
+  const crescimento = variacao(alvo.valor, alvo.anterior);
+
+  // Série por dia (com zeros) e picos
+  const porDia = new Map((dados.porDia ?? []).map((d) => [String(d.dia).slice(0, 10), d]));
+  const dias = diasDoPeriodo(inicio, fim);
+  const serie = dias.map((dia) => ({
+    dia,
+    valor: Number(porDia.get(dia)?.[campoValor]) || 0,
+    notas: Number(porDia.get(dia)?.[campoNotas]) || 0,
+  }));
+  const comVenda = serie.filter((d) => d.valor > 0);
+  const pico = comVenda.reduce((m, d) => (d.valor > (m?.valor ?? -1) ? d : m), null);
+  const mediaDia = comVenda.length ? alvo.valor / comVenda.length : 0;
+  // Dias úteis (segunda a sábado) do período sem nenhuma nota
+  const diasUteis = serie.filter((d) => diaDaSemana(d.dia) !== 0);
+  const semNota = diasUteis.filter((d) => d.valor === 0 && d.dia <= formatarData(new Date()));
+
+  // Média por dia da semana (só dias que já passaram, contando os sem venda)
+  const semana = DIAS_SEMANA.map((nomeDia, i) => {
+    const doDia = serie.filter((d) => diaDaSemana(d.dia) === i && d.dia <= formatarData(new Date()));
+    const total = doDia.reduce((t, d) => t + d.valor, 0);
+    return { nome: nomeDia, i, dias: doDia.length, total, media: doDia.length ? total / doDia.length : 0 };
+  }).filter((s) => s.dias > 0 && (s.i !== 0 || s.total > 0)); // domingo só se teve venda
+  const melhorSemana = semana.reduce((m, s) => (s.media > (m?.media ?? -1) ? s : m), null);
+  const piorSemana = semana.filter((s) => s.i !== 0)
+    .reduce((m, s) => (s.media < (m?.media ?? Infinity) ? s : m), null);
+
+  // Clientes
+  const clientes = dados.clientes ?? [];
+  const top3 = clientes.slice(0, 3).reduce((t, c) => t + (Number(c.valor) || 0), 0);
+  const concentracao = alvo.valor ? (top3 / alvo.valor) * 100 : 0;
+
+  // Projeção: só quando o período é o mês atual até hoje
+  const hoje = new Date();
+  const mesAtual = periodoPronto('mes');
+  let projecao = null;
+  if (inicio === mesAtual.inicio && fim === mesAtual.fim && hoje.getDate() > 1) {
+    const ultimo = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate();
+    const uteisAteHoje = diasUteis.length || 1;
+    let uteisNoMes = 0;
+    for (let d = 1; d <= ultimo; d += 1) {
+      if (new Date(hoje.getFullYear(), hoje.getMonth(), d).getDay() !== 0) uteisNoMes += 1;
+    }
+    projecao = (alvo.valor / uteisAteHoje) * uteisNoMes;
+  }
+
+  // ---- Título e descrição ----
+  el('titulo-analise').textContent = v ? `Análise de ${nome}` : 'Pico de vendas da equipe';
+  el('analise-descricao').textContent = v
+    ? `Como ${primeiroNome} está vendendo de ${dataBR(inicio)} a ${dataBR(fim)}, comparado com a equipe `
+      + `e com o mesmo intervalo do mês anterior (${dataBR(dados.anterior?.inicio)} a ${dataBR(dados.anterior?.fim)}).`
+    : `Quando a equipe mais vende, de ${dataBR(inicio)} a ${dataBR(fim)}. Clique num vendedor acima para ver a análise dele.`;
+
+  // ---- Números ----
+  const ranking = v ? vendedores.findIndex((x) => x === v) + 1 : null;
+  const numeros = [];
+  if (v) {
+    numeros.push(numero('Faturado', dinheiro(alvo.valor),
+      `${pct(equipe.valor ? (alvo.valor / equipe.valor) * 100 : 0)} da equipe · ${ranking}º de ${vendedores.length}`));
+  }
+  numeros.push(numero(v ? 'Mês anterior (mesmo intervalo)' : 'Comparado ao mês anterior',
+    crescimento === null ? '—' : `${crescimento >= 0 ? '+' : ''}${pct(crescimento)}`,
+    alvo.anterior > 0 ? `era ${dinheiro(alvo.anterior)}` : 'sem nota no mês anterior',
+    crescimento === null ? null : crescimento >= 0 ? 'sobe' : 'desce'));
+  numeros.push(numero('Ticket médio', dinheiro(ticket),
+    v && ticketEquipe ? `equipe ${dinheiro(ticketEquipe)} (${ticket >= ticketEquipe ? '+' : ''}${pct(((ticket / ticketEquipe) - 1) * 100, 0)})` : `${plural(alvo.notas, 'nota', 'notas')}`));
+  numeros.push(numero('Pico de vendas', pico ? dinheiro(pico.valor) : '—',
+    pico ? `${DIAS_SEMANA[diaDaSemana(pico.dia)].toLowerCase()}, ${dataBR(pico.dia).slice(0, 5)} · ${plural(pico.notas, 'nota', 'notas')}` : null));
+  numeros.push(numero('Média por dia com venda', dinheiro(mediaDia),
+    `${plural(comVenda.length, 'dia', 'dias')} com nota de ${plural(diasUteis.length, 'dia útil', 'dias úteis')}`));
+  if (v) {
+    numeros.push(numero('Clientes atendidos', inteiro(alvo.clientes),
+      alvo.clientes ? `${(alvo.notas / alvo.clientes).toFixed(1).replace('.', ',')} notas por cliente` : null));
+  }
+  numeros.push(numero('Devolução', pct(devolucaoPct), v ? `equipe ${pct(devolucaoEquipe)}` : dinheiro(alvo.devolvido),
+    devolucaoPct > Math.max(1, devolucaoEquipe * 1.5) ? 'desce' : null));
+  if (projecao !== null) {
+    numeros.push(numero('Se mantiver o ritmo', dinheiro(projecao), 'projeção do mês (dias úteis)'));
+  }
+  el('analise-numeros').replaceChildren(...numeros);
+
+  // ---- Leitura do gestor ----
+  const fortes = [];
+  const atencao = [];
+  if (v) {
+    if (ranking === 1) fortes.push(`Maior faturamento da equipe no período (${pct((alvo.valor / equipe.valor) * 100)} do total).`);
+    else if (alvo.valor >= mediaPorVendedor) fortes.push(`Fatura acima da média por vendedor (${dinheiro(mediaPorVendedor)}): está em ${ranking}º de ${vendedores.length}.`);
+    else atencao.push(`Fatura abaixo da média por vendedor: ${dinheiro(alvo.valor)} contra ${dinheiro(mediaPorVendedor)} (${ranking}º de ${vendedores.length}).`);
+    if (ticketEquipe) {
+      const dif = ((ticket / ticketEquipe) - 1) * 100;
+      if (dif >= 10) fortes.push(`Ticket médio ${pct(dif, 0)} acima da equipe: vende pedidos maiores (${dinheiro(ticket)} por nota).`);
+      else if (dif <= -10) atencao.push(`Ticket médio ${pct(-dif, 0)} abaixo da equipe (${dinheiro(ticket)} contra ${dinheiro(ticketEquipe)}): vale trabalhar mix e quantidade por pedido.`);
+    }
+  }
+  if (crescimento !== null) {
+    if (crescimento >= 5) fortes.push(`Cresceu ${pct(crescimento)} sobre o mesmo intervalo do mês anterior.`);
+    else if (crescimento <= -5) atencao.push(`Caiu ${pct(-crescimento)} contra o mesmo intervalo do mês anterior (${dinheiro(alvo.anterior)}).`);
+    else fortes.push(`Estável em relação ao mês anterior (${crescimento >= 0 ? '+' : ''}${pct(crescimento)}).`);
+  } else if (v) {
+    atencao.push('Sem notas no mesmo intervalo do mês anterior: não dá para comparar a evolução ainda.');
+  }
+  if (pico && alvo.valor) {
+    const peso = (pico.valor / alvo.valor) * 100;
+    const texto = `Pico em ${DIAS_SEMANA[diaDaSemana(pico.dia)].toLowerCase()}, ${dataBR(pico.dia)}: ${dinheiro(pico.valor)} (${pct(peso, 0)} do período).`;
+    if (peso >= 25 && comVenda.length >= 4) atencao.push(`${texto} Muito concentrado num dia só: a venda depende de pedidos grandes pontuais.`);
+    else fortes.push(texto);
+  }
+  if (melhorSemana && piorSemana && melhorSemana !== piorSemana && piorSemana.media >= 0) {
+    fortes.push(`${melhorSemana.nome} é o dia mais forte (média de ${dinheiro(melhorSemana.media)}).`);
+    if (melhorSemana.media > 0 && piorSemana.media < melhorSemana.media * 0.5) {
+      atencao.push(`${piorSemana.nome} é o dia mais fraco (média de ${dinheiro(piorSemana.media)}): bom dia para ligar para a carteira e fazer pedidos.`);
+    }
+  }
+  if (semNota.length >= 2) {
+    atencao.push(`${plural(semNota.length, 'dia útil', 'dias úteis')} sem nenhuma nota${v ? ` de ${primeiroNome}` : ''}: `
+      + `${semNota.slice(-4).map((d) => dataBR(d.dia).slice(0, 5)).join(', ')}${semNota.length > 4 ? '…' : ''}.`);
+  }
+  if (v && clientes.length) {
+    if (concentracao >= 50) atencao.push(`Carteira concentrada: os 3 maiores clientes são ${pct(concentracao, 0)} do faturamento. Perder um deles pesa muito.`);
+    else fortes.push(`Carteira bem distribuída: os 3 maiores clientes são ${pct(concentracao, 0)} do faturamento.`);
+    if (alvo.clientes && alvo.notas / alvo.clientes >= 2) fortes.push(`Clientes voltam a comprar: ${(alvo.notas / alvo.clientes).toFixed(1).replace('.', ',')} notas por cliente no período.`);
+  }
+  if (alvo.devolvido > 0.009) {
+    if (devolucaoPct > Math.max(1, devolucaoEquipe * 1.5)) {
+      atencao.push(`Devolução de ${pct(devolucaoPct)} (${dinheiro(alvo.devolvido)}), acima da equipe (${pct(devolucaoEquipe)}): conferir o pedido com o cliente antes de fechar.`);
+    } else {
+      fortes.push(`Devolução sob controle: ${pct(devolucaoPct)} do faturado.`);
+    }
+  } else if (alvo.notas) {
+    fortes.push('Nenhuma devolução no período.');
+  }
+  if (!v && ativos.length) {
+    const lider = vendedores[0];
+    fortes.push(`${lider.vendedor ?? `Vendedor ${lider.cod_vendedor}`} lidera com ${dinheiro(lider.valor)} (${pct((lider.valor / equipe.valor) * 100)} da equipe).`);
+    const top2 = vendedores.slice(0, 2).reduce((t, x) => t + (Number(x.valor) || 0), 0);
+    if (vendedores.length > 3 && top2 / equipe.valor >= 0.4) {
+      atencao.push(`Os 2 maiores vendedores fazem ${pct((top2 / equipe.valor) * 100, 0)} do faturamento: a equipe depende muito deles.`);
+    }
+  }
+  if (projecao !== null) {
+    fortes.push(`No ritmo atual, ${v ? primeiroNome : 'a equipe'} fecha o mês em torno de ${dinheiro(projecao)}.`);
+  }
+
+  const bloco = (titulo, itens, classe) => {
+    const caixa = document.createElement('div');
+    caixa.className = classe;
+    const h = document.createElement('h3');
+    h.textContent = titulo;
+    const ul = document.createElement('ul');
+    ul.append(...itens.map((t) => { const li = document.createElement('li'); li.textContent = t; return li; }));
+    caixa.append(h, ul);
+    return caixa;
+  };
+  el('analise-leitura').replaceChildren(
+    bloco('Pontos fortes', fortes.length ? fortes : ['Sem destaque no período.'], 'leitura--forte'),
+    bloco('Pontos de atenção', atencao.length ? atencao : ['Nada fora do normal no período.'], 'leitura--atencao'),
+  );
+
+  // ---- Gráfico por dia: o pico em destaque ----
+  el('titulo-grafico-dias').textContent = v ? `Faturado por dia: ${primeiroNome}` : 'Faturado por dia: equipe';
+  graficos.colunas(el('grafico-dias'), {
+    titulo: el('titulo-grafico-dias').textContent,
+    altura: 230,
+    // No celular só o dia (05), para os rótulos não se encostarem
+    rotulos: serie.map((d) => (window.matchMedia('(max-width: 720px)').matches ? d.dia.slice(8, 10) : dataBR(d.dia).slice(0, 5))),
+    series: [{
+      nome: 'Faturado em nota',
+      valores: serie.map((d) => d.valor),
+      cores: serie.map((d) => (pico && d.dia === pico.dia ? 'var(--verde-escuro)'
+        : diaDaSemana(d.dia) === 0 ? 'var(--verde-claro)' : 'var(--verde)')),
+    }],
+    vazio: 'Nenhuma nota no período.',
+  });
+
+  // ---- Dia da semana ----
+  const maiorMedia = Math.max(0, ...semana.map((s) => s.media));
+  el('analise-semana').replaceChildren(...semana.map((s) => linhaBarra(
+    s.nome, `${plural(s.dias, 'dia', 'dias')} no período`, dinheiro(s.media), `total ${dinheiro(s.total)}`,
+    maiorMedia ? s.media / maiorMedia : 0, s === melhorSemana,
+  )));
+  if (!semana.length) el('analise-semana').textContent = 'Sem dias no período.';
+
+  // ---- Clientes ----
+  el('titulo-clientes').textContent = v ? `Principais clientes de ${primeiroNome}` : 'Principais clientes da equipe';
+  const maiorCliente = Math.max(0, ...clientes.map((c) => Number(c.valor) || 0));
+  el('analise-clientes').replaceChildren(...clientes.map((c, i) => linhaBarra(
+    c.cliente ?? `Cliente ${c.cod_cliente}`,
+    `${plural(c.notas, 'nota', 'notas')} · última ${dataBR(c.ultima_compra).slice(0, 5)}`
+      + `${Number(c.devolvido) > 0.009 ? ` · devolveu ${dinheiro(c.devolvido)}` : ''}`,
+    dinheiro(c.valor), alvo.valor ? `${pct((Number(c.valor) / alvo.valor) * 100)} do faturado` : null,
+    maiorCliente ? (Number(c.valor) || 0) / maiorCliente : 0, i === 0,
+  )));
+  if (!clientes.length) el('analise-clientes').textContent = 'Sem clientes no período.';
+}
+
+// ===== 4. Lista de notas =====
 function mostrarMarcadores() {
   const itens = [];
   const vendedor = el('filtro-vendedor');
@@ -276,6 +614,9 @@ function mostrarMarcadores() {
       texto: `Vendedor: ${vendedor.selectedOptions[0]?.textContent.replace(/ \(\d[\d.]*\)$/, '') ?? vendedor.value}`,
       remover: () => { vendedor.value = ''; },
     });
+  }
+  if (soDevolucao) {
+    itens.push({ texto: 'Só com devolução', remover: () => { soDevolucao = false; marcarDevolucao(); } });
   }
   const termo = el('pesquisa-termo').value.trim();
   if (termo) {
@@ -306,15 +647,22 @@ function mostrarNotas() {
     return String(x ?? '').localeCompare(String(y ?? ''), 'pt-BR', { sensitivity: 'base' }) * fator;
   });
   const vendedor = el('filtro-vendedor').value;
-  el('titulo-notas').textContent = vendedor
-    ? `Notas de ${vendedores.find((v) => String(v.cod_vendedor) === vendedor)?.vendedor ?? `vendedor ${vendedor}`}`
-      + ` (${inteiro(itens.length)})`
-    : `Notas (${inteiro(itens.length)})`;
+  const nomeVendedor = vendedores.find((v) => String(v.cod_vendedor) === vendedor)?.vendedor ?? `vendedor ${vendedor}`;
+  el('titulo-notas').textContent = `Notas${soDevolucao ? ' com devolução' : ''}`
+    + `${vendedor ? ` de ${nomeVendedor}` : ''} (${inteiro(itens.length)})`;
+  const ordemCelular = el('ordem-celular');
+  const escolhaCelular = `${ordem.coluna}:${ordem.direcao}`;
+  if ([...ordemCelular.options].some((o) => o.value === escolhaCelular)) ordemCelular.value = escolhaCelular;
 
+  // Com um vendedor escolhido, a coluna Vendedor só repetiria o nome: sai
+  const comVendedor = !vendedor;
+  const colunas = [['Nota', 'nota', true], ['Data', 'dia', true], ['Pedido', 'pedido', true],
+    ['Cliente', 'cliente', true]];
+  if (comVendedor) colunas.push(['Vendedor', 'vendedor', true]);
+  colunas.push(['Valor da nota', 'valor'], ['Devolução', 'nota_devolucao', true], ['Devolvido', 'devolvido'],
+    ['Líquido', 'liquido']);
   const tabela = el('tabela-notas');
-  cabecalho(tabela, [['Nota', 'nota', true], ['Data', 'dia', true], ['Pedido', 'pedido', true],
-    ['Cliente', 'cliente', true], ['Vendedor', 'vendedor', true], ['Valor da nota', 'valor'],
-    ['Devolvido', 'devolvido'], ['Líquido', 'liquido']], (coluna, direcao) => {
+  cabecalho(tabela, colunas, (coluna, direcao) => {
     ordem = { coluna, direcao };
     pagina = 1;
     mostrarNotas();
@@ -323,8 +671,8 @@ function mostrarNotas() {
   const linhas = [];
   if (!itens.length) {
     const linha = document.createElement('tr');
-    const vazio = td('Nenhuma nota com esses filtros.', 'vazio');
-    vazio.colSpan = 8;
+    const vazio = td(soDevolucao ? 'Nenhuma nota com devolução nesses filtros.' : 'Nenhuma nota com esses filtros.', 'vazio');
+    vazio.colSpan = colunas.length;
     linha.append(vazio);
     linhas.push(linha);
   }
@@ -346,23 +694,29 @@ function mostrarNotas() {
   for (const n of itens.slice(primeiro, primeiro + porPagina)) {
     const devolvido = Number(n.devolvido) || 0;
     const linha = document.createElement('tr');
+    if (n.tem_devolucao) linha.className = 'linha-devolvida';
     // Detalhes (empresa, desconto, NF de devolução) ficam no "passar o mouse" e no Excel,
     // para a linha caber na tela
-    const celulaNota = td(`NF ${n.nota}`, 'esquerda sem-quebra');
+    const celulaNota = td(`NF ${n.nota}`, 'esquerda sem-quebra cel-titulo');
     celulaNota.title = `Empresa ${n.empresa}`;
     const celulaValor = td(dinheiro(n.valor), 'sem-quebra');
     if (Number(n.desconto) > 0.009) celulaValor.title = `Desconto de ${dinheiro(n.desconto)}`;
     const celulaDevolvido = n.tem_devolucao
       ? td(devolvido > 0.009 ? dinheiro(devolvido) : 'sem valor', 'negativo sem-quebra')
       : td('—');
-    if (n.tem_devolucao) celulaDevolvido.title = `NF de devolução ${n.nota_devolucao ?? '—'} em ${dataBR(n.devolucao_dia)}`;
+    // Devolução à vista na linha: selo total/parcial + nº e dia da NF de devolução
+    const celulaDevolucao = n.tem_devolucao ? td(seloDevolucao(n), 'esquerda sem-quebra cel-largo') : td('', 'esquerda');
+    if (n.tem_devolucao) celulaDevolucao.title = `NF de devolução ${n.nota_devolucao ?? '—'} em ${dataBR(n.devolucao_dia)}`;
     linha.append(
       celulaNota,
       td(dataBR(n.dia), 'esquerda sem-quebra'),
       td(pedidoJanela.link(n.pedido), 'esquerda sem-quebra'),
-      td(n.cliente ?? `Cliente ${n.cod_cliente}`, 'esquerda'),
-      td(n.vendedor ?? `Vendedor ${n.cod_vendedor}`, 'esquerda'),
+      td(n.cliente ?? `Cliente ${n.cod_cliente}`, 'esquerda cel-largo'),
+    );
+    if (comVendedor) linha.append(td(n.vendedor ?? `Vendedor ${n.cod_vendedor}`, 'esquerda cel-largo'));
+    linha.append(
       celulaValor,
+      celulaDevolucao,
       celulaDevolvido,
       td(dinheiro(n.liquido), 'coluna-final sem-quebra'),
     );
@@ -371,11 +725,14 @@ function mostrarNotas() {
   tabela.tBodies[0].replaceChildren(...linhas);
 
   const rodape = document.createElement('tr');
-  const rotulo = td(`Total (${plural(itens.length, 'nota', 'notas')})`, 'esquerda');
-  rotulo.colSpan = 5;
-  rodape.append(rotulo, td(dinheiro(somar(itens, 'valor'))), td(dinheiro(somar(itens, 'devolvido'))),
-    td(dinheiro(somar(itens, 'liquido'))));
+  const rotulo = td(`Total (${plural(itens.length, 'nota', 'notas')})`, 'esquerda cel-titulo');
+  rotulo.colSpan = comVendedor ? 5 : 4;
+  const devolvidas = itens.filter((n) => n.tem_devolucao).length;
+  rodape.append(rotulo, td(dinheiro(somar(itens, 'valor'))),
+    td(devolvidas ? plural(devolvidas, 'nota devolvida', 'notas devolvidas') : '', 'esquerda'),
+    td(dinheiro(somar(itens, 'devolvido'))), td(dinheiro(somar(itens, 'liquido'))));
   tabela.tFoot.replaceChildren(rodape);
+  rotular(tabela);
 }
 
 // ===== Excel: aba "Por vendedor" + aba "Notas" =====
@@ -431,6 +788,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const guardado = estado.aplicarCampos('faturamento-vendedores', {
     inicio: 'inicio', fim: 'fim', busca: 'pesquisa-termo',
   });
+  soDevolucao = String(guardado.devolucao ?? '') === '1';
+  marcarDevolucao();
   // O vendedor guardado entra no seletor antes da primeira carga
   if (guardado.vendedor) {
     el('filtro-vendedor').append(new Option(`Vendedor ${guardado.vendedor}`, guardado.vendedor));
@@ -470,6 +829,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   el('filtro-vendedor').addEventListener('change', () => carregar());
   el('baixar-excel').addEventListener('click', baixarExcel);
+  el('so-devolucao').addEventListener('click', () => {
+    soDevolucao = !soDevolucao;
+    marcarDevolucao();
+    carregar();
+  });
+  el('ordem-celular').addEventListener('change', (evento) => {
+    const [coluna, direcao] = evento.target.value.split(':');
+    ordem = { coluna, direcao };
+    pagina = 1;
+    mostrarNotas();
+  });
 
   carregar();
 });

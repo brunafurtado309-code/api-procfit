@@ -1,0 +1,214 @@
+/* Faturamento > Faturados por vendedor.
+   Só desta tela (o visual geral continua no style.css). No celular as duas tabelas viram
+   cartões: cada célula mostra o nome da coluna em cima (data-rotulo, posto pelo JS). */
+
+/* --- Devolução: selo "total"/"parcial" e o número da NF de devolução --- */
+.tela-fat-vendedores .selo-devolucao {
+  display: inline-block;
+  margin-right: 0.4rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  font-size: var(--texto-mini);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--alerta);
+  background: var(--alerta-claro);
+  vertical-align: 0.05em;
+}
+.tela-fat-vendedores .selo-devolucao--total { color: #fff; background: var(--alerta); }
+.tela-fat-vendedores .devolucao-nf { color: var(--tinta-suave); white-space: nowrap; }
+.tela-fat-vendedores .tabela tr.linha-devolvida td:first-child { box-shadow: inset 3px 0 0 var(--alerta); }
+
+/* "2 com devolução" na tabela de vendedores: botão que filtra as notas devolvidas */
+.tela-fat-vendedores .link-devolucao {
+  display: block;
+  margin: 0.1rem 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--texto-mini);
+  font-weight: 600;
+  color: var(--alerta);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.tela-fat-vendedores .link-devolucao:hover { text-decoration-thickness: 2px; }
+
+/* Ordenar a lista: no computador é pelo cabeçalho da tabela, no celular por este seletor */
+.tela-fat-vendedores .ordem-celular { display: none; }
+
+/* ===== Celular ===== */
+@media (max-width: 720px) {
+  .tela-fat-vendedores .conteudo { padding-left: 0.75rem; padding-right: 0.75rem; }
+
+  /* Filtros: datas lado a lado, atalhos rolando de lado, botões largos */
+  .tela-fat-vendedores .filtros { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+  .tela-fat-vendedores .filtros label { min-width: 0; }
+  .tela-fat-vendedores .filtros input,
+  .tela-fat-vendedores .filtros select { width: 100%; max-width: none; }
+  .tela-fat-vendedores .filtros .atalhos {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.4rem;
+    overflow-x: auto;
+    padding-bottom: 0.2rem;
+    scrollbar-width: none;
+  }
+  .tela-fat-vendedores .filtros .atalhos button { flex: 0 0 auto; }
+  .tela-fat-vendedores .filtros .campo,
+  .tela-fat-vendedores .filtros #so-devolucao,
+  .tela-fat-vendedores .filtros .filtros__aplicar { grid-column: 1 / -1; width: 100%; min-height: 2.6rem; }
+  .tela-fat-vendedores .barra-filtros__linha { flex-wrap: wrap; }
+  .tela-fat-vendedores .pesquisa { flex-basis: 100%; }
+  .tela-fat-vendedores .barra-filtros__acoes { width: 100%; margin-left: 0; }
+  .tela-fat-vendedores .barra-filtros__acoes button { flex: 1; min-height: 2.6rem; }
+
+  .tela-fat-vendedores .destaque .valor-grande { font-size: 1.9rem; }
+  .tela-fat-vendedores .bloco__descricao { font-size: var(--texto-mini); }
+
+  .tela-fat-vendedores .ordem-celular { display: flex; align-items: center; gap: 0.4rem; margin-left: auto; }
+  .tela-fat-vendedores .ordem-celular select { min-height: 2.2rem; }
+  .tela-fat-vendedores .bloco-topo { flex-wrap: wrap; gap: 0.5rem; }
+
+  /* Tabelas viram cartões */
+  .tela-fat-vendedores .tabela-rolagem { overflow: visible; }
+  .tela-fat-vendedores .tabela-cartoes,
+  .tela-fat-vendedores .tabela-cartoes tbody,
+  .tela-fat-vendedores .tabela-cartoes tfoot { display: block; width: 100%; min-width: 0; }
+  .tela-fat-vendedores .tabela-cartoes thead { display: none; }
+  .tela-fat-vendedores .tabela-cartoes tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem 0.9rem;
+    margin-bottom: 0.6rem;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid var(--linha);
+    border-radius: 10px;
+    background: var(--superficie);
+  }
+  .tela-fat-vendedores .tabela-cartoes tr.linha-dia--aberta { border-color: var(--verde); }
+  .tela-fat-vendedores .tabela-cartoes tr.linha-devolvida { border-left: 3px solid var(--alerta); }
+  .tela-fat-vendedores .tabela.tabela-cartoes tr.linha-devolvida td:first-child { box-shadow: none; }
+  .tela-fat-vendedores .tabela.tabela-cartoes td {
+    display: block;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    text-align: left;
+    white-space: normal;
+  }
+  .tela-fat-vendedores .tabela-cartoes td:empty { display: none; }
+  .tela-fat-vendedores .tabela-cartoes td[data-rotulo]::before {
+    content: attr(data-rotulo);
+    display: block;
+    margin-bottom: 0.1rem;
+    font-size: var(--texto-mini);
+    font-weight: 400;
+    color: var(--tinta-suave);
+  }
+  /* Primeira linha do cartão (nome do vendedor / nº da nota) e as que ocupam a largura toda */
+  .tela-fat-vendedores .tabela-cartoes td.cel-titulo,
+  .tela-fat-vendedores .tabela-cartoes td.cel-largo,
+  .tela-fat-vendedores .tabela-cartoes td.cel-acao { grid-column: 1 / -1; }
+  .tela-fat-vendedores .tabela-cartoes td.cel-titulo { font-weight: 600; font-size: 0.95rem; }
+  .tela-fat-vendedores .tabela-cartoes td.cel-titulo::before,
+  .tela-fat-vendedores .tabela-cartoes td.cel-acao::before { display: none; }
+  .tela-fat-vendedores .tabela-cartoes td.cel-acao {
+    padding-top: 0.45rem;
+    border-top: 1px solid var(--linha);
+    text-align: center;
+  }
+  .tela-fat-vendedores .link-devolucao { margin: 0.15rem 0 0; }
+  .tela-fat-vendedores .tabela-cartoes td.vazio { grid-column: 1 / -1; text-align: center; }
+  /* Linha de total: um cartão verde */
+  .tela-fat-vendedores .tabela-cartoes tfoot tr { background: var(--verde-suave); border-color: var(--verde-claro); }
+  .tela-fat-vendedores .tabela-cartoes tfoot td { font-weight: 700; }
+}
+
+/* ===== Análise do vendedor / pico de vendas ===== */
+.tela-fat-vendedores .analise-subtitulo {
+  margin: 1.4rem 0 0.4rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.tela-fat-vendedores .analise-subtitulo small { font-weight: 400; color: var(--tinta-suave); }
+
+/* Números principais: em linha, separados por um fio (sem caixas) */
+.tela-fat-vendedores .analise-numeros {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 0;
+  margin: 0.8rem 0 0;
+}
+.tela-fat-vendedores .analise-numeros > div {
+  padding: 0.2rem 1rem;
+  border-left: 1px solid var(--linha);
+}
+.tela-fat-vendedores .analise-numeros > div:first-child { padding-left: 0; border-left: 0; }
+.tela-fat-vendedores .analise-numeros dt { font-size: var(--texto-mini); color: var(--tinta-suave); }
+.tela-fat-vendedores .analise-numeros dd {
+  margin: 0.1rem 0 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tela-fat-vendedores .analise-numeros dd small {
+  display: block;
+  font-size: var(--texto-mini);
+  font-weight: 600;
+  color: var(--tinta-suave);
+  white-space: normal;
+}
+.tela-fat-vendedores .sobe { color: var(--verde); }
+.tela-fat-vendedores .desce { color: var(--alerta); }
+
+/* Leitura do gestor: pontos fortes e pontos de atenção */
+.tela-fat-vendedores .analise-leitura {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem 2rem;
+  margin-top: 1.2rem;
+}
+.tela-fat-vendedores .analise-leitura h3 { margin: 0 0 0.3rem; font-size: 0.9rem; font-weight: 600; }
+.tela-fat-vendedores .analise-leitura ul { margin: 0; padding-left: 1.1rem; }
+.tela-fat-vendedores .analise-leitura li { margin: 0.25rem 0; font-size: var(--texto-pequeno, 0.8125rem); line-height: 1.45; }
+.tela-fat-vendedores .leitura--forte h3 { color: var(--verde); }
+.tela-fat-vendedores .leitura--atencao h3 { color: var(--alerta); }
+
+.tela-fat-vendedores .analise-duas {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 2.5rem;
+}
+/* Barras finas (dia da semana e clientes) */
+.tela-fat-vendedores .linha-barra {
+  display: grid;
+  grid-template-columns: minmax(5rem, 11rem) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--linha);
+  font-size: var(--texto-pequeno, 0.8125rem);
+}
+.tela-fat-vendedores .linha-barra:last-child { border-bottom: 0; }
+.tela-fat-vendedores .linha-barra__nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tela-fat-vendedores .linha-barra__nome small { display: block; color: var(--tinta-suave); font-size: var(--texto-mini); }
+.tela-fat-vendedores .linha-barra__valor { text-align: right; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tela-fat-vendedores .linha-barra__valor small { display: block; font-weight: 400; color: var(--tinta-suave); font-size: var(--texto-mini); }
+.tela-fat-vendedores .linha-barra--pico .linha-barra__nome { font-weight: 700; }
+.tela-fat-vendedores .linha-barra--pico .barra-preenchida { background: var(--verde-escuro); }
+
+@media (max-width: 720px) {
+  .tela-fat-vendedores .analise-numeros { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 0.7rem; }
+  .tela-fat-vendedores .analise-numeros > div { padding: 0 0.7rem; }
+  .tela-fat-vendedores .analise-numeros > div:nth-child(odd) { padding-left: 0; border-left: 0; }
+  .tela-fat-vendedores .analise-numeros dd { font-size: 1.05rem; }
+  .tela-fat-vendedores .analise-leitura,
+  .tela-fat-vendedores .analise-duas { grid-template-columns: minmax(0, 1fr); }
+  .tela-fat-vendedores .linha-barra { grid-template-columns: minmax(0, 1fr) auto; gap: 0.2rem 0.75rem; }
+  .tela-fat-vendedores .linha-barra .barra-trilho { grid-column: 1 / -1; grid-row: 2; }
+}

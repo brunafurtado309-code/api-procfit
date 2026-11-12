@@ -114,10 +114,17 @@ async function exportar(query) {
 }
 
 // ===== Sub-tela "Faturados por vendedor": notas fiscais de venda por vendedor =====
-const notasVendedor = (query) => repoVendedores.notasPorVendedor(montarFiltros(query));
+// devolucao=1: a lista mostra só as notas que tiveram devolução
+function filtrosNotasVendedor(query) {
+  const filtros = montarFiltros(query);
+  if (query.devolucao === '1' || query.devolucao === 'true') filtros.devolucao = true;
+  return filtros;
+}
+
+const notasVendedor = (query) => repoVendedores.notasPorVendedor(filtrosNotasVendedor(query));
 
 async function exportarNotasVendedor(query) {
-  const filtros = montarFiltros(query);
+  const filtros = filtrosNotasVendedor(query);
   const { vendedores: resumo, notas } = await repoVendedores.notasPorVendedor(filtros);
   const dataBR = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : null);
   const periodo = `de ${dataBR(filtros.inicio)} até ${dataBR(filtros.fim)}`
@@ -142,7 +149,8 @@ async function exportarNotasVendedor(query) {
   });
   excel.adicionarTabela(workbook, 'Notas', {
     titulo: 'Notas faturadas | Belo Norte',
-    subtitulo: `${notas.length} notas${filtros.vendedor ? ` · vendedor ${filtros.vendedor}` : ''}`
+    subtitulo: `${notas.length} notas${filtros.devolucao ? ' com devolução' : ''}`
+      + `${filtros.vendedor ? ` · vendedor ${filtros.vendedor}` : ''}`
       + `${filtros.busca ? ` · pesquisa "${filtros.busca}"` : ''} · ${periodo}`,
     colunas: [
       { titulo: 'Nota', chave: 'nota', tipo: 'codigo', largura: 10 },
@@ -156,6 +164,7 @@ async function exportarNotasVendedor(query) {
       { titulo: 'Desconto', chave: 'desconto', tipo: 'moeda', largura: 12, somar: true },
       { titulo: 'NF de devolução', chave: 'nota_devolucao', tipo: 'codigo', largura: 12 },
       { titulo: 'Data da devolução', chave: 'devolucao_dia', tipo: 'data', largura: 13 },
+      { titulo: 'Devolução', chave: 'devolucao_tipo', largura: 10 },
       { titulo: 'Devolvido', chave: 'devolvido', tipo: 'moeda', largura: 13, somar: true },
       { titulo: 'Líquido', chave: 'liquido', tipo: 'moeda', largura: 14, somar: true },
     ],

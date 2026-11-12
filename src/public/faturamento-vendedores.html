@@ -6,13 +6,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Faturados por vendedor | Faturamento | Painel | Belo Norte</title>
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/faturamento-vendedores.css">
   <script src="js/modulos.js" defer></script>
   <script src="js/estado.js" defer></script>
   <script src="js/pedido.js" defer></script>
   <script src="js/paginacao.js" defer></script>
+  <script src="js/graficos.js" defer></script>
   <script src="js/faturamento-vendedores.js" defer></script>
 </head>
-<body class="tela-faturamento">
+<body class="tela-faturamento tela-fat-vendedores">
   <header class="topo">
     <div>
       <p class="marca">Belo Norte</p>
@@ -60,6 +62,7 @@
           <span>Vendedor</span>
           <select id="filtro-vendedor"><option value="">Todos</option></select>
         </label>
+        <button type="button" id="so-devolucao" class="botao-secundario" aria-pressed="false">Só com devolução</button>
         <button type="submit" class="filtros__aplicar">Atualizar</button>
       </form>
 
@@ -79,9 +82,10 @@
       <section class="bloco">
         <h2 id="titulo-vendedores">Notas por vendedor</h2>
         <p class="bloco__descricao">Notas fiscais de venda emitidas no período, pelo vendedor gravado na nota.
-          Ficam de fora as notas canceladas e as transferências entre lojas. Clique no vendedor para ver as notas dele.</p>
+          Ficam de fora as notas canceladas e as transferências entre lojas. Clique no vendedor para ver as notas dele,
+          ou em "com devolução" para ver só as que voltaram.</p>
         <div class="tabela-rolagem">
-          <table class="tabela" id="tabela-vendedores">
+          <table class="tabela tabela-cartoes" id="tabela-vendedores">
             <thead></thead>
             <tbody></tbody>
             <tfoot></tfoot>
@@ -89,14 +93,44 @@
         </div>
       </section>
 
-      <!-- 3. As notas, uma página por vez -->
+      <!-- 3. Análise: sem vendedor = pico de vendas da equipe; com vendedor = análise do vendedor -->
+      <section class="bloco analise" id="analise">
+        <h2 id="titulo-analise">Pico de vendas</h2>
+        <p id="analise-descricao" class="bloco__descricao"></p>
+        <dl id="analise-numeros" class="analise-numeros"></dl>
+        <div class="analise-leitura" id="analise-leitura"></div>
+        <h3 class="analise-subtitulo" id="titulo-grafico-dias">Faturado por dia</h3>
+        <div id="grafico-dias" class="grafico-rolagem"></div>
+        <div class="analise-duas">
+          <div>
+            <h3 class="analise-subtitulo">Por dia da semana <small>(média por dia)</small></h3>
+            <div id="analise-semana"></div>
+          </div>
+          <div>
+            <h3 class="analise-subtitulo" id="titulo-clientes">Principais clientes</h3>
+            <div id="analise-clientes"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. As notas, uma página por vez -->
       <section class="bloco">
         <div class="bloco-topo">
           <h2 id="titulo-notas">Notas</h2>
+          <label class="ordem-celular">
+            <span>Ordenar</span>
+            <select id="ordem-celular">
+              <option value="dia:desc">Mais recentes</option>
+              <option value="valor:desc">Maior valor</option>
+              <option value="devolvido:desc">Maior devolução</option>
+              <option value="cliente:asc">Cliente (A–Z)</option>
+              <option value="nota:desc">Número da nota</option>
+            </select>
+          </label>
         </div>
         <p id="aviso-limite" class="bloco__descricao" hidden></p>
         <div class="tabela-rolagem">
-          <table class="tabela" id="tabela-notas">
+          <table class="tabela tabela-cartoes" id="tabela-notas">
             <thead></thead>
             <tbody></tbody>
             <tfoot></tfoot>
