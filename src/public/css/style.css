@@ -2681,6 +2681,17 @@ body.com-lateral #modulos { display: none !important; }
 
 /* Menu em pastas (modulos.js, SUBMENUS): Financeiro > Contas a receber > Títulos em aberto... */
 .no-menu { display: none !important; } /* abas de cima da tela que passaram para o menu */
+/* No celular o menu da esquerda mostra só os ícones (sem as funções das pastas): as abas de cima
+   voltam a aparecer, numa linha que rola de lado, para dar para trocar de sub-tela */
+@media (max-width: 720px) {
+  nav.abas.no-menu {
+    display: flex !important;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  nav.abas.no-menu .aba { flex: 0 0 auto; padding: 0.65rem 0.8rem; }
+}
 button.lateral__pasta-botao,
 button.lateral__pasta-botao:hover {
   width: 100%;

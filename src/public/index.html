@@ -69,17 +69,19 @@
         <p id="status" class="status" role="status" aria-live="polite"></p>
       </section>
 
-      <!-- Atalhos para cada parte da tela -->
-      <nav class="secoes" aria-label="Partes da tela">
-        <a href="#parte-resumo">Resumo</a>
-        <a href="#parte-vendedores">Vendedores</a>
-        <a href="#parte-caixa">Caixa das lojas</a>
-        <a href="#parte-graficos">Gráficos</a>
+      <!-- Sub-telas das vendas: cada uma mostra só a sua parte (no computador ficam no menu da
+           esquerda, em pastas; no celular aparecem aqui em cima). O endereço guarda a sub-tela:
+           index.html#vendedores -->
+      <nav class="abas" id="abas-vendas" aria-label="Partes das vendas">
+        <button class="aba aba--ativa" type="button" data-aba="resumo" aria-current="page">Resumo</button>
+        <button class="aba" type="button" data-aba="vendedores">Vendedores</button>
+        <button class="aba" type="button" data-aba="caixa">Caixa das lojas</button>
+        <button class="aba" type="button" data-aba="graficos">Gráficos</button>
       </nav>
 
 
       <!-- 1. RESUMO: venda líquida (esquerda) e indicadores (direita); depois, como a venda se forma -->
-      <div id="parte-resumo" class="resumo parte">
+      <div id="parte-resumo" class="resumo parte" data-parte="resumo">
         <section class="destaque" aria-labelledby="titulo-liquida">
           <h2 id="titulo-liquida">Venda líquida no período</h2>
           <p id="venda-liquida" class="valor-grande">—</p>
@@ -113,7 +115,7 @@
           </div>
         </dl>
       </div>
-      <section class="bloco" aria-labelledby="titulo-composicao">
+      <section class="bloco" aria-labelledby="titulo-composicao" data-parte="resumo">
         <h2 id="titulo-composicao">Como a venda se forma</h2>
         <p class="bloco__descricao">Notas faturadas mais vendas no caixa, menos devoluções.</p>
         <dl class="numeros conta">
@@ -143,7 +145,7 @@
       </section>
 
       <!-- 2. VENDEDORES -->
-      <div id="parte-vendedores" class="parte">
+      <div id="parte-vendedores" class="parte" data-parte="vendedores" hidden>
       <!-- Faturamento por vendedor: do orçamento à nota (dados do módulo faturamento) -->
       <section class="bloco" aria-labelledby="titulo-fat-vendedores">
         <h2 id="titulo-fat-vendedores">Faturamento por vendedor</h2>
@@ -160,7 +162,7 @@
       </div>
 
       <!-- 3. CAIXA DAS LOJAS -->
-      <div id="parte-caixa" class="parte">
+      <div id="parte-caixa" class="parte" data-parte="caixa" hidden>
       <section class="bloco" aria-labelledby="titulo-caixa">
         <h2 id="titulo-caixa">Caixa por operador</h2>
         <p class="bloco__descricao">Cupons e devoluções no caixa das lojas, pelo operador que passou a venda. Clique no nome para ver os cupons.</p>
@@ -182,7 +184,7 @@
       </div>
 
       <!-- 4. GRÁFICOS -->
-      <div id="parte-graficos" class="parte">
+      <div id="parte-graficos" class="parte" data-parte="graficos" hidden>
       <!-- Gráficos: evolução no período, lojas e produtos -->
       <section class="bloco" aria-labelledby="titulo-dia-a-dia">
         <h2 id="titulo-dia-a-dia">Venda dia a dia</h2>

@@ -1538,6 +1538,24 @@ async function carregar({ automatico = false } = {}) {
 }
 
 // ===== Gráficos (js/graficos.js) =====
+// Os dados ficam guardados para redesenhar quando a sub-tela Gráficos é aberta
+let dadosDosGraficos = null;
+
+function desenharGraficos() {
+  if (!dadosDosGraficos || el('parte-graficos').hidden) return;
+  const { dias, lojas } = dadosDosGraficos;
+  graficos.colunas(el('grafico-dias'), {
+    titulo: 'Venda líquida por dia',
+    rotulos: dias.map((d) => d.dia.slice(8, 10) + '/' + d.dia.slice(5, 7)),
+    series: [{ nome: 'Venda líquida', valores: dias.map((d) => d.venda_liquida) }],
+  });
+  graficos.rosca(el('grafico-lojas'), {
+    titulo: 'Venda por loja',
+    itens: lojas.map((l) => ({ nome: l.loja || `Empresa ${l.empresa}`, valor: Number(l.venda_liquida) || 0 })),
+    rotuloCentro: 'venda líquida',
+  });
+}
+
 async function carregarGraficos(filtros, minhaCarga) {
   try {
     const [dias, lojas, produtos] = await Promise.all([
@@ -1547,17 +1565,8 @@ async function carregarGraficos(filtros, minhaCarga) {
     ]);
     if (minhaCarga !== cargaAtual) return;
 
-    graficos.colunas(el('grafico-dias'), {
-      titulo: 'Venda líquida por dia',
-      rotulos: dias.map((d) => d.dia.slice(8, 10) + '/' + d.dia.slice(5, 7)),
-      series: [{ nome: 'Venda líquida', valores: dias.map((d) => d.venda_liquida) }],
-    });
-
-    graficos.rosca(el('grafico-lojas'), {
-      titulo: 'Venda por loja',
-      itens: lojas.map((l) => ({ nome: l.loja || `Empresa ${l.empresa}`, valor: Number(l.venda_liquida) || 0 })),
-      rotuloCentro: 'venda líquida',
-    });
+    dadosDosGraficos = { dias, lojas };
+    desenharGraficos();
 
     const maximo = Math.max(0, ...produtos.map((p) => Number(p.venda_liquida) || 0));
     el('barras-produtos').replaceChildren(...produtos.map((p) => {
@@ -1612,20 +1621,39 @@ function marcarAtalho(ativo) {
 }
 
 // ===== Início =====
-// Atalhos das partes da tela: marca a parte que está na tela enquanto rola
+// Sub-telas das vendas: Resumo | Vendedores | Caixa das lojas | Gráficos.
+// Só a parte escolhida aparece; os números já carregados continuam valendo (trocar de sub-tela
+// não vai ao banco de novo). O endereço guarda a sub-tela (index.html#caixa), e os endereços
+// antigos (#parte-caixa) continuam funcionando.
+const PARTES_VENDAS = ['resumo', 'vendedores', 'caixa', 'graficos'];
+let parteAtual = 'resumo';
+
+function abrirParte(nome) {
+  parteAtual = PARTES_VENDAS.includes(nome) ? nome : 'resumo';
+  for (const botao of document.querySelectorAll('#abas-vendas [data-aba]')) {
+    const ativa = botao.dataset.aba === parteAtual;
+    botao.classList.toggle('aba--ativa', ativa);
+    if (ativa) botao.setAttribute('aria-current', 'page');
+    else botao.removeAttribute('aria-current');
+  }
+  for (const bloco of document.querySelectorAll('[data-parte]')) bloco.hidden = bloco.dataset.parte !== parteAtual;
+  if (window.location.hash !== `#${parteAtual}`) window.history.replaceState(null, '', `#${parteAtual}`);
+  // Gráfico desenhado com a parte escondida fica sem largura: redesenha ao abrir
+  if (parteAtual === 'graficos') desenharGraficos();
+  window.scrollTo({ top: 0 });
+}
+
+const parteDoEndereco = () => window.location.hash.slice(1).replace(/^parte-/, '');
+
 function iniciarAtalhosDasPartes() {
-  const links = [...document.querySelectorAll('.secoes a[href^="#"]')];
-  if (!links.length || !('IntersectionObserver' in window)) return;
-  const marcar = (id) => links.forEach((a) => a.setAttribute('aria-current', String(a.getAttribute('href') === `#${id}`)));
-  marcar(links[0].getAttribute('href').slice(1));
-  const observador = new IntersectionObserver((entradas) => {
-    const visivel = entradas.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
-    if (visivel) marcar(visivel.target.id);
-  }, { rootMargin: '-15% 0px -70% 0px' });
-  links.forEach((a) => {
-    const alvo = document.getElementById(a.getAttribute('href').slice(1));
-    if (alvo) observador.observe(alvo);
+  el('abas-vendas').addEventListener('click', (evento) => {
+    const botao = evento.target.closest('[data-aba]');
+    if (botao) abrirParte(botao.dataset.aba);
   });
+  window.addEventListener('hashchange', () => {
+    if (parteDoEndereco() !== parteAtual) abrirParte(parteDoEndereco());
+  });
+  abrirParte(parteDoEndereco());
 }
 
 document.addEventListener('DOMContentLoaded', () => {

@@ -63,10 +63,11 @@ const modulos = (() => {
   // "itens" = pasta dentro da pasta.
   const SUBMENUS = {
     vendas: [
-      { titulo: 'Resumo', pagina: 'index.html#parte-resumo' },
-      { titulo: 'Vendedores', pagina: 'index.html#parte-vendedores' },
-      { titulo: 'Caixa das lojas', pagina: 'index.html#parte-caixa' },
-      { titulo: 'Gráficos', pagina: 'index.html#parte-graficos' },
+      // Sub-telas da tela de vendas (abas: só a parte escolhida aparece)
+      { titulo: 'Resumo', pagina: 'index.html#resumo', aba: 'resumo' },
+      { titulo: 'Vendedores', pagina: 'index.html#vendedores', aba: 'vendedores' },
+      { titulo: 'Caixa das lojas', pagina: 'index.html#caixa', aba: 'caixa' },
+      { titulo: 'Gráficos', pagina: 'index.html#graficos', aba: 'graficos' },
     ],
     financeiro: [
       { titulo: 'Contas a receber', itens: [
@@ -128,7 +129,7 @@ const modulos = (() => {
     'nav.abas[aria-label="Partes da precificação"]',
     'nav.abas[aria-label="Partes do faturamento"]',
     'nav.abas[aria-label="Visões de entradas e saídas"]',
-    'nav.secoes[aria-label="Partes da tela"]', // vendas
+    'nav.abas[aria-label="Partes das vendas"]', // vendas
   ].join(', ');
   const PASTAS = 'menu-pastas-abertas';
   const RECOLHIDO = 'menu-lateral-recolhido';
