@@ -2,6 +2,7 @@
 
 const AppError = require('../utils/AppError');
 const repo = require('../repositories/faturamento.repository');
+const repoVendedores = require('../repositories/faturamento-vendedores.repository');
 const excel = require('../utils/excel');
 
 const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
@@ -112,4 +113,58 @@ async function exportar(query) {
   return { workbook, nomeArquivo: `pedidos_${filtros.inicio}_a_${filtros.fim}.xlsx` };
 }
 
-module.exports = { analise, detalhe, vendedores, exportar, ETAPA_TEXTO };
+// ===== Sub-tela "Faturados por vendedor": notas fiscais de venda por vendedor =====
+const notasVendedor = (query) => repoVendedores.notasPorVendedor(montarFiltros(query));
+
+async function exportarNotasVendedor(query) {
+  const filtros = montarFiltros(query);
+  const { vendedores: resumo, notas } = await repoVendedores.notasPorVendedor(filtros);
+  const dataBR = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : null);
+  const periodo = `de ${dataBR(filtros.inicio)} até ${dataBR(filtros.fim)}`
+    + `${filtros.empresa ? ` · empresa ${filtros.empresa}` : ''} · gerado em ${new Date().toLocaleString('pt-BR')}`;
+  const workbook = excel.novaPlanilha();
+  excel.adicionarTabela(workbook, 'Por vendedor', {
+    titulo: 'Notas faturadas por vendedor | Belo Norte',
+    subtitulo: `${resumo.length} vendedores · ${periodo}`,
+    colunas: [
+      { titulo: 'Cód.', chave: 'cod_vendedor', tipo: 'codigo', largura: 8 },
+      { titulo: 'Vendedor', chave: 'vendedor', largura: 36 },
+      { titulo: 'Notas', chave: 'notas', tipo: 'inteiro', largura: 9, somar: true },
+      { titulo: 'Clientes', chave: 'clientes', tipo: 'inteiro', largura: 9, somar: true },
+      { titulo: 'Valor das notas', chave: 'valor', tipo: 'moeda', largura: 16, somar: true },
+      { titulo: 'Desconto', chave: 'desconto', tipo: 'moeda', largura: 13, somar: true },
+      { titulo: 'Notas com devolução', chave: 'notas_devolvidas', tipo: 'inteiro', largura: 12, somar: true },
+      { titulo: 'Devolvido', chave: 'devolvido', tipo: 'moeda', largura: 14, somar: true },
+      { titulo: 'Líquido', chave: 'liquido', tipo: 'moeda', largura: 16, somar: true },
+    ],
+    linhas: resumo,
+    totais: true,
+  });
+  excel.adicionarTabela(workbook, 'Notas', {
+    titulo: 'Notas faturadas | Belo Norte',
+    subtitulo: `${notas.length} notas${filtros.vendedor ? ` · vendedor ${filtros.vendedor}` : ''}`
+      + `${filtros.busca ? ` · pesquisa "${filtros.busca}"` : ''} · ${periodo}`,
+    colunas: [
+      { titulo: 'Nota', chave: 'nota', tipo: 'codigo', largura: 10 },
+      { titulo: 'Data', chave: 'dia', tipo: 'data', largura: 12 },
+      { titulo: 'Empresa', chave: 'empresa', tipo: 'codigo', largura: 9 },
+      { titulo: 'Pedido', chave: 'pedido', tipo: 'codigo', largura: 10 },
+      { titulo: 'Cód. cliente', chave: 'cod_cliente', tipo: 'codigo', largura: 11 },
+      { titulo: 'Cliente', chave: 'cliente', largura: 38 },
+      { titulo: 'Vendedor', chave: 'vendedor', largura: 30 },
+      { titulo: 'Valor da nota', chave: 'valor', tipo: 'moeda', largura: 14, somar: true },
+      { titulo: 'Desconto', chave: 'desconto', tipo: 'moeda', largura: 12, somar: true },
+      { titulo: 'NF de devolução', chave: 'nota_devolucao', tipo: 'codigo', largura: 12 },
+      { titulo: 'Data da devolução', chave: 'devolucao_dia', tipo: 'data', largura: 13 },
+      { titulo: 'Devolvido', chave: 'devolvido', tipo: 'moeda', largura: 13, somar: true },
+      { titulo: 'Líquido', chave: 'liquido', tipo: 'moeda', largura: 14, somar: true },
+    ],
+    linhas: notas,
+    totais: true,
+  });
+  return { workbook, nomeArquivo: `notas_por_vendedor_${filtros.inicio}_a_${filtros.fim}.xlsx` };
+}
+
+module.exports = {
+  analise, detalhe, vendedores, exportar, notasVendedor, exportarNotasVendedor, ETAPA_TEXTO,
+};

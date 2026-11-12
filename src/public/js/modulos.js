@@ -81,6 +81,10 @@ const modulos = (() => {
       ] },
       { titulo: 'Contas a pagar', pagina: 'pagar.html' },
     ],
+    faturamento: [
+      { titulo: 'Pedidos', pagina: 'faturamento.html' },
+      { titulo: 'Faturados por vendedor', pagina: 'faturamento-vendedores.html' },
+    ],
     precificacao: [
       { titulo: 'Análise', pagina: 'precificacao.html#analise', aba: 'analise' },
       { titulo: 'Notas e fornecedores', pagina: 'precificacao.html#notas', aba: 'notas' },
@@ -98,6 +102,7 @@ const modulos = (() => {
     'nav.abas[aria-label="Visões do financeiro"]',
     '#painel > nav.abas#abas', // financeiro.html
     'nav.abas[aria-label="Partes da precificação"]',
+    'nav.abas[aria-label="Partes do faturamento"]',
     'nav.abas[aria-label="Visões de entradas e saídas"]',
     'nav.secoes[aria-label="Partes da tela"]', // vendas
   ].join(', ');

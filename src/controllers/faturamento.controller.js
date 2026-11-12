@@ -16,9 +16,16 @@ module.exports = {
   analise: acao(service.analise),
   vendedores: acao(service.vendedores),
   detalhe: acao(service.detalhe),
-  excel: async (req, res, next) => {
+  notasVendedor: acao(service.notasVendedor),
+  excel: baixar(service.exportar),
+  excelNotasVendedor: baixar(service.exportarNotasVendedor),
+};
+
+// Monta a planilha e manda como download
+function baixar(gerar) {
+  return async (req, res, next) => {
     try {
-      const { workbook, nomeArquivo } = await service.exportar(req.query);
+      const { workbook, nomeArquivo } = await gerar(req.query);
       res.setHeader('Content-Type', TIPO_XLSX);
       res.setHeader('Content-Disposition', `attachment; filename="${nomeArquivo}"`);
       res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
@@ -27,5 +34,5 @@ module.exports = {
     } catch (err) {
       next(err);
     }
-  },
-};
+  };
+}
