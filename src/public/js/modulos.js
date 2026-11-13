@@ -86,10 +86,8 @@ const modulos = (() => {
     faturamento: [
       { titulo: 'Pedidos', pagina: 'faturamento.html' },
       { titulo: 'Faturados por vendedor', pagina: 'faturamento-vendedores.html', setor: 'faturamento_vendedores' },
-      { titulo: 'Canceladas com financeiro', itens: [
-        { titulo: 'Devolução', pagina: 'faturamento-canceladas.html#devolucoes', aba: 'devolucoes' },
-        { titulo: 'Notas canceladas', pagina: 'faturamento-canceladas.html#notas', aba: 'notas' },
-      ] },
+      { titulo: 'Devolução', pagina: 'faturamento-canceladas.html#devolucoes', aba: 'devolucoes' },
+      { titulo: 'Notas canceladas', pagina: 'faturamento-canceladas.html#notas', aba: 'notas' },
     ],
     precificacao: [
       { titulo: 'Análise', pagina: 'precificacao.html#analise', aba: 'analise' },
