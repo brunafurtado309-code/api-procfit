@@ -82,14 +82,74 @@
     });
 
     const cadastro = new Date(u.criado_em).toLocaleDateString('pt-BR');
+    const senha = montarSenha(u, () => linha);
     const linha = el('tr', { className: u.status === 'pendente' ? 'pendente' : '' }, [
       el('td', {}, [el('strong', { textContent: u.nome }), el('br'), el('span', { className: 'email', textContent: u.email })]),
       el('td', { textContent: cadastro }),
       el('td', {}, situacao),
       el('td', {}, telas),
       el('td', {}, [botao, aviso]),
+      el('td', { className: 'celula-senha' }, senha),
     ]);
+    if (u.pediu_senha_em) linha.classList.add('pediu-senha');
     return linha;
+  }
+
+  // Coluna "Senha": pedido de "esqueci minha senha" e o botão que gera a senha provisória.
+  // A senha provisória aparece uma vez só, aqui na tela, para copiar e passar para a pessoa.
+  function montarSenha(u, linhaDe) {
+    const area = el('div', { className: 'senha' });
+    const situacao = el('span', { className: 'senha__situacao' });
+    if (u.pediu_senha_em) {
+      const quando = new Date(u.pediu_senha_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+      situacao.textContent = 'Pediu nova senha em ' + quando;
+      situacao.classList.add('senha__situacao--pedido');
+    } else if (u.troca_senha) {
+      situacao.textContent = 'Com senha provisória';
+    }
+
+    const gerar = el('button', { type: 'button', className: 'botao-secundario', textContent: 'Gerar senha provisória' });
+    const resultado = el('div', { className: 'senha__resultado', hidden: true });
+
+    gerar.addEventListener('click', async () => {
+      if (!confirm('Gerar uma senha provisória para ' + u.nome + '?\nA senha atual deixa de valer e a pessoa sai do painel.')) return;
+      gerar.disabled = true;
+      try {
+        const r = await chamar('/usuarios/' + u.id + '/senha', { method: 'POST' });
+        const codigo = el('code', { textContent: r.senhaProvisoria });
+        const copiar = el('button', { type: 'button', className: 'botao-secundario', textContent: 'Copiar' });
+        copiar.addEventListener('click', async () => {
+          try { await navigator.clipboard.writeText(r.senhaProvisoria); copiar.textContent = 'Copiada ✓'; }
+          catch (_) { copiar.textContent = 'Selecione e copie'; }
+        });
+        resultado.replaceChildren(codigo, copiar, el('small', { textContent: 'Passe para a pessoa. Ela aparece só agora.' }));
+        resultado.hidden = false;
+        situacao.textContent = 'Com senha provisória';
+        situacao.classList.remove('senha__situacao--pedido');
+        linhaDe().classList.remove('pediu-senha');
+        atualizarResumo();
+      } catch (err) {
+        situacao.textContent = err.message;
+        situacao.classList.add('senha__situacao--pedido');
+      } finally {
+        gerar.disabled = false;
+      }
+    });
+
+    area.append(situacao, gerar, resultado);
+    return area;
+  }
+
+  let ultimaLista = [];
+  function atualizarResumo() {
+    const usuarios = ultimaLista;
+    const pendentes = usuarios.filter((u) => u.status === 'pendente').length;
+    const pedidos = document.querySelectorAll('#linhas tr.pediu-senha').length;
+    $('resumo').replaceChildren(
+      el('span', { textContent: usuarios.length + (usuarios.length === 1 ? ' usuário' : ' usuários') }),
+      pendentes ? el('span', { className: 'pend', textContent: ' · ' + pendentes + ' aguardando liberação' }) : '',
+      pedidos ? el('span', { className: 'pend', textContent: ' · ' + pedidos + (pedidos === 1 ? ' pediu nova senha' : ' pediram nova senha') }) : ''
+    );
   }
 
   async function carregar() {
@@ -104,12 +164,9 @@
         return;
       }
 
-      const pendentes = usuarios.filter((u) => u.status === 'pendente').length;
-      $('resumo').replaceChildren(
-        el('span', { textContent: usuarios.length + (usuarios.length === 1 ? ' usuário' : ' usuários') }),
-        pendentes ? el('span', { className: 'pend', textContent: ' · ' + pendentes + ' aguardando liberação' }) : ''
-      );
+      ultimaLista = usuarios;
       for (const u of usuarios) linhas.append(montarLinha(u, ordem));
+      atualizarResumo();
       $('tabela').hidden = false;
       mostrar('');
     } catch (err) {

@@ -18,5 +18,7 @@ const responder = (fn) => async (req, res) => {
 
 router.get('/', responder(() => service.listar()));
 router.patch('/:id', responder((req) => service.atualizar(req.params.id, req.body || {})));
+// Gera uma senha provisoria para a pessoa (nov/2026)
+router.post('/:id/senha', responder((req) => service.redefinirSenha(req.params.id)));
 
 module.exports = router;

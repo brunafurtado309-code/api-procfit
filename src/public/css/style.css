@@ -3309,3 +3309,64 @@ html, body { max-width: 100%; overflow-x: clip; }
 
 /* Notas de bonificação (Resumo): "100% da venda NF x" em laranja */
 .origem.nota--alerta { color: var(--alerta); font-weight: 600; }
+
+
+/* ==========================================================
+   28. Senhas (nov/2026): esqueci minha senha (login), Minha senha
+   (conta.html) e a coluna "Senha" da tela de Usuários
+   ========================================================== */
+/* Login: links de texto (Esqueci minha senha, Voltar) */
+.tela-login .login__link {
+  justify-self: start;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: var(--texto-pequeno);
+  font-weight: 600;
+  color: var(--verde-escuro);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.tela-login .login__link:hover { background: none; color: var(--tinta); }
+.tela-login .login__link--discreto { color: var(--tinta-suave); font-weight: 400; }
+.tela-login .login__explica { margin: 0; font-size: var(--texto-pequeno); line-height: 1.5; color: var(--tinta-suave); }
+
+/* Minha senha */
+.tela-conta .bloco:first-child { border-top: 0; }
+.conta__form { display: grid; gap: 0.9rem; max-width: 24rem; margin-top: 1rem; }
+.conta__form label { display: grid; gap: 0.3rem; font-size: var(--texto-pequeno); font-weight: 600; }
+.conta__form small { font-size: var(--texto-mini); font-weight: 400; color: var(--tinta-suave); }
+.conta__form button[type="submit"] { justify-self: start; }
+.conta__aviso {
+  margin: 0.75rem 0 0;
+  padding: 0.6rem 0.9rem;
+  border-left: 4px solid var(--alerta);
+  background: var(--alerta-claro);
+  font-size: var(--texto-pequeno);
+}
+.tela-conta .mensagem { min-height: 1.3rem; margin: 1rem 0 0; font-weight: 600; }
+.tela-conta .mensagem.erro { color: var(--alerta); }
+.tela-conta .mensagem.ok { color: var(--verde-escuro); }
+
+/* Usuários: coluna Senha */
+.tela-usuarios .tabela { min-width: 64rem; }
+.tela-usuarios .senha { display: grid; gap: 0.35rem; justify-items: start; }
+.tela-usuarios .senha .botao-secundario { padding: 0.3rem 0.7rem; font-size: var(--texto-mini); white-space: nowrap; }
+.tela-usuarios .senha__situacao { font-size: var(--texto-mini); color: var(--tinta-suave); }
+.tela-usuarios .senha__situacao:empty { display: none; }
+.tela-usuarios .senha__situacao--pedido { color: var(--alerta); font-weight: 700; }
+.tela-usuarios tr.pediu-senha > td:first-child { box-shadow: inset 3px 0 0 var(--alerta); }
+.tela-usuarios .senha__resultado { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.tela-usuarios .senha__resultado code {
+  padding: 0.2rem 0.5rem;
+  border: 1px dashed var(--verde-medio);
+  border-radius: var(--raio);
+  font-size: var(--texto-pequeno);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--verde-escuro);
+  user-select: all;
+}
+.tela-usuarios .senha__resultado small { flex-basis: 100%; font-size: var(--texto-mini); color: var(--tinta-suave); }

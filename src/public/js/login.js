@@ -18,12 +18,11 @@
     mensagem.className = 'mensagem ' + (tipo || '');
   }
 
+  // qual: 'entrar' | 'criar' | 'esqueci' | 'principal' (as duas últimas ficam dentro da aba Entrar)
   function trocarAba(qual) {
-    const entrar = qual === 'entrar';
-    $('form-entrar').hidden = !entrar;
-    $('form-criar').hidden = entrar;
-    $('aba-entrar').classList.toggle('ativa', entrar);
-    $('aba-criar').classList.toggle('ativa', !entrar);
+    for (const nome of ['entrar', 'criar', 'esqueci', 'principal']) $('form-' + nome).hidden = nome !== qual;
+    $('aba-entrar').classList.toggle('ativa', qual !== 'criar');
+    $('aba-criar').classList.toggle('ativa', qual === 'criar');
     mostrar('');
   }
 
@@ -54,7 +53,49 @@
       mostrar('Entrando...');
       const r = await enviar('/auth/login', { email: $('entrar-email').value, senha: $('entrar-senha').value });
       guardarToken(r.token);
-      window.location.href = 'inicio.html'; // tela inicial com os cartões de cada módulo
+      // Senha provisória: primeiro cria a senha nova; senão, tela inicial com os cartões de cada módulo
+      window.location.href = r.trocarSenha ? 'conta.html' : 'inicio.html';
+    });
+  });
+
+  // ---- Esqueci minha senha ----
+  $('link-esqueci').addEventListener('click', () => {
+    trocarAba('esqueci');
+    $('esqueci-email').value = $('entrar-email').value;
+    $('esqueci-email').focus();
+  });
+  $('link-principal').addEventListener('click', () => {
+    trocarAba('principal');
+    $('principal-email').value = $('esqueci-email').value;
+    $('principal-email').focus();
+  });
+  for (const botao of document.querySelectorAll('[data-voltar]')) {
+    botao.addEventListener('click', () => trocarAba('entrar'));
+  }
+
+  $('form-esqueci').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    travar(ev.target, async () => {
+      const email = $('esqueci-email').value;
+      const r = await enviar('/auth/esqueci', { email });
+      trocarAba('entrar');
+      $('entrar-email').value = email;
+      mostrar(r.mensagem, 'ok');
+    });
+  });
+
+  $('form-principal').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    travar(ev.target, async () => {
+      if ($('principal-senha').value !== $('principal-senha2').value) throw new Error('As duas senhas não são iguais.');
+      const email = $('principal-email').value;
+      const r = await enviar('/auth/recuperar-principal', {
+        email, chave: $('principal-chave').value, senhaNova: $('principal-senha').value,
+      });
+      ev.target.reset();
+      trocarAba('entrar');
+      $('entrar-email').value = email;
+      mostrar(r.mensagem, 'ok');
     });
   });
 

@@ -38,6 +38,9 @@ async function db() {
           usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
           expira_em  TIMESTAMPTZ NOT NULL
         );
+        -- Senhas (nov/2026): senha provisoria que obriga a trocar e pedido de "esqueci minha senha"
+        ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS troca_senha BOOLEAN NOT NULL DEFAULT false;
+        ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS pediu_senha_em TIMESTAMPTZ;
       `)
       .catch((err) => {
         tabelasProntas = null; // tenta de novo na proxima chamada

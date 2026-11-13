@@ -37,6 +37,7 @@ const modulos = (() => {
     movimentos: '<path d="M4 8h12l-3-3M20 16H8l3 3"/>',
     admin: '<circle cx="12" cy="8" r="3.2"/><path d="M5 20c1-4 4-5.5 7-5.5s6 1.5 7 5.5"/><path d="M17 4.5 19 6l-2 1.5"/>',
     usuarios: '<circle cx="9" cy="8" r="3"/><path d="M3 19c.8-3.4 3.2-5 6-5s5.2 1.6 6 5"/><circle cx="17" cy="9" r="2.4"/><path d="M15.5 14.2c2.6.2 4.6 1.6 5.2 4.8"/>',
+    conta: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/><path d="M12 15v2"/>',
     recolher: '<path d="m14 6-6 6 6 6"/><path d="M19 6v12"/>',
   };
 
@@ -430,6 +431,8 @@ const modulos = (() => {
     usuarios.id = 'menu-usuarios';
     usuarios.hidden = true;
     lista.append(usuarios);
+    // Minha senha: todo mundo que entrou com login troca a própria senha (nov/2026)
+    lista.append(item('conta', 'Minha senha', 'conta.html', atual));
 
     const loja = document.createElement('label');
     loja.className = 'lateral__loja';

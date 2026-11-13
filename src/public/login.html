@@ -37,6 +37,27 @@
           <label>E-mail <input type="email" id="entrar-email" autocomplete="username" required></label>
           <label>Senha <input type="password" id="entrar-senha" autocomplete="current-password" required></label>
           <button type="submit">Entrar</button>
+          <button type="button" id="link-esqueci" class="login__link">Esqueci minha senha</button>
+        </form>
+
+        <!-- Esqueci minha senha: o pedido vai para a administradora (tela de Usuários) -->
+        <form id="form-esqueci" class="login__form" hidden>
+          <p class="login__explica">Informe o seu e-mail. A administradora recebe o pedido e te passa uma senha provisória; no primeiro acesso você cria a sua senha nova.</p>
+          <label>E-mail <input type="email" id="esqueci-email" autocomplete="username" required></label>
+          <button type="submit">Pedir nova senha</button>
+          <button type="button" class="login__link" data-voltar>Voltar para entrar</button>
+          <button type="button" id="link-principal" class="login__link login__link--discreto">Sou a administradora principal</button>
+        </form>
+
+        <!-- Conta principal: recupera sozinha com a chave mestra (API_KEY do Render) -->
+        <form id="form-principal" class="login__form" hidden>
+          <p class="login__explica">Recuperação da conta principal com a chave mestra (a <strong>API_KEY</strong> que está no Render).</p>
+          <label>E-mail da conta principal <input type="email" id="principal-email" autocomplete="username" required></label>
+          <label>Chave mestra <input type="password" id="principal-chave" autocomplete="off" required></label>
+          <label>Senha nova <input type="password" id="principal-senha" minlength="8" autocomplete="new-password" required><small>Mínimo de 8 caracteres</small></label>
+          <label>Repita a senha nova <input type="password" id="principal-senha2" minlength="8" autocomplete="new-password" required></label>
+          <button type="submit">Trocar a senha</button>
+          <button type="button" class="login__link" data-voltar>Voltar para entrar</button>
         </form>
 
         <form id="form-criar" class="login__form" hidden>

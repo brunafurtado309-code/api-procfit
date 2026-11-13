@@ -62,7 +62,7 @@ async function identificarComSessao(req) {
     // carregado aqui dentro para evitar dependencia circular com o service
     const { sessaoPorToken } = require('../services/usuarios.service');
     const sessao = await sessaoPorToken(recebida);
-    return sessao ? { setores: sessao.setores, nome: sessao.nome, usuario: true, mestre: sessao.mestre } : null;
+    return sessao ? { setores: sessao.setores, nome: sessao.nome, usuario: true, mestre: sessao.mestre, trocaSenha: sessao.trocaSenha } : null;
   }
 
   const chave = chavesConfiguradas().find((c) => iguais(recebida, c.chave)) || null;
@@ -120,7 +120,10 @@ async function exigirLoginNaPagina(req, res, next) {
     const token = lerCookie(req, COOKIE_SESSAO);
     if (token.startsWith(PREFIXO_SESSAO)) {
       const { sessaoPorToken } = require('../services/usuarios.service');
-      if (await sessaoPorToken(token)) return next();
+      const sessao = await sessaoPorToken(token);
+      // Entrou com senha provisoria: so passa da tela "Minha senha" depois de criar a nova
+      if (sessao && sessao.trocaSenha && caminho !== '/painel/conta.html') return res.redirect('/painel/conta.html');
+      if (sessao) return next();
     }
   } catch (err) {
     console.error('Falha ao conferir o login:', err.message);

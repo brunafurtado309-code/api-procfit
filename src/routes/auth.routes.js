@@ -62,6 +62,11 @@ router.post(
   })
 );
 
+// Senhas (nov/2026)
+router.post('/senha', limitarTentativas, responder((req) => service.trocarSenha(credencialRecebida(req), req.body || {})));
+router.post('/esqueci', limitarTentativas, responder((req) => service.pedirNovaSenha(req.body || {})));
+router.post('/recuperar-principal', limitarTentativas, responder((req) => service.recuperarPrincipal(req.body || {})));
+
 router.get(
   '/eu',
   responder(async (req) => {
@@ -71,7 +76,7 @@ router.get(
       e.status = 401;
       throw e;
     }
-    return { nome: quem.nome, setores: quem.setores, mestre: !!quem.mestre };
+    return { nome: quem.nome, setores: quem.setores, mestre: !!quem.mestre, trocaSenha: !!quem.trocaSenha };
   })
 );
 
