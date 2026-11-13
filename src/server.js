@@ -13,7 +13,14 @@ const vendasRoutes = require('./routes/vendas.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
 const adminRoutes = require('./routes/admin.routes');
 const faturamentoRoutes = require('./routes/faturamento.routes');
-const faturamentoVendedoresRoutes = require('./routes/faturamento-vendedores.routes');
+// Sub-tela "Faturados por vendedor": carregada com proteção. Se o arquivo faltar ou tiver erro,
+// só ela fica fora do ar; o resto da API sobe normalmente.
+let faturamentoVendedoresRoutes = null;
+try {
+  faturamentoVendedoresRoutes = require('./routes/faturamento-vendedores.routes');
+} catch (err) {
+  console.error('Faturados por vendedor fora do ar (o resto da API sobe normal):', err.message);
+}
 const conciliacaoRoutes = require('./routes/conciliacao.routes'); // NOVO: Conciliação de títulos
 const logisticaRoutes = require('./routes/logistica.routes');
 const precosRoutes = require('./routes/precos.routes');
@@ -87,7 +94,10 @@ app.use('/vendas', exigirChave('vendas'), vendasRoutes);
 app.use('/financeiro', exigirChave('financeiro'), financeiroRoutes);
 app.use('/admin', exigirChave('admin'), adminRoutes);
 // Sub-tela "Faturados por vendedor": permissão própria, por isso vem antes do /faturamento
-app.use('/faturamento/notas-vendedor', exigirChave('faturamento_vendedores'), faturamentoVendedoresRoutes);
+app.use('/faturamento/notas-vendedor', exigirChave('faturamento_vendedores'), faturamentoVendedoresRoutes
+  ?? ((req, res) => res.status(503).json({
+    erro: 'A tela Faturados por vendedor está indisponível agora. O resto do painel funciona normalmente.',
+  })));
 app.use('/faturamento', exigirChave('faturamento'), faturamentoRoutes);
 app.use('/logistica', exigirChave('logistica'), logisticaRoutes);
 app.use('/precos', exigirChave('precos'), precosRoutes);

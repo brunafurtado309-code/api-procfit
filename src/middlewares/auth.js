@@ -100,6 +100,7 @@ function exigirMestra() {
         return res.status(403).json({ erro: 'Somente a administradora principal pode liberar acessos.' });
       }
       req.setores = identificada.setores;
+      req.usuarioNome = identificada.nome || null;
       req.ehMestra = true;
       next();
     } catch (err) {

@@ -3391,3 +3391,170 @@ html, body { max-width: 100%; overflow-x: clip; }
 }
 .tela-precificacao #analise-decisao-titulo { margin-bottom: 0.15rem; }
 .tela-precificacao #analise-decisao-explica { margin: 0 0 0.5rem; font-size: var(--texto-pequeno); }
+
+
+/* ==========================================================
+   30. Assistente do painel (js/assistente.js): botão "Dúvidas" no canto
+   e a coluna do chat à direita, por cima da tela
+   ========================================================== */
+.assistente-botao {
+  position: fixed;
+  right: 1.1rem;
+  bottom: 1.1rem;
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0.95rem 0.55rem 0.75rem;
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font-size: var(--texto-pequeno);
+}
+.assistente-botao svg { width: 1.15rem; height: 1.15rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+.assistente {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  width: min(26rem, 100vw);
+  background: var(--superficie);
+  border-left: 1px solid var(--linha-forte);
+  box-shadow: -18px 0 50px rgba(0, 0, 0, 0.55);
+  font-size: var(--texto-pequeno);
+}
+.assistente[hidden] { display: none; }
+.assistente__topo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--painel-escuro);
+  border-bottom: 1px solid var(--linha);
+}
+.assistente__topo > div { display: grid; flex: 1; min-width: 0; }
+.assistente__sub { font-size: var(--texto-mini); color: var(--tinta-suave); }
+.assistente__acao,
+.assistente__fechar {
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--linha-forte);
+  background: transparent;
+  color: var(--tinta-suave);
+  font-size: var(--texto-mini);
+  font-weight: 600;
+}
+.assistente__fechar { font-size: 1.1rem; line-height: 1; padding: 0.15rem 0.5rem; }
+.assistente__acao:hover,
+.assistente__fechar:hover { background: var(--verde-suave); color: var(--tinta); }
+
+.assistente__abas { display: flex; gap: 1rem; padding: 0 0.75rem; border-bottom: 1px solid var(--linha); }
+.assistente__aba {
+  padding: 0.5rem 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--tinta-suave);
+  font-size: var(--texto-pequeno);
+}
+.assistente__aba:hover { background: none; color: var(--tinta); }
+.assistente__aba.ativa { color: var(--verde-escuro); border-bottom-color: var(--verde); }
+
+.assistente__mensagens,
+.assistente__regras { flex: 1; overflow-y: auto; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.55rem; }
+.assistente__mensagens[hidden],
+.assistente__regras[hidden],
+.assistente__form[hidden] { display: none; }
+.assistente__msg { max-width: 92%; padding: 0.5rem 0.7rem; border-radius: 10px; line-height: 1.45; overflow-wrap: anywhere; }
+.assistente__msg p { margin: 0 0 0.4rem; }
+.assistente__msg p:last-child, .assistente__msg ul:last-child { margin-bottom: 0; }
+.assistente__msg ul { margin: 0 0 0.4rem; padding-left: 1.1rem; }
+.assistente__msg li { margin: 0.1rem 0; }
+.assistente__msg code { font-size: 0.95em; color: var(--verde-escuro); }
+.assistente__msg--pessoa { align-self: flex-end; background: var(--verde-claro); color: var(--tinta); white-space: pre-wrap; }
+.assistente__msg--assistente { align-self: flex-start; background: var(--fundo); border: 1px solid var(--linha); }
+.assistente__msg--erro { color: var(--alerta); border-color: var(--alerta); }
+.assistente__pensando { color: var(--tinta-suave); font-style: italic; }
+.assistente__fontes { display: block; margin-top: 0.35rem; font-size: var(--texto-mini); color: var(--tinta-suave); }
+
+.assistente__vazio { display: grid; gap: 0.45rem; color: var(--tinta-suave); }
+.assistente__vazio p { margin: 0; }
+.assistente__dica { font-size: var(--texto-mini); color: var(--tinta-suave); }
+.assistente__sugestao {
+  justify-self: start;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--linha-forte);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--verde-escuro);
+  font-size: var(--texto-mini);
+  text-align: left;
+}
+.assistente__sugestao:hover { background: var(--verde-suave); }
+
+.assistente__aviso { margin: 0; padding: 0.45rem 0.6rem; border-left: 3px solid var(--alerta); background: var(--alerta-claro); }
+.assistente__regra { border: 1px solid var(--linha); border-radius: var(--raio); background: var(--fundo); }
+.assistente__regra summary { padding: 0.45rem 0.6rem; font-weight: 600; cursor: pointer; }
+.assistente__regra pre {
+  margin: 0;
+  padding: 0 0.6rem 0.6rem;
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: var(--texto-mini);
+  line-height: 1.5;
+  color: var(--tinta-suave);
+}
+
+.assistente__form { display: flex; gap: 0.45rem; padding: 0.6rem 0.75rem; border-top: 1px solid var(--linha); }
+.assistente__form textarea {
+  flex: 1;
+  resize: none;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--linha-forte);
+  border-radius: var(--raio);
+  background: var(--fundo);
+  color: var(--tinta);
+  font: inherit;
+}
+.assistente__form button { align-self: stretch; }
+
+@media (max-width: 720px) {
+  .assistente-botao span { display: none; }
+  .assistente-botao { padding: 0.65rem; }
+}
+
+/* Alertas da auditoria (aba "Alertas" da assistente, só a conta principal) */
+.assistente-botao { position: fixed; }
+.assistente-botao__bolinha {
+  position: absolute;
+  top: -0.35rem;
+  right: -0.35rem;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: #E5484D;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.25rem;
+  text-align: center;
+}
+.assistente-botao__bolinha[hidden] { display: none; }
+.assistente__alertas { flex: 1; overflow-y: auto; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.55rem; }
+.assistente__alertas[hidden] { display: none; }
+.alertas__topo { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.alertas__topo .assistente__dica { flex-basis: 100%; }
+.alertas__filtro { font-size: var(--texto-mini); padding: 0.2rem 0.4rem; }
+.alertas__grupo { border: 1px solid var(--linha); border-radius: var(--raio); background: var(--fundo); }
+.alertas__grupo summary { padding: 0.45rem 0.6rem; font-weight: 700; cursor: pointer; }
+.alerta { padding: 0.5rem 0.6rem; border-top: 1px solid var(--linha); }
+.alerta--novo { box-shadow: inset 3px 0 0 var(--alerta); }
+.alerta__titulo { display: block; font-size: var(--texto-pequeno); line-height: 1.3; }
+.alerta__detalhe { margin: 0.2rem 0 0.35rem; font-size: var(--texto-mini); line-height: 1.45; color: var(--tinta-suave); }
+.alerta__rodape { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; }
+.alerta__rodape .assistente__dica { margin-right: auto; }
+.alerta__rodape .assistente__sugestao { padding: 0.2rem 0.55rem; }
