@@ -3581,3 +3581,8 @@ html, body { max-width: 100%; overflow-x: clip; }
 .alertas__busca { flex: 1 1 10rem; }
 .alertas__valor { width: 9rem; }
 .alertas__lista { display: flex; flex-direction: column; gap: 0.55rem; }
+
+.tela-canceladas .canceladas-baixa { margin-top: 0.35rem; padding: 0.3rem 0.45rem; border-left: 2px solid var(--linha-forte); color: var(--tinta); text-align: left; width: 21rem; max-width: 21rem; margin-left: auto; font-size: var(--texto-mini); line-height: 1.35; }
+.tela-canceladas .canceladas-baixa strong { display: block; font-weight: 700; }
+.tela-canceladas .canceladas-baixa__linha { display: block; color: var(--tinta-suave); }
+.tela-canceladas .canceladas-baixa__aviso { display: block; margin-top: 0.15rem; color: var(--alerta); font-weight: 600; }

@@ -26,6 +26,10 @@
 //     Recebido LÍQUIDO = recebido - estornos (51..55, crédito): nota cancelada com o recebimento já
 //     estornado foi corrigida do jeito certo e não aparece. Nota cancelada NÃO pode ter recebimento.
 //     Fica de fora o título gerado pelo acerto de despacho (455510): ele não aponta para a nota.
+//   - ONDE a baixa foi feita (nov/2026), pelo TAB_MASTER_ORIGEM da transação 12 (mesma regra de
+//     despachos.repository.js): 668401 Bancos por títulos (RECEBIMENTOS_BANCOS, o registro é o
+//     RECEBIMENTO_BANCO; FORM_ORIGEM 456558 = PIX lançado pelo acerto de despacho) · 356928 caixa
+//     (RECEBIMENTOS_CAIXA) · 249008 cofre da loja (COFRES_LOJAS_LANCAMENTOS) · 455510 retorno de despacho.
 //   - Nota que SUBSTITUIU a cancelada (nov/2026): outra nota de venda válida (sem cancelamento) da mesma
 //     loja, pelo mesmo pedido (PEDIDO_CLIENTE); sem pedido, a do mesmo cliente e mesmo valor emitida até
 //     15 dias depois do cancelamento. Se o título dela está em aberto e a cancelada ficou com o
@@ -34,10 +38,40 @@
 const { sql, getPool } = require('../config/db');
 
 const TAB_NOTA_VENDA = 753289;
+
+// Cabeçalho do recebimento de Bancos (tela "Recebimentos de Título a Receber (Bancos)"):
+// conferidas no SSMS (nov/2026) RECEBIMENTO_BANCO, EMPRESA, DATA_HORA, DATA_RECEBIMENTO, MOVIMENTO,
+// USUARIO_LOGADO, CONTA_BANCARIA, MODALIDADE, FORM_ORIGEM e REG_ORIGEM. A entidade e a descrição
+// ainda não: a API procura essas colunas sozinha na primeira consulta (sem elas, a tela segue sem esses campos).
+let colunasRecebimento; // undefined = ainda não procurou
+async function extrasDoRecebimento(pool) {
+  if (colunasRecebimento === undefined) {
+    try {
+      const r = await pool.request().query(`
+        SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_NAME = 'RECEBIMENTOS_BANCOS' AND COLUMN_NAME IN ('ENTIDADE', 'DESCRICAO', 'HISTORICO', 'OBSERVACAO')`);
+      colunasRecebimento = new Set(r.recordset.map((l) => l.COLUMN_NAME));
+    } catch (_) {
+      colunasRecebimento = new Set();
+    }
+    console.log(`[canceladas] colunas extras de RECEBIMENTOS_BANCOS: ${[...colunasRecebimento].join(', ') || 'nenhuma'}`);
+  }
+  const campos = [];
+  let junta = '';
+  if (colunasRecebimento.has('ENTIDADE')) {
+    campos.push('RB.ENTIDADE AS rb_entidade', 'LTRIM(RTRIM(ERB.NOME)) AS rb_entidade_nome');
+    junta = 'LEFT JOIN ENTIDADES ERB WITH (NOLOCK) ON ERB.ENTIDADE = RB.ENTIDADE';
+  }
+  const descricao = ['DESCRICAO', 'HISTORICO', 'OBSERVACAO'].find((c) => colunasRecebimento.has(c));
+  if (descricao) campos.push(`LTRIM(RTRIM(CAST(RB.[${descricao}] AS varchar(200)))) AS rb_descricao`);
+  const separador = ',\n             ';
+  return { campos: campos.length ? separador + campos.join(separador) : '', junta };
+}
 const TAB_NOTA_DEVOLUCAO = 753293;
 
 async function listar(filtros) {
   const pool = await getPool();
+  const rb = await extrasDoRecebimento(pool);
   const { recordsets } = await pool.request()
     .input('inicio', sql.VarChar(10), filtros.inicio)
     .input('fim', sql.VarChar(10), filtros.fim)
@@ -210,10 +244,55 @@ async function listar(filtros) {
       WHERE TT.pendente > 0.009 OR TT.recebido_bruto - TT.estornado > 0.009
       ORDER BY TT.pendente + (TT.recebido_bruto - TT.estornado) DESC;
 
-      -- [2] Quantas notas de cada tipo foram canceladas no período (para o resumo)
+      -- [2] Onde cada recebimento foi baixado (só das notas que ficaram com recebimento)
+      SELECT T.REG_MASTER_ORIGEM                              AS nota_id,
+             LTRIM(RTRIM(T.TITULO))                           AS titulo,
+             CONVERT(varchar(10), TX.DATA, 23)                AS dia,
+             ISNULL(TX.DEBITO, 0)                             AS valor,
+             TX.TAB_MASTER_ORIGEM                             AS tab,
+             TX.REG_MASTER_ORIGEM                             AS registro,
+             CASE WHEN TX.TAB_MASTER_ORIGEM = 668401 AND ISNULL(RB.FORM_ORIGEM, 0) = 456558 THEN 'Acerto de despacho (PIX, em Bancos por títulos)'
+                  WHEN TX.TAB_MASTER_ORIGEM = 668401 THEN 'Bancos por títulos'
+                  WHEN TX.TAB_MASTER_ORIGEM = 356928 THEN 'Caixa'
+                  WHEN TX.TAB_MASTER_ORIGEM = 249008 THEN 'Cofre da loja'
+                  WHEN TX.TAB_MASTER_ORIGEM = 455510 THEN 'Retorno de despacho'
+                  ELSE CONCAT('Tela ', TX.TAB_MASTER_ORIGEM) END AS onde,
+             CASE WHEN RB.FORM_ORIGEM = 456558 THEN RB.REG_ORIGEM ELSE DT.RECEBIMENTO_FATURAMENTO_DESPACHO END AS acerto,
+             CONVERT(varchar(16), RB.DATA_HORA, 120) AS lancado_em,
+             RB.CONTA_BANCARIA                                AS conta_bancaria,
+             CASE COALESCE(RB.MODALIDADE, RC.MODALIDADE, DT.MODALIDADE, T.MODALIDADE)
+               WHEN 0 THEN 'Carteira'  WHEN 1 THEN 'Boleto'   WHEN 2 THEN 'Depósito'
+               WHEN 3 THEN 'Cheque'    WHEN 4 THEN 'Dinheiro' WHEN 5 THEN 'Débito em conta'
+               WHEN 6 THEN 'Cartão crédito' WHEN 7 THEN 'Promissória' WHEN 8 THEN 'Vale'
+               WHEN 9 THEN 'Devolução' WHEN 11 THEN 'PIX'     WHEN 12 THEN 'Cartão débito'
+               WHEN 13 THEN 'Convênio' ELSE NULL END          AS forma,
+             COALESCE(NULLIF(LTRIM(RTRIM(U.NOME)), ''), LTRIM(RTRIM(U.LOGIN))) AS usuario,
+             -- Cabeçalho do recebimento de Bancos, com os campos da consulta do PROCFIT
+             RB.RECEBIMENTO_BANCO                             AS rb_recebimento,
+             LTRIM(RTRIM(U.LOGIN))                            AS login,
+             RB.EMPRESA                                       AS rb_empresa,
+             CONVERT(varchar(10), RB.MOVIMENTO, 23)           AS rb_movimento,
+             CONVERT(varchar(10), RB.DATA_RECEBIMENTO, 23)    AS rb_data_recebimento,
+             T.ENTIDADE                                       AS titulo_entidade${rb.campos}
+      FROM #TNC TT
+      JOIN TITULOS_RECEBER T WITH (NOLOCK) ON T.TITULO_RECEBER = TT.TITULO_RECEBER
+      JOIN TITULOS_RECEBER_TRANSACOES TX WITH (NOLOCK) ON TX.TITULO_RECEBER = TT.TITULO_RECEBER
+      LEFT JOIN RECEBIMENTOS_BANCOS RB WITH (NOLOCK) ON TX.TAB_MASTER_ORIGEM = 668401 AND RB.RECEBIMENTO_BANCO = TX.REG_MASTER_ORIGEM
+      LEFT JOIN RECEBIMENTOS_CAIXA RC WITH (NOLOCK) ON TX.TAB_MASTER_ORIGEM = 356928 AND RC.RECEBIMENTO_CAIXA = TX.REG_MASTER_ORIGEM
+      LEFT JOIN COFRES_LOJAS_LANCAMENTOS CF WITH (NOLOCK) ON TX.TAB_MASTER_ORIGEM = 249008 AND CF.COFRE_LANCAMENTO = TX.REG_MASTER_ORIGEM
+      LEFT JOIN RECEBIMENTOS_FATURAMENTO_DESPACHO_DETALHES DT WITH (NOLOCK)
+        ON TX.TAB_MASTER_ORIGEM = 455510 AND DT.RECEBIMENTO_FATURAMENTO_DESPACHO_DETALHE = TX.REG_MASTER_ORIGEM
+      LEFT JOIN RECEBIMENTOS_FATURAMENTO_DESPACHO RD WITH (NOLOCK) ON RD.RECEBIMENTO_FATURAMENTO_DESPACHO = DT.RECEBIMENTO_FATURAMENTO_DESPACHO
+      LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = COALESCE(RB.USUARIO_LOGADO, RC.USUARIO_LOGADO, CF.USUARIO_LOGADO, RD.USUARIO_LOGADO)
+      ${rb.junta}
+      WHERE TX.TRANSACAO_FINANCEIRA = 12 AND ISNULL(TX.DEBITO, 0) > 0
+        AND TT.recebido - TT.estornado > 0.009
+      ORDER BY T.REG_MASTER_ORIGEM, TX.DATA;
+
+      -- [3] Quantas notas de cada tipo foram canceladas no período (para o resumo)
       SELECT (SELECT COUNT(*) FROM #DC) AS devolucoes_canceladas, (SELECT COUNT(*) FROM #NC) AS vendas_canceladas;
     `);
-  return { devolucoes: recordsets[0], vendas: recordsets[1], contagem: recordsets[2][0] ?? {} };
+  return { devolucoes: recordsets[0], vendas: recordsets[1], baixas: recordsets[2], contagem: recordsets[3][0] ?? {} };
 }
 
 module.exports = { listar, TAB_NOTA_DEVOLUCAO };

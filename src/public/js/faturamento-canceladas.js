@@ -156,7 +156,7 @@
     // B. Notas de venda canceladas com financeiro
     const vendas = dados.vendas
       .filter((v) => passaFiltros(v, n(v.pendente) + n(v.recebido)))
-      .filter((v) => bate(termo, v.nota, v.id, v.nota_substituta_registro, v.pedido, v.cliente, v.cod_cliente, v.numeros_titulos, v.nota_substituta));
+      .filter((v) => bate(termo, v.nota, v.id, v.nota_substituta_registro, ...(v.baixas || []).map((b) => b.registro), v.pedido, v.cliente, v.cod_cliente, v.numeros_titulos, v.nota_substituta));
     el('titulo-vendas').textContent = `Notas de venda canceladas com financeiro (${vendas.length})`;
     const corpoB = el('tabela-vendas').tBodies[0];
     corpoB.replaceChildren(...vendas.map((v) => {
@@ -175,7 +175,7 @@
         celula(dinheiro(v.valor_nota)),
         celula(v.numeros_titulos || '—', 'esquerda', v.vence ? `vence ${dataBR(v.vence)}` : ''),
         celula(dinheiro(v.pendente), n(v.pendente) > 0.009 ? 'negativo' : ''),
-        celula(dinheiro(v.recebido), n(v.recebido) > 0.009 ? 'negativo' : '', `${recebidoQuando}${estorno}`),
+        celulaRecebido(v, recebidoQuando, estorno),
         substituta,
         celula(v.acao, 'esquerda canceladas-acao'),
       );
@@ -190,10 +190,48 @@
     }
   }
 
+  // Recebido: valor, quando e ONDE foi baixado. Baixa em Bancos: o cabeçalho do recebimento com os
+  // campos da consulta "Recebimentos de Título a Receber (Bancos)" do PROCFIT (Recebimento, Data, Login,
+  // Entidade, Conta, Movimento, Data de Recebimento, Modalidade, Descrição)
+  function celulaRecebido(v, quando, estorno) {
+    const td = celula(dinheiro(v.recebido), n(v.recebido) > 0.009 ? 'negativo' : '', `${quando}${estorno}`);
+    for (const b of v.baixas || []) {
+      const bloco = criar('span', 'qtd canceladas-baixa');
+      if (b.tab === 668401 && b.rb_recebimento) {
+        bloco.append(criar('strong', null, `${b.acerto ? 'PIX do acerto de despacho' : 'Bancos por títulos'} · Recebimento ${b.rb_recebimento}`));
+        const linhas = [
+          `Data ${dataHoraBR(b.lancado_em)}${b.login ? ` · Login ${b.login}` : ''}`,
+          b.rb_entidade != null ? `Entidade ${b.rb_entidade}${b.rb_entidade_nome ? ` ${b.rb_entidade_nome}` : ''}` : '',
+          `${b.conta_bancaria != null ? `Conta ${b.conta_bancaria} · ` : ''}Movimento ${dataBR(b.rb_movimento)} · Recebimento em ${dataBR(b.rb_data_recebimento)}`,
+          `${b.forma ? `${b.forma} · ` : ''}${dinheiro(b.valor)} neste título${b.acerto ? ` · acerto ${b.acerto}` : ''}`,
+          b.rb_descricao ? `Descrição: ${b.rb_descricao}` : '',
+        ].filter(Boolean);
+        for (const l of linhas) bloco.append(criar('span', 'canceladas-baixa__linha', l));
+        // Recebimento lançado em nome de outra entidade: na consulta de Bancos ele aparece com esse nome
+        if (b.rb_entidade != null && b.titulo_entidade != null && String(b.rb_entidade) !== String(b.titulo_entidade)) {
+          bloco.append(criar('span', 'canceladas-baixa__aviso', 'Lançado em nome de outra entidade: na consulta de Bancos, procure pelo nº do Recebimento.'));
+        }
+      } else if (b.tab === 668401) {
+        bloco.append(criar('strong', null, `Bancos por títulos · Recebimento ${b.registro}`));
+        bloco.append(criar('span', 'canceladas-baixa__aviso', 'Esse recebimento não existe mais na tela de Bancos: a baixa ficou no título sem o lançamento. Estornar direto no título.'));
+      } else {
+        const partes = [b.onde];
+        if (b.acerto) partes.push(`acerto ${b.acerto}`);
+        else if (b.registro) partes.push(`registro ${b.registro}`);
+        partes.push(`${dinheiro(b.valor)} em ${dataBR(b.dia)}`);
+        if (b.forma) partes.push(b.forma);
+        if (b.usuario) partes.push(`por ${b.usuario}`);
+        bloco.append(partes.join(' · '));
+      }
+      td.append(bloco);
+    }
+    return td;
+  }
+
   // ---------- Abas ----------
   const PESQUISA = {
     devolucoes: 'Encontrar por nota ou registro, nota original, pedido, título ou cliente',
-    notas: 'Encontrar por nota ou registro, pedido, título ou cliente',
+    notas: 'Encontrar por nota ou registro, nº do recebimento, pedido, título ou cliente',
   };
   function abrirAba(aba) {
     if (!PESQUISA[aba]) aba = 'devolucoes';
