@@ -65,26 +65,69 @@ const analise = (query) => repo.analise(montarFiltros(query));
 
 // Notas canceladas / financeiro: notas canceladas que ainda mexem no financeiro
 // (regras em repositories/notas-canceladas.repository.js). Período = dia do cancelamento.
+// Cada linha ganha a SITUAÇÃO (usada no filtro da tela e na auditoria):
+//   devolução:  abatendo (o abatimento continua) · abatendo_estorno (continua, mas teve estorno depois:
+//               conferir) · corrigida (o abatimento foi desfeito ou nunca houve)
+//   nota venda: cobranca_dupla (ficou com o recebimento e a nota que a substituiu está em aberto) ·
+//               recebida (ficou com recebimento: nota cancelada não pode ter recebimento) ·
+//               em_aberto (título em aberto: alguém pode cobrar o cliente)
+const SITUACOES_CANCELADAS = {
+  abatendo: 'Ainda abatendo o título',
+  abatendo_estorno: 'Abatendo, com estorno depois',
+  corrigida: 'Já corrigida',
+  cobranca_dupla: 'Cobrança em dobro',
+  recebida: 'Cancelada com recebimento',
+  em_aberto: 'Título em aberto',
+};
+
 async function notasCanceladas(query) {
   const filtros = montarFiltros(query);
   const r = await require('../repositories/notas-canceladas.repository').listar(filtros);
   const n = (v) => Number(v) || 0;
-  const devolucoes = r.devolucoes.map((d) => ({ ...d, gerando_financeiro: n(d.gerando) > 0.009 }));
+  const moeda = (v) => n(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+  const devolucoes = r.devolucoes.map((d) => {
+    const gerando = n(d.gerando) > 0.009;
+    const situacao = !gerando ? 'corrigida' : n(d.estornado_depois) > 0.009 ? 'abatendo_estorno' : 'abatendo';
+    return { ...d, gerando_financeiro: gerando, situacao };
+  });
+
+  const vendas = r.vendas.map((v) => {
+    const recebido = n(v.recebido) > 0.009;
+    const dupla = recebido && n(v.substituta_pendente) > 0.009;
+    const situacao = dupla ? 'cobranca_dupla' : recebido ? 'recebida' : 'em_aberto';
+    let acao;
+    if (situacao === 'cobranca_dupla') {
+      acao = `Cobrança em dobro: o cliente já pagou ${moeda(v.recebido)} nesta nota cancelada e a nota ${v.nota_substituta} `
+        + `(que a substituiu) está com ${moeda(v.substituta_pendente)} em aberto. Estornar o recebimento daqui e baixar na nota ${v.nota_substituta}.`;
+    } else if (situacao === 'recebida') {
+      acao = `Nota cancelada não pode ter recebimento: estornar ${moeda(v.recebido)} e `
+        + (v.nota_substituta ? `passar para a nota ${v.nota_substituta}, que substituiu esta.` : 'deixar como crédito do cliente ou devolver.');
+      if (v.recebido_depois) acao += ' A baixa foi dada depois do cancelamento: confira se não foi no título errado.';
+    } else {
+      acao = `Cancelar ${n(v.titulos) === 1 ? 'o título' : 'os títulos'} em aberto (${moeda(v.pendente)}): a nota não vale mais.`;
+    }
+    return { ...v, situacao, cobranca_dupla: dupla, acao };
+  });
+
   return {
     periodo: { inicio: filtros.inicio, fim: filtros.fim },
+    situacoes: SITUACOES_CANCELADAS,
     resumo: {
       devolucoes_canceladas: n(r.contagem.devolucoes_canceladas),
       devolucoes_gerando: devolucoes.filter((d) => d.gerando_financeiro).length,
       valor_devolucoes_gerando: devolucoes.reduce((t, d) => t + (d.gerando_financeiro ? n(d.gerando) : 0), 0),
       vendas_canceladas: n(r.contagem.vendas_canceladas),
-      vendas_com_financeiro: r.vendas.length,
-      valor_vendas_pendente: r.vendas.reduce((t, v) => t + n(v.pendente), 0),
-      valor_vendas_recebido: r.vendas.reduce((t, v) => t + n(v.recebido), 0),
+      vendas_com_financeiro: vendas.length,
+      vendas_cobranca_dupla: vendas.filter((v) => v.cobranca_dupla).length,
+      valor_vendas_pendente: vendas.reduce((t, v) => t + n(v.pendente), 0),
+      valor_vendas_recebido: vendas.reduce((t, v) => t + n(v.recebido), 0),
     },
     devolucoes,
-    vendas: r.vendas,
+    vendas,
   };
 }
+
 const vendedores = (query) => repo.vendedores(montarFiltros(query));
 
 async function detalhe(query, params) {

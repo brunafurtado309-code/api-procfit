@@ -245,6 +245,8 @@
   bolinha.hidden = true;
   botao.append(bolinha);
   let statusAlertas = 'aberto';
+  // Filtros da lista de alertas (na hora): tipo, busca (cliente, vendedor, produto, nota) e valor mínimo
+  const filtroAlertas = { grupo: '', busca: '', valor: '' };
 
   const apiAuditoria = async (url, opcoes = {}) => {
     const r = await fetch(url, { ...opcoes, headers: { 'Content-Type': 'application/json', 'x-api-key': chave() } });
@@ -293,20 +295,55 @@
       topoAlertas.append(info, verificar, filtro);
       alertas.append(topoAlertas);
 
+      const filtros = criar('div', 'alertas__filtros');
+      const tipo = criar('select', 'alertas__filtro');
+      tipo.append(new Option('Todos os tipos', ''), ...Object.entries(d.grupos).map(([g, nomeGrupo]) => new Option(nomeGrupo, g)));
+      tipo.value = filtroAlertas.grupo;
+      const busca = criar('input', 'alertas__busca');
+      busca.type = 'search';
+      busca.placeholder = 'Cliente, vendedor, produto ou nota';
+      busca.value = filtroAlertas.busca;
+      const valor = criar('input', 'alertas__valor');
+      valor.type = 'number';
+      valor.min = '0';
+      valor.step = '0.01';
+      valor.placeholder = 'Valor a partir de R$';
+      valor.value = filtroAlertas.valor;
+      filtros.append(tipo, busca, valor);
+      alertas.append(filtros);
+      const lista = criar('div', 'alertas__lista');
+      alertas.append(lista);
+      const refiltrar = () => {
+        filtroAlertas.grupo = tipo.value;
+        filtroAlertas.busca = busca.value;
+        filtroAlertas.valor = valor.value;
+        desenharLista();
+      };
+      tipo.addEventListener('change', refiltrar);
+      busca.addEventListener('input', refiltrar);
+      valor.addEventListener('input', refiltrar);
+
       // Regras que não conseguiram rodar na última verificação
       const falhas = Object.entries(d.ultima?.regras || {}).filter(([, r]) => r.erro);
       if (falhas.length) alertas.append(criar('p', 'assistente__aviso', `${falhas.length} verificação(ões) não rodaram da última vez (banco ocupado ou fora do ar). Tente "Verificar agora".`));
 
-      if (!d.alertas.length) {
-        alertas.append(criar('p', 'assistente__dica', statusAlertas === 'aberto' ? 'Nenhuma divergência em aberto. ✓' : 'Nada aqui.'));
+      function desenharLista() {
+      lista.replaceChildren();
+      const termo = filtroAlertas.busca.trim().toLowerCase();
+      const minimo = Number(filtroAlertas.valor) || 0;
+      const visiveis = d.alertas.filter((a) => (!filtroAlertas.grupo || a.grupo === filtroAlertas.grupo)
+        && (!termo || `${a.titulo} ${a.detalhe}`.toLowerCase().includes(termo))
+        && (!minimo || Math.abs(Number(a.valor) || 0) >= minimo));
+      if (!visiveis.length) {
+        lista.append(criar('p', 'assistente__dica', !d.alertas.length && statusAlertas === 'aberto' ? 'Nenhuma divergência em aberto. ✓' : 'Nenhum alerta com esses filtros.'));
       }
 
       // Um bloco por grupo (Preço e custo, Notas e pedidos, Financeiro, Telas que não batem)
       for (const [grupo, nomeGrupo] of Object.entries(d.grupos)) {
-        const doGrupo = d.alertas.filter((a) => a.grupo === grupo);
+        const doGrupo = visiveis.filter((a) => a.grupo === grupo);
         if (!doGrupo.length) continue;
         const bloco = criar('details', 'alertas__grupo');
-        bloco.open = doGrupo.some((a) => !a.visto) || doGrupo.length <= 5;
+        bloco.open = doGrupo.some((a) => !a.visto) || doGrupo.length <= 5 || Boolean(termo || minimo || filtroAlertas.grupo);
         const novosNoGrupo = doGrupo.filter((a) => !a.visto).length;
         bloco.append(criar('summary', null, `${nomeGrupo} · ${doGrupo.length}${novosNoGrupo ? ` (${novosNoGrupo} novos)` : ''}`));
         for (const a of doGrupo) {
@@ -335,8 +372,10 @@
           item.append(rodape);
           bloco.append(item);
         }
-        alertas.append(bloco);
+        lista.append(bloco);
       }
+      }
+      desenharLista();
 
       // Abriu a lista dos abertos: os novos passam a vistos (a bolinha apaga)
       if (statusAlertas === 'aberto' && d.alertas.some((a) => !a.visto)) {

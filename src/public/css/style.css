@@ -3566,8 +3566,18 @@ html, body { max-width: 100%; overflow-x: clip; }
 .tela-canceladas .canceladas-resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 1.5rem; }
 .tela-canceladas .canceladas-resumo h2 { font-size: var(--texto-pequeno); color: var(--tinta-suave); }
 .tela-canceladas .canceladas-resumo .explica { margin-top: 0.3rem; }
-.tela-canceladas .tabela td.canceladas-acao { min-width: 12rem; max-width: 18rem; white-space: normal; line-height: 1.35; }
+.tela-canceladas .tabela td.canceladas-acao { min-width: 12rem; max-width: 17rem; white-space: normal; line-height: 1.35; }
 .tela-canceladas .tabela th, .tela-canceladas .tabela td { padding-left: 0.45rem; padding-right: 0.45rem; }
-.tela-canceladas .tabela .qtd { display: block; white-space: nowrap; }
+.tela-canceladas .tabela .qtd { display: block; white-space: normal; max-width: 15rem; }
+.tela-canceladas .tabela td { vertical-align: top; }
 .tela-canceladas tr.canceladas-ok td { color: var(--tinta-suave); }
 .tela-canceladas td.vazio { padding: 1rem; color: var(--tinta-suave); text-align: left; }
+.tela-canceladas .canceladas-filtros { margin-top: 0.5rem; align-items: flex-end; }
+.tela-canceladas .canceladas-filtros input[type="number"] { width: 8rem; }
+.tela-canceladas .canceladas-filtros #filtro-cliente { width: 16rem; }
+.tela-canceladas tr.canceladas-dupla > td:first-child { box-shadow: inset 4px 0 0 #E5484D; }
+.alertas__filtros { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.alertas__filtros select, .alertas__filtros input { font-size: var(--texto-mini); padding: 0.25rem 0.45rem; }
+.alertas__busca { flex: 1 1 10rem; }
+.alertas__valor { width: 9rem; }
+.alertas__lista { display: flex; flex-direction: column; gap: 0.55rem; }

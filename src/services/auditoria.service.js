@@ -10,10 +10,13 @@
 //     atacado_acima_varejo   a última mudança do atacado deixou ele mais caro que o varejo
 //   NOTAS E PEDIDOS
 //     nota_duplicada         mesmo pedido em duas notas, ou mesmo cliente + dia + valor (mês atual)
-//     devolucao_cancelada    nota de devolução cancelada (mês atual)
+//     devolucao_cancelada    devolução cancelada que AINDA abate o título da nota (últimos 90 dias de cancelamento;
+//                            mesma regra de Faturamento > Canceladas com financeiro > Devolução)
 //     cancelado_com_nota     pedido cancelado com nota válida ou título em aberto (últimos 15 dias)
 //     parado_sem_faturar     pedido processado há mais de 7 dias sem nota nem cupom (últimos 15 dias)
 //   FINANCEIRO
+//     nota_cancelada_financeiro nota de venda cancelada com título em aberto ou com recebimento sem estorno
+//                            (cobrança em dobro em destaque) — Faturamento > Canceladas com financeiro > Notas canceladas
 //     pago_com_titulo_aberto pago no caixa, mas o título continua em aberto (últimos 15 dias)
 //     nota_sem_cobranca      nota emitida sem cupom e sem título a receber (últimos 15 dias)
 //   TELAS QUE NÃO BATEM (mês atual)
@@ -24,7 +27,7 @@
 //   aberto     encontrado e ainda não resolvido
 //   ignorado   a Bruna marcou que não é problema: não volta a acender
 //   resolvido  sumiu numa nova verificação (só para as regras de "estado", e só dentro do período
-//              olhado; os de "evento" — salto de preço, mudança por fora, devolução cancelada —
+//              olhado; os de "evento" — salto de preço, mudança por fora —
 //              ficam abertos até serem ignorados)
 // Guardado no banco do painel (Postgres), nas tabelas alertas e auditoria_execucoes.
 //
@@ -198,18 +201,40 @@ async function fonteVendedores(periodo, lojas) {
     };
   });
 
-  const devolucoes = r.erros?.pedidos ? null : (r.devolucoesCanceladas || []).map((d) => ({
-    chave: `devolucao_cancelada:${d.nota_devolucao}:${d.empresa}`,
-    titulo: `Nota de devolução ${d.nota_devolucao} foi cancelada`,
-    detalhe: `Devolução da nota ${d.nota_origem} (${d.cliente || `cliente ${d.cod_cliente}`}, ${reais(d.valor)}), cancelada em ${dataHoraBR(d.cancelado_em)}${d.com_protocolo ? '' : ', sem protocolo da SEFAZ'}. Confira se a mercadoria voltou ou não.`,
-    valor: d.valor,
-    dia: d.devolucao_dia,
-    dados: d,
-  }));
-
   // Telas: notas do vendedor no Resumo x faturado dele em Vendas > Vendedores
   const faturado = new Map((r.vendedores || []).map((v) => [String(v.cod_vendedor ?? ''), v]));
-  return { duplicadas: r.erros?.duplicadas ? null : duplicadas, devolucoes, faturado: r.erros?.notas ? null : faturado };
+  return { duplicadas: r.erros?.duplicadas ? null : duplicadas, faturado: r.erros?.notas ? null : faturado };
+}
+
+// Notas canceladas que ainda mexem no financeiro (a mesma consulta da tela do Faturamento)
+const DIAS_CANCELADAS = 90;
+async function fonteCanceladas(lojas) {
+  const faturamento = require('./faturamento.service');
+  const fim = hojeISO();
+  const inicio = somarDias(fim, -(DIAS_CANCELADAS - 1));
+  const r = await faturamento.notasCanceladas({ inicio, fim });
+  const quem = (x) => `${x.cliente || `cliente ${x.cod_cliente}`}, ${nomeLoja(lojas, x.empresa)}, vendedor ${x.vendedor || x.cod_vendedor}`;
+  const devolucoes = r.devolucoes.filter((d) => d.gerando_financeiro).map((d) => ({
+    chave: `devolucao_cancelada:${d.nota_devolucao}:${d.empresa}`,
+    titulo: `Devolução ${d.nota_devolucao} cancelada, mas ainda abatendo ${reais(d.gerando)}`,
+    detalhe: `${quem(d)}. Nota original ${d.nota_origem} (registro ${d.nota_origem_registro}), título ${d.numeros_titulos || '—'}. `
+      + `A devolução foi cancelada em ${dataHoraBR(d.cancelado_em)} e o abatimento continua: desfazer o abatimento no título.`
+      + `${Number(d.estornado_depois) > 0.009 ? ` Teve estorno de ${reais(d.estornado_depois)} depois: confira se já foi a correção.` : ''}`,
+    valor: d.gerando,
+    dia: String(d.cancelado_em || '').slice(0, 10),
+    dados: { devolucao: d.nota_devolucao, registro: d.id, nota_origem: d.nota_origem },
+  }));
+  const notas = r.vendas.map((v) => ({
+    chave: `nota_cancelada_financeiro:${v.id}`,
+    titulo: v.cobranca_dupla ? `Nota ${v.nota} cancelada — cobrança em dobro (${reais(v.recebido)})`
+      : v.situacao === 'recebida' ? `Nota ${v.nota} cancelada com recebimento de ${reais(v.recebido)}`
+        : `Nota ${v.nota} cancelada com título em aberto (${reais(v.pendente)})`,
+    detalhe: `${quem(v)}. Registro ${v.id}, cancelada em ${dataHoraBR(v.cancelado_em)}. ${v.acao}`,
+    valor: Number(v.pendente || 0) + Number(v.recebido || 0),
+    dia: String(v.cancelado_em || '').slice(0, 10),
+    dados: { nota: v.nota, registro: v.id, situacao: v.situacao, substituta: v.nota_substituta },
+  }));
+  return { janela: inicio, devolucoes, notas };
 }
 
 async function fonteVendas(periodo) {
@@ -295,7 +320,8 @@ const REGRAS = {
   preco_fora_sistema: { grupo: 'preco', evento: true },
   atacado_acima_varejo: { grupo: 'preco' },
   nota_duplicada: { grupo: 'notas' },
-  devolucao_cancelada: { grupo: 'notas', evento: true },
+  devolucao_cancelada: { grupo: 'notas' },
+  nota_cancelada_financeiro: { grupo: 'financeiro' },
   cancelado_com_nota: { grupo: 'notas' },
   parado_sem_faturar: { grupo: 'notas' },
   pago_com_titulo_aberto: { grupo: 'financeiro' },
@@ -326,10 +352,14 @@ async function verificar() {
     const v = await fonteVendedores(periodo, lojas);
     if (v.duplicadas) resultado.nota_duplicada = { itens: v.duplicadas, janela: periodo.inicio };
     else resultado.nota_duplicada = { erro: 'Não foi possível consultar agora.' };
-    if (v.devolucoes) resultado.devolucao_cancelada = { itens: v.devolucoes, janela: periodo.inicio };
-    else resultado.devolucao_cancelada = { erro: 'Não foi possível consultar agora.' };
     faturado = v.faturado;
-  } catch (err) { falhou(['nota_duplicada', 'devolucao_cancelada'], err); }
+  } catch (err) { falhou(['nota_duplicada'], err); }
+
+  try {
+    const c = await fonteCanceladas(lojas);
+    resultado.devolucao_cancelada = { itens: c.devolucoes, janela: c.janela };
+    resultado.nota_cancelada_financeiro = { itens: c.notas, janela: c.janela };
+  } catch (err) { falhou(['devolucao_cancelada', 'nota_cancelada_financeiro'], err); }
 
   try {
     const f = await fonteFaturamento(lojas);

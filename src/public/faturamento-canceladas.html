@@ -41,7 +41,7 @@
           <label class="campo campo--busca">
             <span class="sr-only">Encontrar nota</span>
             <input id="pesquisa-termo" type="search" maxlength="60" autocomplete="off"
-                   placeholder="Encontrar por nota, pedido, título ou cliente">
+                   placeholder="Encontrar por nota, registro, pedido, título ou cliente">
           </label>
         </form>
       </div>
@@ -53,8 +53,16 @@
           <button type="button" class="botao-secundario atalho--ativo" data-dias="90">Últimos 90 dias</button>
           <button type="button" class="botao-secundario" data-dias="365">Último ano</button>
         </div>
-        <button type="button" id="so-financeiro" class="botao-secundario atalho--ativo" aria-pressed="true">Só as que geram financeiro</button>
         <button type="submit" class="filtros__aplicar">Atualizar</button>
+      </form>
+      <!-- Filtros da lista (na hora, sem ir ao banco) -->
+      <form id="filtros-lista" class="filtros canceladas-filtros">
+        <label class="campo"><span>Situação</span><select id="filtro-situacao"></select></label>
+        <label class="campo"><span>Vendedor</span><select id="filtro-vendedor"><option value="">Todos</option></select></label>
+        <label class="campo"><span>Cliente</span><input id="filtro-cliente" list="lista-clientes" autocomplete="off" placeholder="Todos"></label>
+        <datalist id="lista-clientes"></datalist>
+        <label class="campo"><span>Valor a partir de (R$)</span><input id="filtro-valor" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00"></label>
+        <button type="button" id="limpar-filtros" class="botao-secundario">Limpar filtros</button>
       </form>
       <p id="status" class="status" role="status" aria-live="polite"></p>
     </section>
@@ -79,7 +87,7 @@
           <table class="tabela tabela-cartoes" id="tabela-devolucoes">
             <thead>
               <tr>
-                <th scope="col" class="esquerda">Devolução</th>
+                <th scope="col" class="esquerda">Devolução (registro)</th>
                 <th scope="col" class="esquerda">Cancelada em</th>
                 <th scope="col" class="esquerda">Nota original</th>
                 <th scope="col" class="esquerda">Cliente</th>
@@ -108,19 +116,21 @@
 
       <section class="bloco">
         <h2 id="titulo-vendas">Notas de venda canceladas com financeiro</h2>
-        <p class="bloco__descricao">Notas de venda canceladas cujo título a receber continua em aberto (alguém pode cobrar o cliente)
-          ou já recebeu dinheiro (o cliente pagou uma nota que não vale mais). Títulos gerados pelo acerto de despacho não entram aqui.</p>
+        <p class="bloco__descricao">Nota cancelada não pode ter financeiro. Aqui aparecem as que ficaram com o título em aberto
+          (alguém pode cobrar o cliente) ou com recebimento que não foi estornado (o dinheiro ficou preso numa nota que não vale mais).
+          "Cobrança em dobro": a nota que substituiu a cancelada está em aberto, e o cliente já pagou. Títulos gerados pelo acerto de despacho não entram aqui.</p>
         <div class="tabela-rolagem">
           <table class="tabela tabela-cartoes" id="tabela-vendas">
             <thead>
               <tr>
-                <th scope="col" class="esquerda">Nota</th>
+                <th scope="col" class="esquerda">Nota (registro)</th>
                 <th scope="col" class="esquerda">Cancelada em</th>
                 <th scope="col" class="esquerda">Cliente</th>
                 <th scope="col">Valor da nota</th>
                 <th scope="col" class="esquerda">Títulos</th>
                 <th scope="col">Em aberto</th>
                 <th scope="col">Recebido</th>
+                <th scope="col" class="esquerda">Nota que substituiu</th>
                 <th scope="col" class="esquerda">O que fazer</th>
               </tr>
             </thead>
