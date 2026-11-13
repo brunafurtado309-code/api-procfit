@@ -121,15 +121,6 @@ async function base() {
       AND M.quando >= @desde
     ORDER BY M.produto, M.quando;
 
-    -- 6. Lojas (empresas) que venderam desde o início da base
-    SELECT EU.EMPRESA_USUARIA AS codigo, LTRIM(RTRIM(EU.NOME_FANTASIA)) AS nome
-    FROM EMPRESAS_USUARIAS EU WITH (NOLOCK)
-    WHERE EXISTS (
-      SELECT 1 FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
-      WHERE VA.EMPRESA = EU.EMPRESA_USUARIA AND VA.MOVIMENTO >= @desde AND ISNULL(VA.DOCUMENTO_TIPO, 0) <> 20
-    )
-    ORDER BY EU.EMPRESA_USUARIA;
-
     -- 5. Custo real: pago nas compras ÷ (unidades compradas + bonificadas)
     SELECT
       P.PRODUTO                                                                         AS produto,
@@ -144,7 +135,17 @@ async function base() {
       AND P.QUANTIDADE_ESTOQUE > 0
       AND ${FINAL_CFOP} IN ('910', '101', '102', '401', '403', '404', '405')
     GROUP BY P.PRODUTO;
+
+    -- 6. Lojas (empresas) que venderam desde o início da base
+    SELECT EU.EMPRESA_USUARIA AS codigo, LTRIM(RTRIM(EU.NOME_FANTASIA)) AS nome
+    FROM EMPRESAS_USUARIAS EU WITH (NOLOCK)
+    WHERE EXISTS (
+      SELECT 1 FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
+      WHERE VA.EMPRESA = EU.EMPRESA_USUARIA AND VA.MOVIMENTO >= @desde AND ISNULL(VA.DOCUMENTO_TIPO, 0) <> 20
+    )
+    ORDER BY EU.EMPRESA_USUARIA;
   `);
+  // A ordem aqui é a mesma dos SELECTs acima (1 a 6). Se mudar a ordem de um, mude aqui também.
   const [[{ hoje }], vendas, produtos, mudancas, custosReais, lojas] = recordsets;
   return { hoje, vendas, produtos, mudancas, custosReais, lojas };
 }
