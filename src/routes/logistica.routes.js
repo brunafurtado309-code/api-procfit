@@ -11,5 +11,7 @@ router.get('/empresas', controller.empresas);
 router.get('/produtos/:produto', controller.produto);
 router.get('/transferencias', controller.transferencias);        // Logística > Transferências
 router.get('/transferencias/:id', controller.transferencia);     // produtos, notas e recebimento de uma
+router.get('/notas-entrada', controller.notasEntrada);           // Logística > Notas de entrada
+router.get('/notas-entrada/:id', controller.notaEntrada);        // itens de uma nota
 
 module.exports = router;

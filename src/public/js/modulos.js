@@ -96,6 +96,7 @@ const modulos = (() => {
     ],
     logistica: [
       { titulo: 'Produtos', pagina: 'logistica.html' },
+      { titulo: 'Notas de entrada', pagina: 'logistica-notas.html' },
       { titulo: 'Transferências', pagina: 'logistica-transferencias.html' },
     ],
     movimentos: [

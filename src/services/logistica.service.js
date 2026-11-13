@@ -187,4 +187,45 @@ async function transferencia(query, params) {
   return { id, ...d };
 }
 
-module.exports = { painel, empresas, produto, exportar, transferencias, transferencia };
+// ---------- Notas de entrada (Logística > Notas de entrada) ----------
+// Regras: repositories/notas-entrada.repository.js
+const notasEntradaRepo = require('../repositories/notas-entrada.repository');
+const SITUACOES_NOTA = ['entrada', 'pendente', 'todas'];
+
+async function notasEntrada(query) {
+  const base = montarFiltros(query);
+  const situacao = SITUACOES_NOTA.includes(query.situacao) ? query.situacao : 'entrada';
+  const filtros = { inicio: base.inicio, fim: base.fim, empresa: base.empresa, situacao };
+  if (base.busca) filtros.busca = base.busca;
+  const r = await notasEntradaRepo.listar(filtros);
+  const notas = r.notas;
+  const soma = (lista, campo) => lista.reduce((t, x) => t + (Number(x[campo]) || 0), 0);
+  const entraram = notas.filter((x) => x.deu_entrada);
+  const dias = entraram.map((x) => x.dias_ate_entrada).filter((d) => d != null);
+  return {
+    periodo: { inicio: filtros.inicio, fim: filtros.fim },
+    situacao,
+    resumo: {
+      notas: notas.length,
+      valor: soma(notas, 'valor'),
+      com_entrada: entraram.length,
+      aguardando: notas.length - entraram.length,
+      compras: notas.filter((x) => !x.transferencia).length,
+      transferencias: notas.filter((x) => x.transferencia).length,
+      canceladas: notas.filter((x) => x.cancelada).length,
+      fornecedores: new Set(notas.map((x) => x.cod_fornecedor)).size,
+      media_dias_ate_entrada: dias.length ? dias.reduce((a, b) => a + b, 0) / dias.length : null,
+    },
+    notas,
+    fornecedores: r.fornecedores,
+    limite: notas.length >= r.limite ? r.limite : null,
+  };
+}
+
+async function notaEntrada(query, params) {
+  const id = Number(params.id);
+  if (!Number.isInteger(id) || id <= 0) throw new AppError('Nota inválida');
+  return { id, itens: await notasEntradaRepo.itens(id) };
+}
+
+module.exports = { painel, empresas, produto, exportar, transferencias, transferencia, notasEntrada, notaEntrada };

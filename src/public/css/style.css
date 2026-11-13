@@ -3618,3 +3618,9 @@ html, body { max-width: 100%; overflow-x: clip; }
 .transf-sit--cancelada { background: transparent; color: var(--tinta-suave); border: 1px dashed var(--linha-forte); }
 .detalhe--transferencia { width: min(64rem, calc(100vw - 2rem)); }
 .detalhe--transferencia .transf-linha { margin: 0.2rem 0; font-size: var(--texto-pequeno); }
+/* Logística > Notas de entrada (logistica-notas.html): usa o visual das Transferências */
+.tela-notas-entrada .tabela td .qtd { display: block; margin-left: 0; }
+.tela-notas-entrada #tabela-notas-entrada td:nth-child(2) { min-width: 15rem; }
+.tela-notas-entrada #tabela-notas-entrada td:nth-child(4) { min-width: 11rem; }
+.tela-notas-entrada .transf-sit { white-space: nowrap; }
+.tela-notas-entrada #tabela-notas-entrada td:nth-child(2) .transf-sit { margin-left: 0.25rem; }
