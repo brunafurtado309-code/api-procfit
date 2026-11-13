@@ -62,6 +62,29 @@ function montarFiltros(query) {
 }
 
 const analise = (query) => repo.analise(montarFiltros(query));
+
+// Notas canceladas / financeiro: notas canceladas que ainda mexem no financeiro
+// (regras em repositories/notas-canceladas.repository.js). Período = dia do cancelamento.
+async function notasCanceladas(query) {
+  const filtros = montarFiltros(query);
+  const r = await require('../repositories/notas-canceladas.repository').listar(filtros);
+  const n = (v) => Number(v) || 0;
+  const devolucoes = r.devolucoes.map((d) => ({ ...d, gerando_financeiro: n(d.gerando) > 0.009 }));
+  return {
+    periodo: { inicio: filtros.inicio, fim: filtros.fim },
+    resumo: {
+      devolucoes_canceladas: n(r.contagem.devolucoes_canceladas),
+      devolucoes_gerando: devolucoes.filter((d) => d.gerando_financeiro).length,
+      valor_devolucoes_gerando: devolucoes.reduce((t, d) => t + (d.gerando_financeiro ? n(d.gerando) : 0), 0),
+      vendas_canceladas: n(r.contagem.vendas_canceladas),
+      vendas_com_financeiro: r.vendas.length,
+      valor_vendas_pendente: r.vendas.reduce((t, v) => t + n(v.pendente), 0),
+      valor_vendas_recebido: r.vendas.reduce((t, v) => t + n(v.recebido), 0),
+    },
+    devolucoes,
+    vendas: r.vendas,
+  };
+}
 const vendedores = (query) => repo.vendedores(montarFiltros(query));
 
 async function detalhe(query, params) {
@@ -220,6 +243,6 @@ async function exportarNotasVendedor(query) {
 }
 
 module.exports = {
-  analise, detalhe, vendedores, exportar, notasVendedor, exportarNotasVendedor, ETAPA_TEXTO,
+  analise, detalhe, vendedores, exportar, notasVendedor, exportarNotasVendedor, notasCanceladas, ETAPA_TEXTO,
   montarFiltros, // usado também pelo Vendas > Vendedores (vendas-vendedores.service.js)
 };

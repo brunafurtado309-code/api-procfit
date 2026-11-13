@@ -116,6 +116,7 @@ const ARQUIVOS_DA_TELA = {
   'conciliacao.html': ['conciliacao', 'extratos'],
   'faturamento.html': ['faturamento', 'pedidos'],
   'faturamento-vendedores.html': ['faturamento-vendedores'],
+  'faturamento-canceladas.html': ['notas-canceladas'],
   'logistica.html': ['logistica'],
   'precificacao.html': ['precificacao-analise', 'precificacao', 'classificacao'],
   'precos.html': ['precos'],

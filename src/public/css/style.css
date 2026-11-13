@@ -3558,3 +3558,16 @@ html, body { max-width: 100%; overflow-x: clip; }
 .alerta__rodape { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; }
 .alerta__rodape .assistente__dica { margin-right: auto; }
 .alerta__rodape .assistente__sugestao { padding: 0.2rem 0.55rem; }
+
+
+/* ==========================================================
+   31. Faturamento > Notas canceladas / financeiro (faturamento-canceladas.html)
+   ========================================================== */
+.tela-canceladas .canceladas-resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 1.5rem; }
+.tela-canceladas .canceladas-resumo h2 { font-size: var(--texto-pequeno); color: var(--tinta-suave); }
+.tela-canceladas .canceladas-resumo .explica { margin-top: 0.3rem; }
+.tela-canceladas .tabela td.canceladas-acao { min-width: 12rem; max-width: 18rem; white-space: normal; line-height: 1.35; }
+.tela-canceladas .tabela th, .tela-canceladas .tabela td { padding-left: 0.45rem; padding-right: 0.45rem; }
+.tela-canceladas .tabela .qtd { display: block; white-space: nowrap; }
+.tela-canceladas tr.canceladas-ok td { color: var(--tinta-suave); }
+.tela-canceladas td.vazio { padding: 1rem; color: var(--tinta-suave); text-align: left; }

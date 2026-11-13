@@ -17,6 +17,7 @@ module.exports = {
   vendedores: acao(service.vendedores),
   detalhe: acao(service.detalhe),
   notasVendedor: acao(service.notasVendedor),
+  notasCanceladas: acao(service.notasCanceladas),
   excel: baixar(service.exportar),
   excelNotasVendedor: baixar(service.exportarNotasVendedor),
 };
