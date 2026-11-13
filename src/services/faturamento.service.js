@@ -92,8 +92,19 @@ async function notasCanceladas(query) {
     return { ...d, gerando_financeiro: gerando, situacao };
   });
 
+  // Onde cada recebimento foi baixado (Bancos por títulos com o registro, caixa, cofre, despacho)
+  // Os códigos de ligação podem vir do banco como texto (bigint/numeric): tudo vira número antes de comparar
+  const baixasPorNota = new Map();
+  for (const bruta of r.baixas || []) {
+    const b = { ...bruta, nota_id: n(bruta.nota_id), tab: n(bruta.tab), registro: n(bruta.registro),
+      rb_recebimento: bruta.rb_recebimento == null ? null : n(bruta.rb_recebimento) };
+    if (!baixasPorNota.has(b.nota_id)) baixasPorNota.set(b.nota_id, []);
+    baixasPorNota.get(b.nota_id).push(b);
+  }
+
   const vendas = r.vendas.map((v) => {
     const recebido = n(v.recebido) > 0.009;
+    const baixas = baixasPorNota.get(n(v.id)) || [];
     const dupla = recebido && n(v.substituta_pendente) > 0.009;
     const situacao = dupla ? 'cobranca_dupla' : recebido ? 'recebida' : 'em_aberto';
     let acao;
@@ -107,7 +118,10 @@ async function notasCanceladas(query) {
     } else {
       acao = `Cancelar ${n(v.titulos) === 1 ? 'o título' : 'os títulos'} em aberto (${moeda(v.pendente)}): a nota não vale mais.`;
     }
-    return { ...v, situacao, cobranca_dupla: dupla, acao };
+    const ondeBaixou = baixas.filter((b) => b.tab === 668401).map((b) => b.registro);
+    // Nº do campo "Recebimento" da tela Recebimentos de Título a Receber (Bancos) do PROCFIT
+    if (recebido && ondeBaixou.length) acao += ` Baixa em Bancos por títulos, recebimento ${[...new Set(ondeBaixou)].join(', ')}.`;
+    return { ...v, situacao, cobranca_dupla: dupla, acao, baixas };
   });
 
   return {
