@@ -102,6 +102,8 @@ const analiseTela = (() => {
         celula(dinheiro(d.prejuizo_unidade), 'negativo'),
         celula(dinheiro(d.preco_minimo)),
       ],
+      // "O que fazer" curto: os números já estão nas colunas (o texto inteiro fica ao passar o mouse)
+      curta: (d) => `Subir para ${dinheiro(d.preco_minimo)} ou mais. Confira antes se o custo está certo.`,
     },
     so_com_bonificacao: {
       titulo: 'Só dá lucro por causa da bonificação',
@@ -119,6 +121,7 @@ const analiseTela = (() => {
         linhaPequena(celula(porcento(p.margem_tabela_real)), `PROCFIT ${porcento(p.margem_tabela)}`, 'qtd negativo'),
         celula(dinheiro(d.preco_sem_bonificacao)),
       ],
+      curta: (d) => `Se a bonificação parar, subir para ${dinheiro(d.preco_sem_bonificacao)}.`,
     },
     perderam_margem: {
       titulo: 'Perderam margem',
@@ -304,7 +307,14 @@ const analiseTela = (() => {
       const p = produto(d.codigo);
       const tr = document.createElement('tr');
       if (def.alerta) tr.className = 'linha-vencida';
-      tr.append(celulaProduto(p), ...def.celulas(d, p), celula(d.acao, 'esquerda analise-acao'));
+      // Texto curto (quando a decisão tem) ou o texto inteiro em até 2 linhas; o completo fica no "title"
+      const acao = celula('', 'esquerda analise-acao');
+      const texto = document.createElement('div');
+      if (!def.curta) texto.className = 'analise-acao__resumo';
+      texto.textContent = def.curta ? def.curta(d, p) : d.acao;
+      acao.append(texto);
+      acao.title = d.acao;
+      tr.append(celulaProduto(p), ...def.celulas(d, p), acao);
       return tr;
     }));
   }
