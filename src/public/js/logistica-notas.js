@@ -6,7 +6,12 @@
   const numero = (v) => n(v).toLocaleString('pt-BR', { maximumFractionDigits: 3 });
   const moeda = (v) => n(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const dataBR = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '—');
-  const dataHoraBR = (t) => (t ? `${dataBR(t)} ${String(t).slice(11, 16)}` : '—');
+  // O PROCFIT grava a data de entrada sem a hora (vem 00:00): aí mostra só o dia
+  const dataHoraBR = (t) => {
+    if (!t) return '—';
+    const hora = String(t).slice(11, 16);
+    return hora && hora !== '00:00' ? `${dataBR(t)} ${hora}` : dataBR(t);
+  };
   const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const chave = () => sessionStorage.getItem('apiKey') || '';
   const plural = (q, um, varios) => `${n(q).toLocaleString('pt-BR')} ${n(q) === 1 ? um : varios}`;
