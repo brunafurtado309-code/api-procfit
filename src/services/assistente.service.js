@@ -118,6 +118,7 @@ const ARQUIVOS_DA_TELA = {
   'faturamento-vendedores.html': ['faturamento-vendedores'],
   'faturamento-canceladas.html': ['notas-canceladas'],
   'logistica.html': ['logistica'],
+  'logistica-transferencias.html': ['transferencias'],
   'precificacao.html': ['precificacao-analise', 'precificacao', 'classificacao'],
   'precos.html': ['precos'],
   'movimentos.html': ['movimentos'],

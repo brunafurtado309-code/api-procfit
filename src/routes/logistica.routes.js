@@ -9,5 +9,7 @@ router.get('/produtos', controller.painel);
 router.get('/produtos/excel', controller.excel);
 router.get('/empresas', controller.empresas);
 router.get('/produtos/:produto', controller.produto);
+router.get('/transferencias', controller.transferencias);        // Logística > Transferências
+router.get('/transferencias/:id', controller.transferencia);     // produtos, notas e recebimento de uma
 
 module.exports = router;

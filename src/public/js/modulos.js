@@ -50,7 +50,7 @@ const modulos = (() => {
     faturamento: { titulo: 'Faturamento', pagina: 'faturamento.html',
       descricao: 'O caminho de cada pedido, do orçamento ao pagamento, e o que precisa de atenção.' },
     logistica: { titulo: 'Logística', pagina: 'logistica.html',
-      descricao: 'Compras, vendas e estoque de cada produto, fornecedores e mudanças de preço.' },
+      descricao: 'Compras, vendas e estoque de cada produto, fornecedores, mudanças de preço e transferências entre lojas.' },
     precificacao: { titulo: 'Precificação', pagina: 'precificacao.html',
       descricao: 'Margem, custo real com bonificação, preço sugerido, picos e quedas e as decisões de preço.' },
     precos: { titulo: 'Tabela de preços', pagina: 'precos.html',
@@ -93,6 +93,10 @@ const modulos = (() => {
       { titulo: 'Análise', pagina: 'precificacao.html#analise', aba: 'analise' },
       { titulo: 'Notas e fornecedores', pagina: 'precificacao.html#notas', aba: 'notas' },
       { titulo: 'Produtos', pagina: 'precificacao.html#produtos', aba: 'produtos' },
+    ],
+    logistica: [
+      { titulo: 'Produtos', pagina: 'logistica.html' },
+      { titulo: 'Transferências', pagina: 'logistica-transferencias.html' },
     ],
     movimentos: [
       { titulo: 'Notas de entrada', pagina: 'movimentos.html#notas', aba: 'notas' },

@@ -3586,3 +3586,35 @@ html, body { max-width: 100%; overflow-x: clip; }
 .tela-canceladas .canceladas-baixa strong { display: block; font-weight: 700; }
 .tela-canceladas .canceladas-baixa__linha { display: block; color: var(--tinta-suave); }
 .tela-canceladas .canceladas-baixa__aviso { display: block; margin-top: 0.15rem; color: var(--alerta); font-weight: 600; }
+
+
+/* ==========================================================
+   32. Logística > Transferências (logistica-transferencias.html)
+   ========================================================== */
+.tela-transferencias .transf-resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 1.5rem; }
+.tela-transferencias .transf-resumo h2 { font-size: var(--texto-pequeno); color: var(--tinta-suave); }
+.tela-transferencias .tabela td { vertical-align: top; }
+.tela-transferencias .tabela .qtd { display: block; }
+.tela-transferencias tr.transf-rota { cursor: pointer; }
+.tela-transferencias tr.transf-rota:hover td { background: var(--verde-suave); }
+.tela-transferencias tr.transf-cancelada td { color: var(--tinta-suave); text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.25); }
+.tela-transferencias td.vazio { padding: 1rem; color: var(--tinta-suave); text-align: left; }
+.link-tabela {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--verde-escuro);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.link-tabela:hover { background: none; color: var(--tinta); }
+.transf-sit { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: var(--texto-mini); font-weight: 700; text-decoration: none; }
+.transf-sit--ok { background: var(--verde-claro); color: var(--verde-escuro); }
+.transf-sit--transito { background: var(--alerta-claro); color: var(--alerta); }
+.transf-sit--sem { background: var(--fundo); color: var(--tinta-suave); border: 1px solid var(--linha-forte); }
+.transf-sit--cancelada { background: transparent; color: var(--tinta-suave); border: 1px dashed var(--linha-forte); }
+.detalhe--transferencia { width: min(64rem, calc(100vw - 2rem)); }
+.detalhe--transferencia .transf-linha { margin: 0.2rem 0; font-size: var(--texto-pequeno); }

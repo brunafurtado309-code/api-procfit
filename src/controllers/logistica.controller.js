@@ -16,6 +16,8 @@ module.exports = {
   painel: acao(service.painel),
   empresas: acao(service.empresas),
   produto: acao(service.produto),
+  transferencias: acao(service.transferencias),
+  transferencia: acao(service.transferencia),
   excel: async (req, res, next) => {
     try {
       const { workbook, nomeArquivo } = await service.exportar(req.query);

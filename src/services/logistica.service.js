@@ -130,4 +130,61 @@ async function exportar(query) {
   return { workbook, nomeArquivo: `logistica_${filtros.inicio}_a_${filtros.fim}.xlsx` };
 }
 
-module.exports = { painel, empresas, produto, exportar };
+// ---------- Transferências (Logística > Transferências) ----------
+// Regras de onde vem cada número: repositories/transferencias.repository.js
+const transferenciasRepo = require('../repositories/transferencias.repository');
+
+function situacaoDaTransferencia(t) {
+  if (t.cancelada) return 'cancelada';
+  if (Number(t.recebimentos) > 0) return 'recebida';
+  if (Number(t.qtd_notas) > Number(t.notas_canceladas)) return 'em_transito';
+  return 'sem_nota';
+}
+const SITUACOES_TRANSFERENCIA = {
+  recebida: 'Recebida',
+  em_transito: 'Em trânsito (com nota, sem recebimento)',
+  sem_nota: 'Sem nota',
+  cancelada: 'Cancelada',
+};
+
+async function transferencias(query) {
+  const base = montarFiltros(query);
+  const filtros = { inicio: base.inicio, fim: base.fim, origem: empresa(query.origem), destino: empresa(query.destino) };
+  if (base.busca) filtros.busca = base.busca;
+  const r = await transferenciasRepo.listar(filtros);
+  const lista = r.transferencias.map((t) => ({ ...t, situacao: situacaoDaTransferencia(t) }));
+  const conta = (s) => lista.filter((t) => t.situacao === s).length;
+  return {
+    periodo: { inicio: filtros.inicio, fim: filtros.fim },
+    situacoes: SITUACOES_TRANSFERENCIA,
+    resumo: {
+      transferencias: lista.length,
+      recebidas: conta('recebida'),
+      em_transito: conta('em_transito'),
+      sem_nota: conta('sem_nota'),
+      canceladas: conta('cancelada'),
+      quantidade: lista.filter((t) => !t.cancelada).reduce((s, t) => s + (Number(t.quantidade) || 0), 0),
+      notas: lista.reduce((s, t) => s + (Number(t.qtd_notas) || 0), 0),
+    },
+    transferencias: lista,
+    rotas: r.rotas,
+    produtos: r.produtos,
+    limite: lista.length >= r.limite ? r.limite : null,
+  };
+}
+
+async function transferencia(query, params) {
+  const id = Number(params.id);
+  if (!Number.isInteger(id) || id <= 0) throw new AppError('Transferência inválida');
+  const d = await transferenciasRepo.detalhe(id);
+  // Diferença só quando enviado e recebido estão na mesma unidade (ou sem unidade nos dois)
+  const mesmaUnidade = (a, b) => String(a || '').toUpperCase() === String(b || '').toUpperCase();
+  d.produtos = d.produtos.map((p) => {
+    const recebeu = p.recebida != null;
+    const diferenca = recebeu && mesmaUnidade(p.unidade, p.unidade_recebida) ? Number(p.recebida) - Number(p.enviada) : null;
+    return { ...p, diferenca: diferenca != null && Math.abs(diferenca) > 0.0001 ? diferenca : (diferenca === null ? null : 0) };
+  });
+  return { id, ...d };
+}
+
+module.exports = { painel, empresas, produto, exportar, transferencias, transferencia };
