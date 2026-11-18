@@ -88,6 +88,7 @@ const modulos = (() => {
       { titulo: 'Faturados por vendedor', pagina: 'faturamento-vendedores.html', setor: 'faturamento_vendedores' },
       { titulo: 'Devolução', pagina: 'faturamento-canceladas.html#devolucoes', aba: 'devolucoes' },
       { titulo: 'Notas canceladas', pagina: 'faturamento-canceladas.html#notas', aba: 'notas' },
+      { titulo: 'Todos os cancelamentos', pagina: 'faturamento-canceladas.html#todos', aba: 'todos' },
     ],
     precificacao: [
       { titulo: 'Análise', pagina: 'precificacao.html#analise', aba: 'analise' },

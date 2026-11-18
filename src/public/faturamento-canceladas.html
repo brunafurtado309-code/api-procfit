@@ -32,6 +32,7 @@
     <nav class="abas" id="abas" aria-label="Tipo de cancelamento">
       <button class="aba aba--ativa" type="button" data-aba="devolucoes" aria-current="page">Devolução</button>
       <button class="aba" type="button" data-aba="notas">Notas canceladas</button>
+      <button class="aba" type="button" data-aba="todos">Todos os cancelamentos</button>
     </nav>
 
     <section class="barra-filtros" aria-label="Filtros">
@@ -131,6 +132,41 @@
                 <th scope="col">Recebido</th>
                 <th scope="col" class="esquerda">Nota que substituiu</th>
                 <th scope="col" class="esquerda">O que fazer</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+      </div>
+
+      <!-- Tudo o que foi cancelado no período, dizendo se é nota, devolução, cupom ou pedido -->
+      <div id="aba-todos" hidden>
+      <section class="destaque canceladas-resumo">
+        <div>
+          <h2>Cancelamentos no período</h2>
+          <p id="resumo-todos" class="valor-grande">—</p>
+          <p id="resumo-todos-explica" class="explica"></p>
+        </div>
+      </section>
+      <div id="tipos-todos" class="canceladas-tipos" aria-label="Filtrar por tipo"></div>
+
+      <section class="bloco">
+        <h2 id="titulo-todos">Todos os cancelamentos</h2>
+        <p class="bloco__descricao">Tudo o que foi cancelado no período: nota fiscal, nota de devolução, cupom do caixa e pedido.
+          A coluna Financeiro diz se o cancelamento ainda deixou algo no contas a receber (título em aberto, recebimento sem estorno,
+          abatimento valendo ou pedido cancelado com nota válida). Cupom é pago na hora no caixa e não gera título.</p>
+        <div class="tabela-rolagem">
+          <table class="tabela tabela-cartoes" id="tabela-todos">
+            <thead>
+              <tr>
+                <th scope="col" class="esquerda">Tipo</th>
+                <th scope="col" class="esquerda">Número</th>
+                <th scope="col" class="esquerda">Cancelado em</th>
+                <th scope="col" class="esquerda">Cliente</th>
+                <th scope="col">Valor</th>
+                <th scope="col" class="esquerda">Financeiro</th>
+                <th scope="col" class="esquerda">Observação</th>
               </tr>
             </thead>
             <tbody></tbody>

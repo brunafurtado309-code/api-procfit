@@ -295,4 +295,218 @@ async function listar(filtros) {
   return { devolucoes: recordsets[0], vendas: recordsets[1], baixas: recordsets[2], contagem: recordsets[3][0] ?? {} };
 }
 
-module.exports = { listar, TAB_NOTA_DEVOLUCAO };
+// ===== Todos os cancelamentos do período (nov/2026) =====
+// A lista acima mostra só as canceladas que ainda mexem no financeiro. Esta mostra TUDO o que foi
+// cancelado, dizendo em cada linha se é NOTA, DEVOLUÇÃO, CUPOM ou PEDIDO:
+//   - nota de venda  -> CANCELAMENTOS_NOTAS_FISCAIS TIPO 1 (CHAVE = NF_FATURAMENTO)
+//   - devolução      -> CANCELAMENTOS_NOTAS_FISCAIS TIPO 3 (CHAVE = NF_FATURAMENTO_DEVOLUCAO)
+//   - cupom do caixa -> PDV_VENDAS com STATUS 'C' (a loja do PDV é o mesmo número da empresa:
+//                       conferido em nov/2026, loja 3 = 378 e loja 5 = 35 cupons cancelados de 01/08 a 18/11)
+//   - pedido         -> CANCELAMENTOS_PEDIDOS_PREVENDAS (o cancelamento não fica no pedido)
+// Loja 05, 01/08 a 18/11/2026: 1 nota, 35 cupons e 25 pedidos (R$ 18.499,03) cancelados.
+// "Mexe no financeiro": nota com título em aberto ou com recebimento não estornado; devolução com
+// abatimento ainda valendo; pedido cancelado com título em aberto ou com nota válida. Cupom é pago na
+// hora no caixa e não gera título.
+// Colunas que ainda não foram conferidas no SSMS (valor do cupom, quem cancelou) são procuradas
+// sozinhas na primeira consulta; sem elas, a tela segue sem esses campos.
+const LIMITE_TODOS = 5000;
+let colunasTodos; // undefined = ainda não procurou
+async function colunasCancelamentos(pool) {
+  if (colunasTodos === undefined) {
+    const achar = async (tabela, candidatas) => {
+      try {
+        const r = await pool.request().input('tabela', sql.VarChar(80), tabela).query(`
+          SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = @tabela`);
+        const tem = new Set(r.recordset.map((l) => l.COLUMN_NAME));
+        return candidatas.find((c) => tem.has(c)) ?? null;
+      } catch (_) {
+        return null;
+      }
+    };
+    colunasTodos = {
+      valorCupom: await achar('PDV_VENDAS', ['TOTAL_GERAL', 'VALOR_TOTAL', 'TOTAL_VENDA', 'TOTAL', 'VALOR_LIQUIDO', 'VALOR']),
+      usuarioPedido: await achar('CANCELAMENTOS_PEDIDOS_PREVENDAS', ['USUARIO_LOGADO', 'USUARIO']),
+      usuarioNota: await achar('CANCELAMENTOS_NOTAS_FISCAIS', ['USUARIO_LOGADO', 'USUARIO']),
+    };
+    console.log('[canceladas] colunas da lista completa:', colunasTodos);
+  }
+  return colunasTodos;
+}
+
+async function todosCancelamentos(filtros) {
+  const pool = await getPool();
+  const col = await colunasCancelamentos(pool);
+  const valorCupom = col.valorCupom ? `MAX(PV.[${col.valorCupom}])` : 'CAST(NULL AS decimal(18, 2))';
+  const usuarioPedido = col.usuarioPedido ? `X.[${col.usuarioPedido}]` : 'NULL';
+  const usuarioNota = col.usuarioNota ? `NC.[${col.usuarioNota}]` : 'NULL';
+  const { recordset } = await pool.request()
+    .input('inicio', sql.VarChar(10), filtros.inicio)
+    .input('fim', sql.VarChar(10), filtros.fim)
+    .input('empresa', sql.Int, filtros.empresa ?? null)
+    .query(`
+      SET NOCOUNT ON;
+      IF OBJECT_ID('tempdb..#T') IS NOT NULL DROP TABLE #T;
+      IF OBJECT_ID('tempdb..#CC') IS NOT NULL DROP TABLE #CC;
+      IF OBJECT_ID('tempdb..#PC') IS NOT NULL DROP TABLE #PC;
+      IF OBJECT_ID('tempdb..#NFP') IS NOT NULL DROP TABLE #NFP;
+      DECLARE @ini date = CAST(@inicio AS date);
+      DECLARE @ate date = DATEADD(day, 1, CAST(@fim AS date));
+
+      CREATE TABLE #T (tipo varchar(10), numero varchar(30), registro numeric(18, 0), empresa int, caixa varchar(20),
+                       documento_dia date, cancelado_em datetime, com_protocolo bit, pedido numeric(18, 0),
+                       cod_cliente numeric(18, 0), cod_vendedor int, valor decimal(18, 2), usuario int,
+                       mexe_financeiro bit, observacao varchar(300));
+
+      -- 1. Notas de venda canceladas (com o que ainda sobrou nos títulos da nota)
+      INSERT INTO #T
+      SELECT 'nota', CAST(N.NF_NUMERO AS varchar(30)), N.NF_FATURAMENTO, N.EMPRESA, NULL,
+             N.MOVIMENTO, C.DATA_HORA, CASE WHEN C.PROTOCOLO IS NOT NULL THEN 1 ELSE 0 END,
+             TRY_CAST(LTRIM(RTRIM(N.PEDIDO_CLIENTE)) AS numeric(18, 0)), N.ENTIDADE, N.VENDEDOR,
+             ISNULL(TOT.TOTAL_GERAL, 0), C.usuario,
+             CASE WHEN ISNULL(F.pendente, 0) > 0.009 OR ISNULL(F.recebido, 0) - ISNULL(F.estornado, 0) > 0.009 THEN 1 ELSE 0 END,
+             CASE WHEN ISNULL(F.pendente, 0) > 0.009 THEN 'Título ainda em aberto'
+                  WHEN ISNULL(F.recebido, 0) - ISNULL(F.estornado, 0) > 0.009 THEN 'Ficou com recebimento sem estorno'
+                  WHEN C.PROTOCOLO IS NULL THEN 'Cancelada sem protocolo da SEFAZ'
+                  ELSE NULL END
+      FROM NF_FATURAMENTO N WITH (NOLOCK)
+      CROSS APPLY (SELECT TOP 1 NC.DATA_HORA, NC.PROTOCOLO, ${usuarioNota} AS usuario
+                   FROM CANCELAMENTOS_NOTAS_FISCAIS NC WITH (NOLOCK)
+                   WHERE NC.TIPO = 1 AND NC.CHAVE = N.NF_FATURAMENTO
+                   ORDER BY NC.DATA_HORA DESC) C
+      LEFT JOIN NF_FATURAMENTO_TOTAIS TOT WITH (NOLOCK) ON TOT.NF_FATURAMENTO = N.NF_FATURAMENTO
+      OUTER APPLY (
+        SELECT SUM(ISNULL(X.CREDITO, 0)) - SUM(ISNULL(X.DEBITO, 0)) AS pendente,
+               SUM(CASE WHEN X.TRANSACAO_FINANCEIRA = 12 THEN ISNULL(X.DEBITO, 0) ELSE 0 END) AS recebido,
+               SUM(CASE WHEN X.TRANSACAO_FINANCEIRA BETWEEN 51 AND 55 THEN ISNULL(X.CREDITO, 0) ELSE 0 END) AS estornado
+        FROM TITULOS_RECEBER T WITH (NOLOCK)
+        JOIN TITULOS_RECEBER_TRANSACOES X WITH (NOLOCK) ON X.TITULO_RECEBER = T.TITULO_RECEBER
+        WHERE T.TAB_MASTER_ORIGEM = ${TAB_NOTA_VENDA} AND T.REG_MASTER_ORIGEM = N.NF_FATURAMENTO
+      ) F
+      WHERE C.DATA_HORA >= @ini AND C.DATA_HORA < @ate
+        AND (@empresa IS NULL OR N.EMPRESA = @empresa)
+      OPTION (RECOMPILE);
+
+      -- 2. Notas de devolução canceladas (o abatimento no título da nota original ainda vale?)
+      INSERT INTO #T
+      SELECT 'devolucao', CAST(DV.NF_NUMERO AS varchar(30)), DV.NF_FATURAMENTO_DEVOLUCAO, N.EMPRESA, NULL,
+             DV.MOVIMENTO, C.DATA_HORA, CASE WHEN C.PROTOCOLO IS NOT NULL THEN 1 ELSE 0 END,
+             TRY_CAST(LTRIM(RTRIM(N.PEDIDO_CLIENTE)) AS numeric(18, 0)), N.ENTIDADE, N.VENDEDOR,
+             ISNULL(DT.TOTAL_GERAL, 0), C.usuario,
+             CASE WHEN ISNULL(AB.efeito, 0) > 0.009 THEN 1 ELSE 0 END,
+             CONCAT('Devolução da nota ', N.NF_NUMERO,
+                    CASE WHEN ISNULL(AB.efeito, 0) > 0.009 THEN ' · o abatimento no título continua valendo' ELSE '' END)
+      FROM NF_FATURAMENTO_DEVOLUCOES DV WITH (NOLOCK)
+      CROSS APPLY (SELECT TOP 1 NC.DATA_HORA, NC.PROTOCOLO, ${usuarioNota} AS usuario
+                   FROM CANCELAMENTOS_NOTAS_FISCAIS NC WITH (NOLOCK)
+                   WHERE NC.TIPO = 3 AND NC.CHAVE = DV.NF_FATURAMENTO_DEVOLUCAO
+                   ORDER BY NC.DATA_HORA DESC) C
+      LEFT JOIN NF_FATURAMENTO_DEVOLUCOES_TOTAIS DT WITH (NOLOCK) ON DT.NF_FATURAMENTO_DEVOLUCAO = DV.NF_FATURAMENTO_DEVOLUCAO
+      LEFT JOIN NF_FATURAMENTO N WITH (NOLOCK) ON N.NF_FATURAMENTO = DV.NF_FATURAMENTO_ORIGEM
+      OUTER APPLY (
+        SELECT SUM(ISNULL(X.DEBITO, 0) - ISNULL(X.CREDITO, 0)) AS efeito
+        FROM TITULOS_RECEBER_TRANSACOES X WITH (NOLOCK)
+        WHERE X.TAB_MASTER_ORIGEM = ${TAB_NOTA_DEVOLUCAO} AND X.REG_MASTER_ORIGEM = DV.NF_FATURAMENTO_DEVOLUCAO
+      ) AB
+      WHERE C.DATA_HORA >= @ini AND C.DATA_HORA < @ate
+        AND (@empresa IS NULL OR N.EMPRESA = @empresa)
+      OPTION (RECOMPILE);
+
+      -- 3. Cupons cancelados no caixa (um por loja + caixa + cupom + dia)
+      SELECT PV.LOJA, PV.CAIXA, LTRIM(RTRIM(PV.ECF_CUPOM)) AS cupom, PV.MOVIMENTO,
+             MAX(PV.PREVENDA) AS PREVENDA, ${valorCupom} AS valor
+      INTO #CC
+      FROM PDV_VENDAS PV WITH (NOLOCK)
+      WHERE PV.STATUS LIKE 'C'
+        AND PV.MOVIMENTO >= @ini AND PV.MOVIMENTO < @ate
+        AND (@empresa IS NULL OR PV.LOJA = @empresa)
+      GROUP BY PV.LOJA, PV.CAIXA, LTRIM(RTRIM(PV.ECF_CUPOM)), PV.MOVIMENTO
+      OPTION (RECOMPILE);
+
+      INSERT INTO #T
+      SELECT 'cupom', CC.cupom, NULL, CC.LOJA, CAST(CC.CAIXA AS varchar(20)),
+             CC.MOVIMENTO, CC.MOVIMENTO, NULL,
+             TRY_CAST(PPV.PEDIDO_INTERNET AS numeric(18, 0)), P.CLIENTE, P.VENDEDOR,
+             COALESCE(CC.valor, TOT.PRECO_TOTAL), NULL, 0,
+             CASE WHEN NV.ECF_CUPOM IS NOT NULL
+                  THEN CONCAT('O pedido tem outro cupom válido: ', LTRIM(RTRIM(NV.ECF_CUPOM)), ' (caixa ', NV.CAIXA, ')')
+                  WHEN PPV.PEDIDO_INTERNET IS NULL THEN 'Venda direta no caixa (sem pedido)'
+                  ELSE 'Pedido sem outro cupom válido' END
+      FROM #CC CC
+      LEFT JOIN PDV_PREVENDAS PPV WITH (NOLOCK) ON PPV.PREVENDA = CC.PREVENDA AND PPV.LOJA = CC.LOJA
+      LEFT JOIN PEDIDOS_PREVENDAS P WITH (NOLOCK) ON P.PEDIDO_PREVENDA = PPV.PEDIDO_INTERNET
+      LEFT JOIN PEDIDOS_PREVENDAS_TOTAIS TOT WITH (NOLOCK) ON TOT.PEDIDO_PREVENDA = PPV.PEDIDO_INTERNET
+      -- O mesmo pedido passou de novo no caixa e ficou com um cupom válido?
+      OUTER APPLY (
+        SELECT TOP 1 PV2.ECF_CUPOM, PV2.CAIXA
+        FROM PDV_PREVENDAS PPV2 WITH (NOLOCK)
+        JOIN PDV_VENDAS PV2 WITH (NOLOCK) ON PV2.PREVENDA = PPV2.PREVENDA AND PV2.LOJA = PPV2.LOJA
+        WHERE PPV.PEDIDO_INTERNET IS NOT NULL
+          AND PPV2.PEDIDO_INTERNET = PPV.PEDIDO_INTERNET
+          AND ISNULL(PV2.STATUS, '') NOT LIKE 'C'
+        ORDER BY PV2.MOVIMENTO DESC
+      ) NV;
+
+      -- 4. Pedidos cancelados (o mais recente cancelamento de cada pedido)
+      SELECT P.PEDIDO_PREVENDA, P.EMPRESA, P.DATA_HORA AS pedido_em, P.CLIENTE, P.VENDEDOR,
+             ISNULL(TOT.PRECO_TOTAL, 0) AS valor, CAN.DATA_HORA AS cancelado_em, CAN.usuario
+      INTO #PC
+      FROM PEDIDOS_PREVENDAS P WITH (NOLOCK)
+      CROSS APPLY (SELECT TOP 1 X.DATA_HORA, ${usuarioPedido} AS usuario
+                   FROM CANCELAMENTOS_PEDIDOS_PREVENDAS X WITH (NOLOCK)
+                   WHERE X.PEDIDO_PREVENDA = P.PEDIDO_PREVENDA
+                   ORDER BY X.CANCELAMENTO_PEDIDOS_PREVENDA DESC) CAN
+      LEFT JOIN PEDIDOS_PREVENDAS_TOTAIS TOT WITH (NOLOCK) ON TOT.PEDIDO_PREVENDA = P.PEDIDO_PREVENDA
+      WHERE CAN.DATA_HORA >= @ini AND CAN.DATA_HORA < @ate
+        AND (@empresa IS NULL OR P.EMPRESA = @empresa)
+      OPTION (RECOMPILE);
+      CREATE CLUSTERED INDEX IX_PC ON #PC (PEDIDO_PREVENDA);
+
+      -- Notas VÁLIDAS desses pedidos (uma leitura só, desde o pedido mais antigo)
+      DECLARE @desde date = (SELECT CAST(MIN(pedido_em) AS date) FROM #PC);
+      SELECT PC.PEDIDO_PREVENDA AS pedido, MAX(N.NF_NUMERO) AS nota
+      INTO #NFP
+      FROM NF_FATURAMENTO N WITH (NOLOCK)
+      JOIN #PC PC ON PC.PEDIDO_PREVENDA = TRY_CAST(LTRIM(RTRIM(N.PEDIDO_CLIENTE)) AS numeric(18, 0))
+      WHERE N.MOVIMENTO >= ISNULL(@desde, @ini)
+        AND NOT EXISTS (SELECT 1 FROM CANCELAMENTOS_NOTAS_FISCAIS NC WITH (NOLOCK)
+                        WHERE NC.TIPO = 1 AND NC.CHAVE = N.NF_FATURAMENTO AND NC.PROTOCOLO IS NOT NULL)
+      GROUP BY PC.PEDIDO_PREVENDA;
+
+      INSERT INTO #T
+      SELECT 'pedido', CAST(PC.PEDIDO_PREVENDA AS varchar(30)), PC.PEDIDO_PREVENDA, PC.EMPRESA, NULL,
+             PC.pedido_em, PC.cancelado_em, NULL, PC.PEDIDO_PREVENDA, PC.CLIENTE, PC.VENDEDOR,
+             PC.valor, PC.usuario,
+             CASE WHEN ISNULL(TIT.pendente, 0) > 0.009 OR NFP.nota IS NOT NULL THEN 1 ELSE 0 END,
+             CASE WHEN NFP.nota IS NOT NULL AND ISNULL(TIT.pendente, 0) > 0.009
+                    THEN CONCAT('Ainda tem a nota ', NFP.nota, ' válida e título em aberto')
+                  WHEN NFP.nota IS NOT NULL THEN CONCAT('Ainda tem a nota ', NFP.nota, ' válida')
+                  WHEN ISNULL(TIT.pendente, 0) > 0.009 THEN 'Ainda tem título em aberto'
+                  ELSE NULL END
+      FROM #PC PC
+      LEFT JOIN #NFP NFP ON NFP.pedido = PC.PEDIDO_PREVENDA
+      OUTER APPLY (
+        SELECT SUM(ISNULL(X.CREDITO, 0)) - SUM(ISNULL(X.DEBITO, 0)) AS pendente
+        FROM TITULOS_RECEBER T WITH (NOLOCK)
+        JOIN TITULOS_RECEBER_TRANSACOES X WITH (NOLOCK) ON X.TITULO_RECEBER = T.TITULO_RECEBER
+        WHERE T.PEDIDO_PREVENDA = PC.PEDIDO_PREVENDA
+      ) TIT;
+
+      -- Tudo junto, com cliente, vendedor e quem cancelou
+      SELECT TOP ${LIMITE_TODOS}
+             T.tipo, T.numero, T.registro, T.empresa, T.caixa,
+             CONVERT(varchar(10), T.documento_dia, 23)  AS documento_dia,
+             CONVERT(varchar(16), T.cancelado_em, 120)  AS cancelado_em,
+             T.com_protocolo, T.pedido, T.cod_cliente, LTRIM(RTRIM(E.NOME)) AS cliente,
+             T.cod_vendedor, LTRIM(RTRIM(V.NOME)) AS vendedor, T.valor,
+             COALESCE(NULLIF(LTRIM(RTRIM(U.NOME)), ''), LTRIM(RTRIM(U.LOGIN))) AS usuario,
+             T.mexe_financeiro, T.observacao
+      FROM #T T
+      LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = T.cod_cliente
+      LEFT JOIN VENDEDORES V WITH (NOLOCK) ON V.VENDEDOR = T.cod_vendedor
+      LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = T.usuario
+      ORDER BY T.cancelado_em DESC;
+    `);
+  return { lista: recordset, limite: LIMITE_TODOS };
+}
+
+module.exports = { listar, todosCancelamentos, TAB_NOTA_DEVOLUCAO };

@@ -10,5 +10,6 @@ router.get('/pedidos/excel', controller.excel);
 router.get('/pedidos/vendedores', controller.vendedores);
 router.get('/pedidos/:pedido', controller.detalhe);
 router.get('/notas-canceladas', controller.notasCanceladas); // notas canceladas que ainda mexem no financeiro
+router.get('/notas-canceladas/todos', controller.cancelamentosTodos); // tudo o que foi cancelado: nota, devolução, cupom e pedido
 
 module.exports = router;

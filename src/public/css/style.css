@@ -3624,3 +3624,13 @@ html, body { max-width: 100%; overflow-x: clip; }
 .tela-notas-entrada #tabela-notas-entrada td:nth-child(4) { min-width: 11rem; }
 .tela-notas-entrada .transf-sit { white-space: nowrap; }
 .tela-notas-entrada #tabela-notas-entrada td:nth-child(2) .transf-sit { margin-left: 0.25rem; }
+
+/* Faturamento > Todos os cancelamentos: selo do tipo e filtro por tipo */
+.tela-canceladas .canceladas-tipos { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; }
+.tela-canceladas .canceladas-tipo { padding: 0.3rem 0.75rem; border-radius: 999px; border: 1px solid var(--linha); background: transparent; color: inherit; cursor: pointer; font-size: 0.8rem; }
+.tela-canceladas .canceladas-tipo--ativo { border-color: var(--verde); color: var(--verde); }
+.tela-canceladas .tipo-cancelamento { display: inline-block; padding: 0.05rem 0.5rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
+.tela-canceladas .tipo-cancelamento--nota { background: var(--verde-suave, rgba(46, 160, 98, 0.15)); color: var(--verde); }
+.tela-canceladas .tipo-cancelamento--devolucao { background: rgba(130, 110, 220, 0.18); color: #A99BEF; }
+.tela-canceladas .tipo-cancelamento--cupom { background: rgba(70, 150, 230, 0.18); color: #7DB8F0; }
+.tela-canceladas .tipo-cancelamento--pedido { background: var(--alerta-claro); color: var(--alerta); }

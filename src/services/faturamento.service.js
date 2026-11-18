@@ -142,6 +142,31 @@ async function notasCanceladas(query) {
   };
 }
 
+// Todos os cancelamentos do período, dizendo se é nota, devolução, cupom ou pedido
+// (regras em repositories/notas-canceladas.repository.js, função todosCancelamentos)
+const TIPOS_CANCELAMENTO = { nota: 'Nota fiscal', devolucao: 'Devolução', cupom: 'Cupom do caixa', pedido: 'Pedido' };
+async function cancelamentosTodos(query) {
+  const filtros = montarFiltros(query);
+  const { lista, limite } = await require('../repositories/notas-canceladas.repository').todosCancelamentos(filtros);
+  const n = (v) => Number(v) || 0;
+  const resumo = {};
+  for (const tipo of Object.keys(TIPOS_CANCELAMENTO)) {
+    const doTipo = lista.filter((l) => l.tipo === tipo);
+    resumo[tipo] = {
+      qtd: doTipo.length,
+      valor: doTipo.reduce((t, l) => t + n(l.valor), 0),
+      mexe_financeiro: doTipo.filter((l) => l.mexe_financeiro).length,
+    };
+  }
+  return {
+    periodo: { inicio: filtros.inicio, fim: filtros.fim },
+    tipos: TIPOS_CANCELAMENTO,
+    resumo,
+    lista: lista.map((l) => ({ ...l, mexe_financeiro: Boolean(l.mexe_financeiro), tipo_nome: TIPOS_CANCELAMENTO[l.tipo] ?? l.tipo })),
+    limite,
+  };
+}
+
 const vendedores = (query) => repo.vendedores(montarFiltros(query));
 
 async function detalhe(query, params) {
@@ -304,6 +329,6 @@ async function exportarNotasVendedor(query) {
 }
 
 module.exports = {
-  analise, detalhe, vendedores, exportar, notasVendedor, exportarNotasVendedor, notasCanceladas, ETAPA_TEXTO,
+  analise, detalhe, vendedores, exportar, notasVendedor, exportarNotasVendedor, notasCanceladas, cancelamentosTodos, ETAPA_TEXTO,
   montarFiltros, // usado também pelo Vendas > Vendedores (vendas-vendedores.service.js)
 };

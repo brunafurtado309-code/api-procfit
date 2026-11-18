@@ -1,6 +1,7 @@
 // Faturamento > Notas canceladas / financeiro: notas canceladas que ainda mexem no financeiro.
 // A regra (de onde vem cada número) está em src/repositories/notas-canceladas.repository.js.
-// Duas abas (devolução e nota de venda são coisas diferentes): #devolucoes e #notas, também no menu.
+// Três abas: #devolucoes e #notas (só as que ainda mexem no financeiro) e #todos (tudo o que foi
+// cancelado: nota, devolução, cupom do caixa e pedido, dizendo o tipo em cada linha). Também no menu.
 
 (function () {
   const el = (id) => document.getElementById(id);
@@ -13,13 +14,18 @@
   const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
   let dados = null;
+  // Aba "Todos os cancelamentos": carrega só quando a aba é aberta (consulta à parte)
+  let todos = null;
+  let todosCarregando = null;
+  let tipoTodos = ''; // '' = todos os tipos
   let abaAtual = 'devolucoes';
   // Situações do filtro em cada aba ("gerando" junta as duas que ainda abatem)
   const OPCOES_SITUACAO = {
     devolucoes: [['gerando', 'Gerando financeiro'], ['abatendo', 'Ainda abatendo o título'], ['abatendo_estorno', 'Abatendo, com estorno depois'], ['corrigida', 'Já corrigida'], ['', 'Todas']],
     notas: [['', 'Todas'], ['cobranca_dupla', 'Cobrança em dobro'], ['recebida', 'Cancelada com recebimento'], ['em_aberto', 'Título em aberto']],
+    todos: [['', 'Todos'], ['mexe', 'Mexe no financeiro'], ['ok', 'Sem efeito no financeiro']],
   };
-  const situacaoEscolhida = { devolucoes: 'gerando', notas: '' };
+  const situacaoEscolhida = { devolucoes: 'gerando', notas: '', todos: '' };
 
   const criar = (tag, classe, texto) => {
     const e = document.createElement(tag);
@@ -56,6 +62,8 @@
       const corpo = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(corpo.erro || 'Não foi possível carregar.');
       dados = corpo;
+      todos = null; // período ou loja mudou: a aba Todos busca de novo
+      if (abaAtual === 'todos') carregarTodos();
       montarOpcoes();
       desenhar();
       status('');
@@ -70,7 +78,9 @@
   // Filtros da lista: situação, vendedor, cliente e valor mínimo (na hora, sem ir ao banco)
   function passaFiltros(linha, valor) {
     const sit = situacaoEscolhida[abaAtual];
-    if (sit === 'gerando' ? !['abatendo', 'abatendo_estorno'].includes(linha.situacao) : sit && linha.situacao !== sit) return false;
+    if (abaAtual === 'todos') {
+      if ((sit === 'mexe' && !linha.mexe_financeiro) || (sit === 'ok' && linha.mexe_financeiro)) return false;
+    } else if (sit === 'gerando' ? !['abatendo', 'abatendo_estorno'].includes(linha.situacao) : sit && linha.situacao !== sit) return false;
     const vendedor = el('filtro-vendedor').value;
     if (vendedor && String(linha.cod_vendedor ?? '') !== vendedor) return false;
     const cliente = el('filtro-cliente').value.trim().toLowerCase();
@@ -84,7 +94,7 @@
   function montarOpcoes() {
     const vendedores = new Map();
     const clientes = new Set();
-    for (const l of [...dados.devolucoes, ...dados.vendas]) {
+    for (const l of [...dados.devolucoes, ...dados.vendas, ...(todos?.lista || [])]) {
       if (l.cod_vendedor != null) vendedores.set(String(l.cod_vendedor), l.vendedor || `Vendedor ${l.cod_vendedor}`);
       if (l.cliente) clientes.add(l.cliente);
     }
@@ -101,6 +111,7 @@
   }
 
   function desenhar() {
+    if (abaAtual === 'todos') { desenharTodos(); return; }
     if (!dados) return;
     const termo = el('pesquisa-termo').value.trim().toLowerCase();
     const r = dados.resumo;
@@ -190,6 +201,98 @@
     }
   }
 
+  // ---------- Aba "Todos os cancelamentos" ----------
+  const TIPOS = { nota: 'Nota fiscal', devolucao: 'Devolução', cupom: 'Cupom do caixa', pedido: 'Pedido' };
+  const PLURAIS = { nota: ['nota fiscal', 'notas fiscais'], devolucao: ['devolução', 'devoluções'],
+    cupom: ['cupom', 'cupons'], pedido: ['pedido', 'pedidos'] };
+
+  async function carregarTodos() {
+    if (todosCarregando) return todosCarregando;
+    const url = new URL('/faturamento/notas-canceladas/todos', location.origin);
+    url.searchParams.set('inicio', el('inicio').value);
+    url.searchParams.set('fim', el('fim').value);
+    if (typeof modulos !== 'undefined') modulos.marcarLoja(url);
+    el('titulo-todos').textContent = 'Todos os cancelamentos (carregando…)';
+    todosCarregando = (async () => {
+      try {
+        const r = await fetch(url, { headers: { 'x-api-key': sessionStorage.getItem('apiKey') || '' } });
+        const corpo = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(corpo.erro || 'Não foi possível carregar os cancelamentos.');
+        todos = corpo;
+        montarOpcoes();
+        if (abaAtual === 'todos') desenhar();
+      } catch (err) {
+        status(err.message, true);
+        el('titulo-todos').textContent = 'Todos os cancelamentos';
+      } finally {
+        todosCarregando = null;
+      }
+    })();
+    return todosCarregando;
+  }
+
+  function desenharTodos() {
+    if (!todos) return;
+    const termo = el('pesquisa-termo').value.trim().toLowerCase();
+    const r = todos.resumo;
+    const total = Object.values(r).reduce((t, x) => t + x.qtd, 0);
+    const mexem = Object.values(r).reduce((t, x) => t + x.mexe_financeiro, 0);
+    el('resumo-todos').textContent = total ? plural(total, 'cancelamento', 'cancelamentos') : 'Nenhum';
+    el('resumo-todos-explica').textContent = [
+      ...Object.keys(TIPOS).filter((t) => r[t]?.qtd).map((t) => `${plural(r[t].qtd, ...PLURAIS[t])} (${dinheiro(r[t].valor)})`),
+      mexem ? `${plural(mexem, 'ainda mexe', 'ainda mexem')} no financeiro` : 'nenhum mexe no financeiro ✓',
+    ].join(' · ');
+
+    // Botões de tipo: clicar filtra a lista (clicar de novo, ou em "Todos", tira o filtro)
+    const botoes = [['', `Todos (${total})`], ...Object.keys(TIPOS).map((t) => [t, `${TIPOS[t]} (${r[t]?.qtd ?? 0})`])];
+    el('tipos-todos').replaceChildren(...botoes.map(([tipo, texto]) => {
+      const b = criar('button', `canceladas-tipo${tipo === tipoTodos ? ' canceladas-tipo--ativo' : ''}`, texto);
+      b.type = 'button';
+      b.addEventListener('click', () => { tipoTodos = tipo === tipoTodos ? '' : tipo; desenharTodos(); });
+      return b;
+    }));
+
+    const lista = todos.lista
+      .filter((l) => !tipoTodos || l.tipo === tipoTodos)
+      .filter((l) => passaFiltros(l, l.valor))
+      .filter((l) => bate(termo, l.numero, l.registro, l.pedido, l.caixa, l.cliente, l.cod_cliente));
+    el('titulo-todos').textContent = `${tipoTodos ? TIPOS[tipoTodos] : 'Todos os cancelamentos'} (${lista.length})`;
+    const corpo = el('tabela-todos').tBodies[0];
+    corpo.replaceChildren(...lista.map((l) => {
+      const tr = criar('tr', l.mexe_financeiro ? 'linha-vencida' : '');
+      const detalhe = [];
+      if (l.tipo === 'cupom' && l.caixa) detalhe.push(`caixa ${l.caixa}`);
+      if ((l.tipo === 'nota' || l.tipo === 'devolucao') && l.registro) detalhe.push(`registro ${l.registro}`);
+      if (l.tipo !== 'pedido' && l.pedido) detalhe.push(`pedido ${l.pedido}`);
+      if (l.documento_dia) detalhe.push(`${l.tipo === 'pedido' ? 'feito' : 'emitido'} em ${dataBR(l.documento_dia)}`);
+      const quando = [];
+      if (l.usuario) quando.push(`por ${l.usuario}`);
+      if (l.tipo === 'nota' || l.tipo === 'devolucao') quando.push(l.com_protocolo ? 'com protocolo SEFAZ' : 'sem protocolo SEFAZ');
+      tr.append(
+        celula(criar('span', `tipo-cancelamento tipo-cancelamento--${l.tipo}`, l.tipo_nome || TIPOS[l.tipo] || l.tipo), 'esquerda'),
+        celula(l.numero ?? '—', 'esquerda', detalhe.join(' · ')),
+        // Cupom: o banco guarda só o dia do caixa, sem a hora
+        celula(l.tipo === 'cupom' ? dataBR(l.cancelado_em) : dataHoraBR(l.cancelado_em), 'esquerda', quando.join(' · ')),
+        celula(l.cliente || (l.cod_cliente ? `cliente ${l.cod_cliente}` : '—'), 'esquerda', l.vendedor ? `vendedor ${l.vendedor}` : ''),
+        celula(l.valor == null ? '—' : dinheiro(l.valor)),
+        celula(l.mexe_financeiro ? 'Mexe no financeiro' : l.tipo === 'cupom' ? 'Sem título (caixa)' : 'OK ✓',
+          `esquerda${l.mexe_financeiro ? ' negativo' : ''}`),
+        celula(l.observacao || '—', 'esquerda canceladas-acao'),
+      );
+      return tr;
+    }));
+    if (!lista.length) {
+      const tr = criar('tr');
+      const td = criar('td', 'vazio', 'Nenhum cancelamento com esses filtros no período.');
+      td.colSpan = 7;
+      tr.append(td);
+      corpo.append(tr);
+    }
+    if (todos.lista.length >= todos.limite) {
+      status(`Mostrando os ${todos.limite} cancelamentos mais recentes: escolha um período menor ou uma loja para ver todos.`);
+    }
+  }
+
   // Recebido: valor, quando e ONDE foi baixado. Baixa em Bancos: o cabeçalho do recebimento com os
   // campos da consulta "Recebimentos de Título a Receber (Bancos)" do PROCFIT (Recebimento, Data, Login,
   // Entidade, Conta, Movimento, Data de Recebimento, Modalidade, Descrição)
@@ -232,6 +335,7 @@
   const PESQUISA = {
     devolucoes: 'Encontrar por nota ou registro, nota original, pedido, título ou cliente',
     notas: 'Encontrar por nota ou registro, nº do recebimento, pedido, título ou cliente',
+    todos: 'Encontrar por nota, cupom, pedido, caixa ou cliente',
   };
   function abrirAba(aba) {
     if (!PESQUISA[aba]) aba = 'devolucoes';
@@ -243,7 +347,9 @@
     }
     el('aba-devolucoes').hidden = aba !== 'devolucoes';
     el('aba-notas').hidden = aba !== 'notas';
+    el('aba-todos').hidden = aba !== 'todos';
     abaAtual = aba;
+    if (aba === 'todos' && !todos && dados) carregarTodos();
     montarSituacao();
     desenhar();
     el('pesquisa-termo').placeholder = PESQUISA[aba];
