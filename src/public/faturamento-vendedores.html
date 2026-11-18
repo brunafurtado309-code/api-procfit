@@ -73,19 +73,20 @@
     </section>
 
     <div id="painel" hidden>
-      <!-- 1. Total faturado em nota no período -->
+      <!-- 1. Total faturado no período (notas fiscais + cupons do caixa) -->
       <section class="destaque">
-        <h2>Faturado em nota no período</h2>
+        <h2>Faturado no período</h2>
         <p id="total-faturado" class="valor-grande">—</p>
         <p id="total-explica" class="explica"></p>
       </section>
 
       <!-- 2. Um vendedor por linha: clicar mostra as notas dele -->
       <section class="bloco">
-        <h2 id="titulo-vendedores">Notas por vendedor</h2>
-        <p class="bloco__descricao">Notas fiscais de venda emitidas no período, pelo vendedor gravado na nota.
-          Ficam de fora as notas canceladas e as transferências entre lojas. Clique no vendedor para abrir a análise dele,
-          ou em "com devolução" para ver só as notas que voltaram.</p>
+        <h2 id="titulo-vendedores">Faturado por vendedor</h2>
+        <p class="bloco__descricao">Notas fiscais de venda e cupons do caixa emitidos no período, pelo vendedor do pedido
+          (sem pedido, o vendedor da nota). Pedido com nota e cupom conta uma vez só. Ficam de fora notas e cupons cancelados
+          e as transferências entre lojas. Clique no vendedor para abrir a análise dele,
+          ou em "com devolução" para ver só o que voltou.</p>
         <div class="tabela-rolagem">
           <table class="tabela tabela-cartoes" id="tabela-vendedores">
             <thead></thead>
@@ -101,7 +102,7 @@
       <!-- 4. As notas, uma página por vez -->
       <section class="bloco">
         <div class="bloco-topo">
-          <h2 id="titulo-notas">Notas</h2>
+          <h2 id="titulo-notas">Notas e cupons</h2>
           <label class="ordem-celular">
             <span>Ordenar</span>
             <select id="ordem-celular">
@@ -109,7 +110,7 @@
               <option value="valor:desc">Maior valor</option>
               <option value="devolvido:desc">Maior devolução</option>
               <option value="cliente:asc">Cliente (A–Z)</option>
-              <option value="nota:desc">Número da nota</option>
+              <option value="nota:desc">Número da nota / cupom</option>
             </select>
           </label>
         </div>

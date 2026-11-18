@@ -252,13 +252,23 @@ function preencherSeletor() {
 const somar = (lista, campo) => lista.reduce((t, item) => t + (Number(item[campo]) || 0), 0);
 
 // 1. Total do período (todos os vendedores)
+// "12 notas · 5 cupons" (some a parte zerada)
+function partesDocumentos(qtdNotas, qtdCupons) {
+  const partes = [];
+  if (qtdNotas || !qtdCupons) partes.push(plural(qtdNotas, 'nota', 'notas'));
+  if (qtdCupons) partes.push(plural(qtdCupons, 'cupom', 'cupons'));
+  return partes.join(' + ');
+}
+
 function mostrarResumo() {
   const valor = somar(vendedores, 'valor');
   const devolvido = somar(vendedores, 'devolvido');
   const qtd = somar(vendedores, 'notas');
+  const cupons = somar(vendedores, 'cupons');
   el('total-faturado').textContent = dinheiro(valor);
   el('total-explica').textContent = [
-    plural(qtd, 'nota', 'notas'),
+    partesDocumentos(qtd - cupons, cupons),
+    cupons ? `${dinheiro(somar(vendedores, 'valor_cupons'))} em cupom do caixa` : null,
     plural(vendedores.length, 'vendedor', 'vendedores'),
     qtd ? `ticket médio ${dinheiro(valor / qtd)}` : null,
     devolvido > 0.009 ? `${dinheiro(devolvido)} devolvido · líquido ${dinheiro(valor - devolvido)}` : null,
@@ -269,14 +279,14 @@ function mostrarResumo() {
 function mostrarVendedores() {
   const total = somar(vendedores, 'valor');
   const escolhido = el('filtro-vendedor').value;
-  el('titulo-vendedores').textContent = `Notas por vendedor (${plural(vendedores.length, 'vendedor', 'vendedores')})`;
+  el('titulo-vendedores').textContent = `Faturado por vendedor (${plural(vendedores.length, 'vendedor', 'vendedores')})`;
   const tabela = el('tabela-vendedores');
-  cabecalho(tabela, [['Vendedor', null, true], ['Notas'], ['Clientes'], ['Valor das notas'], ['% do total'],
+  cabecalho(tabela, [['Vendedor', null, true], ['Notas + cupons'], ['Clientes'], ['Valor faturado'], ['% do total'],
     ['Ticket médio'], ['Devolvido'], ['Líquido'], ['', null, true]]);
 
   if (!vendedores.length) {
     const linha = document.createElement('tr');
-    const vazio = td('Nenhuma nota faturada no período.', 'vazio');
+    const vazio = td('Nenhuma nota ou cupom faturado no período.', 'vazio');
     vazio.colSpan = 9;
     linha.append(vazio);
     tabela.tBodies[0].replaceChildren(linha);
@@ -603,7 +613,7 @@ function mostrarAnalise(raiz, dados, escolhido) {
     // No celular só o dia (05), para os rótulos não se encostarem
     rotulos: serie.map((d) => (window.matchMedia('(max-width: 720px)').matches ? d.dia.slice(8, 10) : dataBR(d.dia).slice(0, 5))),
     series: [{
-      nome: 'Faturado em nota',
+      nome: 'Faturado (notas e cupons)',
       valores: serie.map((d) => d.valor),
       cores: serie.map((d) => (pico && d.dia === pico.dia ? 'var(--verde-escuro)'
         : diaDaSemana(d.dia) === 0 ? 'var(--verde-claro)' : 'var(--verde)')),
@@ -715,7 +725,7 @@ function mostrarNotas() {
   });
   const vendedor = el('filtro-vendedor').value;
   const nomeVendedor = vendedores.find((v) => String(v.cod_vendedor) === vendedor)?.vendedor ?? `vendedor ${vendedor}`;
-  el('titulo-notas').textContent = `Notas${soDevolucao ? ' com devolução' : ''}`
+  el('titulo-notas').textContent = `Notas e cupons${soDevolucao ? ' com devolução' : ''}`
     + `${vendedor ? ` de ${nomeVendedor}` : ''} (${inteiro(itens.length)})`;
   const ordemCelular = el('ordem-celular');
   const escolhaCelular = `${ordem.coluna}:${ordem.direcao}`;
@@ -723,10 +733,10 @@ function mostrarNotas() {
 
   // Com um vendedor escolhido, a coluna Vendedor só repetiria o nome: sai
   const comVendedor = !vendedor;
-  const colunas = [['Nota', 'nota', true], ['Data', 'dia', true], ['Pedido', 'pedido', true],
+  const colunas = [['Nota / cupom', 'nota', true], ['Data', 'dia', true], ['Pedido', 'pedido', true],
     ['Cliente', 'cliente', true]];
   if (comVendedor) colunas.push(['Vendedor', 'vendedor', true]);
-  colunas.push(['Valor da nota', 'valor'], ['Devolução', 'nota_devolucao', true], ['Devolvido', 'devolvido'],
+  colunas.push(['Valor', 'valor'], ['Devolução', 'nota_devolucao', true], ['Devolvido', 'devolvido'],
     ['Líquido', 'liquido']);
   const tabela = el('tabela-notas');
   cabecalho(tabela, colunas, (coluna, direcao) => {
@@ -738,7 +748,7 @@ function mostrarNotas() {
   const linhas = [];
   if (!itens.length) {
     const linha = document.createElement('tr');
-    const vazio = td(soDevolucao ? 'Nenhuma nota com devolução nesses filtros.' : 'Nenhuma nota com esses filtros.', 'vazio');
+    const vazio = td(soDevolucao ? 'Nenhuma nota ou cupom com devolução nesses filtros.' : 'Nenhuma nota ou cupom com esses filtros.', 'vazio');
     vazio.colSpan = colunas.length;
     linha.append(vazio);
     linhas.push(linha);
@@ -764,8 +774,12 @@ function mostrarNotas() {
     if (n.tem_devolucao) linha.className = 'linha-devolvida';
     // Detalhes (empresa, desconto, NF de devolução) ficam no "passar o mouse" e no Excel,
     // para a linha caber na tela
-    const celulaNota = td(`NF ${n.nota}`, 'esquerda sem-quebra cel-titulo');
-    celulaNota.title = `Empresa ${n.empresa}`;
+    // Cupom do caixa (NFC-e) ou nota fiscal (NF-e)
+    const ehCupom = n.documento === 'cupom';
+    const celulaNota = td(`${ehCupom ? 'Cupom' : 'NF'} ${n.nota ?? '—'}`, 'esquerda sem-quebra cel-titulo');
+    celulaNota.title = ehCupom
+      ? `Cupom do caixa${n.caixa ? ` · caixa ${n.caixa}` : ''} · empresa ${n.empresa}`
+      : `Nota fiscal · empresa ${n.empresa}`;
     const celulaValor = td(dinheiro(n.valor), 'sem-quebra');
     if (Number(n.desconto) > 0.009) celulaValor.title = `Desconto de ${dinheiro(n.desconto)}`;
     const celulaDevolvido = n.tem_devolucao
@@ -773,7 +787,9 @@ function mostrarNotas() {
       : td('—');
     // Devolução à vista na linha: selo total/parcial + nº e dia da NF de devolução
     const celulaDevolucao = n.tem_devolucao ? td(seloDevolucao(n), 'esquerda sem-quebra cel-largo') : td('', 'esquerda');
-    if (n.tem_devolucao) celulaDevolucao.title = `NF de devolução ${n.nota_devolucao ?? '—'} em ${dataBR(n.devolucao_dia)}`;
+    if (n.tem_devolucao) {
+      celulaDevolucao.title = `${ehCupom ? 'Devolução no caixa' : 'NF de devolução'} ${n.nota_devolucao ?? '—'} em ${dataBR(n.devolucao_dia)}`;
+    }
     linha.append(
       celulaNota,
       td(dataBR(n.dia), 'esquerda sem-quebra'),
@@ -792,7 +808,8 @@ function mostrarNotas() {
   tabela.tBodies[0].replaceChildren(...linhas);
 
   const rodape = document.createElement('tr');
-  const rotulo = td(`Total (${plural(itens.length, 'nota', 'notas')})`, 'esquerda cel-titulo');
+  const cuponsLista = itens.filter((n) => n.documento === 'cupom').length;
+  const rotulo = td(`Total (${partesDocumentos(itens.length - cuponsLista, cuponsLista)})`, 'esquerda cel-titulo');
   rotulo.colSpan = comVendedor ? 5 : 4;
   const devolvidas = itens.filter((n) => n.tem_devolucao).length;
   rodape.append(rotulo, td(dinheiro(somar(itens, 'valor'))),

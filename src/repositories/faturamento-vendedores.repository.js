@@ -21,6 +21,18 @@
 //     Antes vinha da VENDAS_ANALITICAS (tipos 12, 13, 16), mas lá a devolução de nota não aparecia
 //     e o "Devolvido" ficava zerado. Uma nota pode ter mais de uma devolução (soma todas), e a
 //     devolução conta mesmo que tenha sido feita depois do período da nota.
+//   - nov/2026: CUPOM DO CAIXA (NFC-e) também é faturamento. Antes a tela lia só a NF_FATURAMENTO
+//     (NF-e) e a venda que o cliente pagava no caixa ficava de fora (ex.: Ana Caroline, 16 a 18/11:
+//     26 pedidos pagos, R$ 9.289,14, e a tela mostrava só R$ 3.280,80 em 9 notas).
+//       cupom -> PDV_VENDAS (cupom cancelado, STATUS 'C', não conta), ligado ao pedido pela
+//       pré-venda do PDV: PDV_PREVENDAS.PEDIDO_INTERNET = nº do pedido (mesma ligação da tela
+//       Faturamento > Pedidos). Valor = total do pedido (PEDIDOS_PREVENDAS_TOTAIS.PRECO_TOTAL).
+//       Pedido que já tem nota de venda conta uma vez só (pela nota).
+//       Cupom sem pedido (venda direta no PDV) não tem vendedor de pedido: fica de fora.
+//       Devolução no caixa: DEV_PRODUTOS.REG_MASTER_ORIGEM_RELACIONADO = PDV_VENDAS.REG_MASTER_ORIGEM,
+//       valor da VENDAS_ANALITICAS tipo 14 (REG_MASTER_ORIGEM = DEVOLUCAO_PRODUTO).
+//   - nov/2026: o vendedor vem do PEDIDO quando a nota está ligada a um pedido do mesmo cliente
+//     (a venda é de quem fez o pedido, não de quem faturou); sem pedido, fica o vendedor da nota.
 
 const { sql, getPool } = require('../config/db');
 const AppError = require('../utils/AppError');
@@ -69,6 +81,10 @@ async function consultar(pedido, filtros) {
       IF OBJECT_ID('tempdb..#NOTAS') IS NOT NULL DROP TABLE #NOTAS;
       IF OBJECT_ID('tempdb..#ANT') IS NOT NULL DROP TABLE #ANT;
       IF OBJECT_ID('tempdb..#DEV') IS NOT NULL DROP TABLE #DEV;
+      IF OBJECT_ID('tempdb..#CUPT') IS NOT NULL DROP TABLE #CUPT;
+      IF OBJECT_ID('tempdb..#CUP') IS NOT NULL DROP TABLE #CUP;
+      IF OBJECT_ID('tempdb..#DEVC') IS NOT NULL DROP TABLE #DEVC;
+      IF OBJECT_ID('tempdb..#NANT') IS NOT NULL DROP TABLE #NANT;
 
       -- 0. Notas que o PROCFIT conta como venda (tipo 8 da VENDAS_ANALITICAS), uma leitura só,
       --    cobrindo o período e o mesmo intervalo do mês anterior (com folga de 3 dias)
@@ -86,7 +102,9 @@ async function consultar(pedido, filtros) {
 
       -- 1. As notas do período (sem canceladas e sem transferências), com o tipo de cada uma:
       --    venda / bonificação (CFOP x.910) / comodato de freezer (x.908) / outra remessa
-      SELECT N.NF_FATURAMENTO, N.NF_NUMERO, N.EMPRESA, N.MOVIMENTO, N.VENDEDOR, N.ENTIDADE,
+      --    O vendedor vem do pedido (mesmo cliente); sem pedido, o da nota.
+      SELECT N.NF_FATURAMENTO, N.NF_NUMERO, N.EMPRESA, N.MOVIMENTO,
+             COALESCE(PD.VENDEDOR, N.VENDEDOR) AS VENDEDOR, N.ENTIDADE,
              TRY_CAST(LTRIM(RTRIM(N.PEDIDO_CLIENTE)) AS numeric(18, 0)) AS PEDIDO,
              ISNULL(T.TOTAL_PRODUTOS, 0) AS TOTAL_PRODUTOS,
              ISNULL(T.TOTAL_DESCONTOS, 0) AS TOTAL_DESCONTOS,
@@ -102,6 +120,9 @@ async function consultar(pedido, filtros) {
       INTO #NALL
       FROM NF_FATURAMENTO N WITH (NOLOCK)
       JOIN NF_FATURAMENTO_TOTAIS T WITH (NOLOCK) ON T.NF_FATURAMENTO = N.NF_FATURAMENTO
+      LEFT JOIN PEDIDOS_PREVENDAS PD WITH (NOLOCK)
+        ON PD.PEDIDO_PREVENDA = TRY_CAST(LTRIM(RTRIM(N.PEDIDO_CLIENTE)) AS numeric(18, 0))
+       AND PD.CLIENTE = N.ENTIDADE
       WHERE N.MOVIMENTO >= CAST(@inicio AS date)
         AND N.MOVIMENTO < DATEADD(day, 1, CAST(@fim AS date))
         AND (@empresa IS NULL OR N.EMPRESA = @empresa)
@@ -111,12 +132,59 @@ async function consultar(pedido, filtros) {
                         WHERE X.NF_FATURAMENTO = N.NF_FATURAMENTO)
       OPTION (RECOMPILE);
 
-      -- Faturamento = só as notas de venda
-      SELECT NF_FATURAMENTO, NF_NUMERO, EMPRESA, MOVIMENTO, VENDEDOR, ENTIDADE, PEDIDO,
-             TOTAL_PRODUTOS, TOTAL_DESCONTOS, TOTAL_GERAL
-      INTO #N
+      -- Faturamento = as notas de venda + os cupons do caixa (logo abaixo)
+      --    (tabela criada à mão: o cupom não tem NF_FATURAMENTO e as colunas precisam aceitar vazio)
+      CREATE TABLE #N (DOCUMENTO varchar(5), NF_FATURAMENTO numeric(18, 0) NULL, NF_NUMERO numeric(18, 0) NULL,
+                       EMPRESA int NULL, MOVIMENTO datetime NULL, VENDEDOR int NULL, ENTIDADE numeric(18, 0) NULL,
+                       PEDIDO numeric(18, 0) NULL, TOTAL_PRODUTOS decimal(18, 2) NULL,
+                       TOTAL_DESCONTOS decimal(18, 2) NULL, TOTAL_GERAL decimal(18, 2) NULL,
+                       CAIXA int NULL, REG_CUPOM numeric(18, 0) NULL);
+      INSERT INTO #N (DOCUMENTO, NF_FATURAMENTO, NF_NUMERO, EMPRESA, MOVIMENTO, VENDEDOR, ENTIDADE,
+                      PEDIDO, TOTAL_PRODUTOS, TOTAL_DESCONTOS, TOTAL_GERAL)
+      SELECT 'nf', NF_FATURAMENTO, NF_NUMERO, EMPRESA, MOVIMENTO, VENDEDOR, ENTIDADE,
+             PEDIDO, TOTAL_PRODUTOS, TOTAL_DESCONTOS, TOTAL_GERAL
       FROM #NALL
       WHERE CATEGORIA = 'venda';
+
+      -- 1b. Cupons do caixa (NFC-e) ligados a pedido, numa leitura só: o período e o mesmo
+      --     intervalo do mês anterior. Um cupom válido por pedido (o mais recente).
+      SELECT PPV.PEDIDO_INTERNET AS PEDIDO, PV.ECF_CUPOM, PV.CAIXA, PV.MOVIMENTO, PV.REG_MASTER_ORIGEM,
+             CASE WHEN PV.MOVIMENTO >= CAST(@inicio AS date) THEN 1 ELSE 0 END AS ATUAL,
+             ROW_NUMBER() OVER (PARTITION BY PPV.PEDIDO_INTERNET
+                                ORDER BY PV.MOVIMENTO DESC, PV.REG_MASTER_ORIGEM DESC) AS ordem
+      INTO #CUPT
+      FROM PDV_VENDAS PV WITH (NOLOCK)
+      JOIN PDV_PREVENDAS PPV WITH (NOLOCK) ON PPV.PREVENDA = PV.PREVENDA AND PPV.LOJA = PV.LOJA
+      WHERE ((PV.MOVIMENTO >= CAST(@inicio AS date)
+              AND PV.MOVIMENTO < DATEADD(day, 1, CAST(@fim AS date)))
+          OR (PV.MOVIMENTO >= DATEADD(month, -1, CAST(@inicio AS date))
+              AND PV.MOVIMENTO < DATEADD(day, 1, DATEADD(month, -1, CAST(@fim AS date)))))
+        AND ISNULL(PV.STATUS, '') NOT LIKE 'C'
+        AND PPV.PEDIDO_INTERNET IS NOT NULL
+      OPTION (RECOMPILE);
+
+      -- Cada cupom com loja, vendedor, cliente e valor do pedido
+      SELECT C.PEDIDO, C.ECF_CUPOM, C.CAIXA, C.MOVIMENTO, C.REG_MASTER_ORIGEM, C.ATUAL,
+             P.EMPRESA, P.VENDEDOR, P.CLIENTE AS ENTIDADE,
+             ISNULL(TOT.PRECO_TOTAL, 0)    AS TOTAL_GERAL,
+             ISNULL(TOT.DESCONTO_TOTAL, 0) AS TOTAL_DESCONTOS
+      INTO #CUP
+      FROM #CUPT C
+      JOIN PEDIDOS_PREVENDAS P WITH (NOLOCK) ON P.PEDIDO_PREVENDA = C.PEDIDO
+      LEFT JOIN PEDIDOS_PREVENDAS_TOTAIS TOT WITH (NOLOCK) ON TOT.PEDIDO_PREVENDA = C.PEDIDO
+      WHERE C.ordem = 1
+        AND (@empresa IS NULL OR P.EMPRESA = @empresa);
+
+      -- Entram no faturamento os cupons do período cujo pedido não tem nota de venda
+      INSERT INTO #N (DOCUMENTO, NF_FATURAMENTO, NF_NUMERO, EMPRESA, MOVIMENTO, VENDEDOR, ENTIDADE,
+                      PEDIDO, TOTAL_PRODUTOS, TOTAL_DESCONTOS, TOTAL_GERAL, CAIXA, REG_CUPOM)
+      SELECT 'cupom', NULL, TRY_CAST(LTRIM(RTRIM(C.ECF_CUPOM)) AS numeric(18, 0)), C.EMPRESA, C.MOVIMENTO,
+             C.VENDEDOR, C.ENTIDADE, C.PEDIDO,
+             C.TOTAL_GERAL + C.TOTAL_DESCONTOS, C.TOTAL_DESCONTOS, C.TOTAL_GERAL,
+             TRY_CAST(C.CAIXA AS int), TRY_CAST(C.REG_MASTER_ORIGEM AS numeric(18, 0))
+      FROM #CUP C
+      WHERE C.ATUAL = 1
+        AND NOT EXISTS (SELECT 1 FROM #N X WHERE X.DOCUMENTO = 'nf' AND X.PEDIDO = C.PEDIDO);
       CREATE CLUSTERED INDEX IX_N ON #N (NF_FATURAMENTO);
 
       -- Bonificação, comodato e outras remessas por vendedor (fora do faturamento)
@@ -148,8 +216,32 @@ async function consultar(pedido, filtros) {
                         WHERE NC.TIPO = 3 AND NC.CHAVE = DV.NF_FATURAMENTO_DEVOLUCAO AND NC.PROTOCOLO IS NOT NULL)
       GROUP BY DV.NF_FATURAMENTO_ORIGEM;
 
-      -- 3. Cada nota com cliente, vendedor e devolução
+      -- 2b. Devoluções no caixa dos cupons do período (valor positivo = quanto voltou)
+      SELECT DP.REG_CUPOM,
+             COUNT(*)         AS qtd,
+             MAX(DP.DEVOLUCAO_PRODUTO) AS numero,
+             MIN(VAL.dia)     AS dia,
+             SUM(-VAL.valor)  AS valor
+      INTO #DEVC
+      FROM (
+        SELECT DISTINCT D.REG_MASTER_ORIGEM_RELACIONADO AS REG_CUPOM, D.DEVOLUCAO_PRODUTO
+        FROM DEV_PRODUTOS D WITH (NOLOCK)
+        WHERE D.REG_MASTER_ORIGEM_RELACIONADO > 0
+          AND D.REG_MASTER_ORIGEM_RELACIONADO IN (SELECT REG_CUPOM FROM #N WHERE DOCUMENTO = 'cupom')
+      ) DP
+      OUTER APPLY (
+        SELECT SUM(VA.VENDA_LIQUIDA) AS valor, MIN(VA.MOVIMENTO) AS dia
+        FROM VENDAS_ANALITICAS VA WITH (NOLOCK)
+        WHERE VA.DOCUMENTO_TIPO = 14
+          AND VA.REG_MASTER_ORIGEM = DP.DEVOLUCAO_PRODUTO
+          AND VA.MOVIMENTO >= CAST(@inicio AS date)
+      ) VAL
+      GROUP BY DP.REG_CUPOM;
+
+      -- 3. Cada nota/cupom com cliente, vendedor e devolução
       SELECT
+          N.DOCUMENTO                                     AS documento,
+          N.CAIXA                                         AS caixa,
           N.NF_NUMERO                                     AS nota,
           N.NF_FATURAMENTO                                AS nota_id,
           CONVERT(varchar(10), N.MOVIMENTO, 23)           AS dia,
@@ -175,13 +267,24 @@ async function consultar(pedido, filtros) {
       FROM #N N
       LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = N.ENTIDADE
       LEFT JOIN VENDEDORES V WITH (NOLOCK) ON V.VENDEDOR = N.VENDEDOR
-      LEFT JOIN #DEV DVI ON DVI.NF_FATURAMENTO = N.NF_FATURAMENTO;
+      LEFT JOIN #DEV DVN ON N.DOCUMENTO = 'nf' AND DVN.NF_FATURAMENTO = N.NF_FATURAMENTO
+      LEFT JOIN #DEVC DVC ON N.DOCUMENTO = 'cupom' AND DVC.REG_CUPOM = N.REG_CUPOM
+      CROSS APPLY (
+        SELECT COALESCE(DVN.qtd, DVC.qtd) AS qtd, COALESCE(DVN.numero, DVC.numero) AS numero,
+               COALESCE(DVN.dia, DVC.dia) AS dia, COALESCE(DVN.valor, DVC.valor) AS valor
+      ) DVI;
 
-      -- Mesmo intervalo no mês anterior (ex.: 01 a 12/11 compara com 01 a 12/10), mesma regra de nota
-      SELECT N.VENDEDOR, COUNT(*) AS notas, SUM(ISNULL(T.TOTAL_GERAL, 0)) AS valor
-      INTO #ANT
+      -- Mesmo intervalo no mês anterior (ex.: 01 a 12/11 compara com 01 a 12/10), mesma regra:
+      -- notas de venda + cupons do caixa cujo pedido não tem nota
+      SELECT COALESCE(PD.VENDEDOR, N.VENDEDOR) AS VENDEDOR,
+             TRY_CAST(LTRIM(RTRIM(N.PEDIDO_CLIENTE)) AS numeric(18, 0)) AS PEDIDO,
+             ISNULL(T.TOTAL_GERAL, 0) AS valor
+      INTO #NANT
       FROM NF_FATURAMENTO N WITH (NOLOCK)
       JOIN NF_FATURAMENTO_TOTAIS T WITH (NOLOCK) ON T.NF_FATURAMENTO = N.NF_FATURAMENTO
+      LEFT JOIN PEDIDOS_PREVENDAS PD WITH (NOLOCK)
+        ON PD.PEDIDO_PREVENDA = TRY_CAST(LTRIM(RTRIM(N.PEDIDO_CLIENTE)) AS numeric(18, 0))
+       AND PD.CLIENTE = N.ENTIDADE
       WHERE N.MOVIMENTO >= DATEADD(month, -1, CAST(@inicio AS date))
         AND N.MOVIMENTO < DATEADD(day, 1, DATEADD(month, -1, CAST(@fim AS date)))
         AND (@empresa IS NULL OR N.EMPRESA = @empresa)
@@ -190,8 +293,19 @@ async function consultar(pedido, filtros) {
         AND NOT EXISTS (SELECT 1 FROM NF_FATURAMENTO_TRANSF X WITH (NOLOCK)
                         WHERE X.NF_FATURAMENTO = N.NF_FATURAMENTO)
         AND EXISTS (SELECT 1 FROM #VA8 V WHERE V.DOCUMENTO_NUMERO = N.NF_NUMERO AND V.EMPRESA = N.EMPRESA)
-      GROUP BY N.VENDEDOR
       OPTION (RECOMPILE);
+
+      SELECT VENDEDOR, COUNT(*) AS notas, SUM(valor) AS valor
+      INTO #ANT
+      FROM (
+        SELECT VENDEDOR, valor FROM #NANT
+        UNION ALL
+        SELECT C.VENDEDOR, C.TOTAL_GERAL
+        FROM #CUP C
+        WHERE C.ATUAL = 0
+          AND NOT EXISTS (SELECT 1 FROM #NANT A WHERE A.PEDIDO = C.PEDIDO)
+      ) X
+      GROUP BY VENDEDOR;
 
       -- Resumo por vendedor: sempre todos os vendedores do período (a escolha de um vendedor
       -- e a pesquisa filtram só a lista de notas)
@@ -200,6 +314,7 @@ async function consultar(pedido, filtros) {
              ISNULL(R.notas, 0) AS notas, ISNULL(R.valor, 0) AS valor, ISNULL(R.desconto, 0) AS desconto,
              ISNULL(R.notas_devolvidas, 0) AS notas_devolvidas, ISNULL(R.devolvido, 0) AS devolvido,
              ISNULL(R.liquido, 0) AS liquido, ISNULL(R.clientes, 0) AS clientes, ISNULL(R.dias_com_nota, 0) AS dias_com_nota,
+             ISNULL(R.cupons, 0) AS cupons, ISNULL(R.valor_cupons, 0) AS valor_cupons,
              A.notas AS notas_anterior, A.valor AS valor_anterior,
              ISNULL(RM.notas_bonificacao, 0) AS notas_bonificacao, ISNULL(RM.bonificado, 0) AS bonificado,
              ISNULL(RM.comodatos, 0) AS comodatos, ISNULL(RM.valor_comodato, 0) AS valor_comodato,
@@ -214,7 +329,9 @@ async function consultar(pedido, filtros) {
              SUM(devolvido)                                AS devolvido,
              SUM(valor) - SUM(devolvido)                   AS liquido,
              COUNT(DISTINCT cod_cliente)                   AS clientes,
-             COUNT(DISTINCT dia)                           AS dias_com_nota
+             COUNT(DISTINCT dia)                           AS dias_com_nota,
+             SUM(CASE WHEN documento = 'cupom' THEN 1 ELSE 0 END)     AS cupons,
+             SUM(CASE WHEN documento = 'cupom' THEN valor ELSE 0 END) AS valor_cupons
       FROM #NOTAS
       GROUP BY cod_vendedor
       ) R

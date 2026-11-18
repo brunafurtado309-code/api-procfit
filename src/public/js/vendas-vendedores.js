@@ -122,7 +122,7 @@ const vendasVendedores = (() => {
     const casosDuplicados = new Set(dados.duplicadas.filter((d) => d.motivo !== 'bonificacao_igual').map((d) => `${d.motivo}|${d.grupo}`)).size;
     const casosBonificacao = new Set(dados.duplicadas.filter((d) => d.motivo === 'bonificacao_igual').map((d) => d.grupo)).size;
     el('cv-kpis').replaceChildren(
-      numero('Faturado em nota', dinheiro(soma('valor')), `${contar(soma('notas'), 'nota', 'notas')} · ${contar(ativos, 'vendedor', 'vendedores')}`),
+      numero('Faturado (notas e cupons)', dinheiro(soma('valor')), `${contar(soma('notas'), 'nota', 'notas')} · ${contar(ativos, 'vendedor', 'vendedores')}`),
       numero('Líquido', dinheiro(soma('liquido')), soma('devolvido') > 0.009 ? `devolvido ${dinheiro(soma('devolvido'))}` : 'sem devolução'),
       numero('Em orçamento', dinheiro(soma('valor_orcamentos')), contar(soma('orcamentos'), 'pedido', 'pedidos')),
       numero('Cancelados', dinheiro(soma('valor_cancelados')), contar(soma('cancelados'), 'pedido', 'pedidos'),
@@ -480,7 +480,7 @@ const vendasVendedores = (() => {
         altura: 170,
         rotulos: dias.map((d) => (window.matchMedia('(max-width: 720px)').matches ? d.dia.slice(8, 10) : dataBR(d.dia).slice(0, 5))),
         series: [{
-          nome: 'Faturado em nota',
+          nome: 'Faturado (notas e cupons)',
           valores: dias.map((d) => d.valor),
           cores: dias.map((d) => (pico && d.dia === pico.dia ? 'var(--verde-escuro)' : diaDaSemana(d.dia) === 0 ? 'var(--verde-claro)' : 'var(--verde)')),
         }],
