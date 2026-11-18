@@ -22,7 +22,8 @@
   // Situações do filtro em cada aba ("gerando" junta as duas que ainda abatem)
   const OPCOES_SITUACAO = {
     devolucoes: [['gerando', 'Gerando financeiro'], ['abatendo', 'Ainda abatendo o título'], ['abatendo_estorno', 'Abatendo, com estorno depois'], ['corrigida', 'Já corrigida'], ['', 'Todas']],
-    notas: [['', 'Todas'], ['cobranca_dupla', 'Cobrança em dobro'], ['recebida', 'Cancelada com recebimento'], ['em_aberto', 'Título em aberto']],
+    notas: [['', 'Todas'], ['com', 'Gerando financeiro'], ['cobranca_dupla', 'Cobrança em dobro'], ['recebida', 'Cancelada com recebimento'],
+      ['em_aberto', 'Título em aberto'], ['sem', 'Sem financeiro']],
     todos: [['', 'Todos'], ['mexe', 'Mexe no financeiro'], ['ok', 'Sem efeito no financeiro']],
   };
   const situacaoEscolhida = { devolucoes: 'gerando', notas: '', todos: '' };
@@ -62,8 +63,8 @@
       const corpo = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(corpo.erro || 'Não foi possível carregar.');
       dados = corpo;
-      todos = null; // período ou loja mudou: a aba Todos busca de novo
-      if (abaAtual === 'todos') carregarTodos();
+      todos = null; // período ou loja mudou: a lista completa busca de novo
+      if (abaAtual === 'todos' || abaAtual === 'notas') carregarTodos();
       montarOpcoes();
       desenhar();
       status('');
@@ -80,6 +81,11 @@
     const sit = situacaoEscolhida[abaAtual];
     if (abaAtual === 'todos') {
       if ((sit === 'mexe' && !linha.mexe_financeiro) || (sit === 'ok' && linha.mexe_financeiro)) return false;
+    } else if (abaAtual === 'notas' && (sit === 'com' || sit === 'sem')) {
+      // "com" = qualquer situação do bloco que gera financeiro; "sem" = só o bloco sem financeiro
+      if ((sit === 'com') !== !linha.sem_financeiro) return false;
+    } else if (abaAtual === 'notas' && sit && linha.sem_financeiro) {
+      return false; // escolheu uma situação de financeiro: o bloco sem financeiro fica vazio
     } else if (sit === 'gerando' ? !['abatendo', 'abatendo_estorno'].includes(linha.situacao) : sit && linha.situacao !== sit) return false;
     const vendedor = el('filtro-vendedor').value;
     if (vendedor && String(linha.cod_vendedor ?? '') !== vendedor) return false;
@@ -164,6 +170,9 @@
       corpoA.append(tr);
     }
 
+    // C. Notas e cupons cancelados SEM financeiro (da lista completa), mais o resumo com e sem
+    desenharSemFinanceiro(termo);
+
     // B. Notas de venda canceladas com financeiro
     const vendas = dados.vendas
       .filter((v) => passaFiltros(v, n(v.pendente) + n(v.recebido)))
@@ -201,6 +210,63 @@
     }
   }
 
+  // ---------- Aba Notas: as canceladas que NÃO geram financeiro ----------
+  // Vêm da lista completa (todosCancelamentos): notas fiscais sem título em aberto nem recebimento
+  // preso, e os cupons do caixa (pagos na hora, não geram título).
+  function desenharSemFinanceiro(termo) {
+    const r = dados.resumo;
+    const corpo = el('tabela-sem-financeiro').tBodies[0];
+    if (!todos) {
+      el('titulo-sem-financeiro').textContent = 'Notas e cupons cancelados sem financeiro (carregando…)';
+      corpo.replaceChildren();
+      el('resumo-notas-total').textContent = `${plural(r.vendas_com_financeiro, 'nota gera', 'notas geram')} financeiro · carregando as que não geram…`;
+      return;
+    }
+    // Nota: toda cancelada que NÃO está no bloco de cima (assim cada nota aparece em um bloco só).
+    // Cupom: todos (pagos no caixa, não geram título).
+    const comFinanceiro = new Set(dados.vendas.map((v) => String(v.id)));
+    const semTodas = todos.lista.filter((l) => l.tipo === 'cupom' || (l.tipo === 'nota' && !comFinanceiro.has(String(l.registro))));
+    const notasSem = semTodas.filter((l) => l.tipo === 'nota').length;
+    const cuponsSem = semTodas.length - notasSem;
+    const totalCanceladas = r.vendas_com_financeiro + semTodas.length;
+    el('resumo-notas-total').textContent = `${plural(totalCanceladas, 'cancelada', 'canceladas')} no período: `
+      + `${plural(r.vendas_com_financeiro, 'gera', 'geram')} financeiro · `
+      + `${plural(semTodas.length, 'não gera', 'não geram')} (${plural(notasSem, 'nota fiscal', 'notas fiscais')} e ${plural(cuponsSem, 'cupom', 'cupons')})`;
+
+    const lista = semTodas
+      .map((l) => ({ ...l, sem_financeiro: true }))
+      .filter((l) => passaFiltros(l, l.valor))
+      .filter((l) => bate(termo, l.numero, l.registro, l.pedido, l.caixa, l.cliente, l.cod_cliente));
+    el('titulo-sem-financeiro').textContent = `Notas e cupons cancelados sem financeiro (${lista.length})`;
+    corpo.replaceChildren(...lista.map((l) => {
+      const tr = criar('tr', 'canceladas-ok');
+      const detalhe = [];
+      if (l.tipo === 'cupom' && l.caixa) detalhe.push(`caixa ${l.caixa}`);
+      if (l.tipo === 'nota' && l.registro) detalhe.push(`registro ${l.registro}`);
+      if (l.pedido) detalhe.push(`pedido ${l.pedido}`);
+      if (l.documento_dia) detalhe.push(`emitido em ${dataBR(l.documento_dia)}`);
+      const quando = [];
+      if (l.usuario) quando.push(`por ${l.usuario}`);
+      if (l.tipo === 'nota') quando.push(l.com_protocolo ? 'com protocolo SEFAZ' : 'sem protocolo SEFAZ');
+      tr.append(
+        celula(criar('span', `tipo-cancelamento tipo-cancelamento--${l.tipo}`, TIPOS[l.tipo]), 'esquerda'),
+        celula(l.numero ?? '—', 'esquerda', detalhe.join(' · ')),
+        celula(l.tipo === 'cupom' ? dataBR(l.cancelado_em) : dataHoraBR(l.cancelado_em), 'esquerda', quando.join(' · ')),
+        celula(l.cliente || (l.cod_cliente ? `cliente ${l.cod_cliente}` : '—'), 'esquerda', l.vendedor ? `vendedor ${l.vendedor}` : ''),
+        celula(l.valor == null ? '—' : dinheiro(l.valor)),
+        celula(l.observacao || (l.tipo === 'cupom' ? 'Pago no caixa: não gera título' : 'Título zerado: nada a fazer ✓'), 'esquerda canceladas-acao'),
+      );
+      return tr;
+    }));
+    if (!lista.length) {
+      const tr = criar('tr');
+      const td = criar('td', 'vazio', 'Nenhuma nota ou cupom cancelado sem financeiro com esses filtros, no período.');
+      td.colSpan = 6;
+      tr.append(td);
+      corpo.append(tr);
+    }
+  }
+
   // ---------- Aba "Todos os cancelamentos" ----------
   const TIPOS = { nota: 'Nota fiscal', devolucao: 'Devolução', cupom: 'Cupom do caixa', pedido: 'Pedido' };
   const PLURAIS = { nota: ['nota fiscal', 'notas fiscais'], devolucao: ['devolução', 'devoluções'],
@@ -220,7 +286,7 @@
         if (!r.ok) throw new Error(corpo.erro || 'Não foi possível carregar os cancelamentos.');
         todos = corpo;
         montarOpcoes();
-        if (abaAtual === 'todos') desenhar();
+        if (abaAtual === 'todos' || abaAtual === 'notas') desenhar();
       } catch (err) {
         status(err.message, true);
         el('titulo-todos').textContent = 'Todos os cancelamentos';
@@ -349,7 +415,8 @@
     el('aba-notas').hidden = aba !== 'notas';
     el('aba-todos').hidden = aba !== 'todos';
     abaAtual = aba;
-    if (aba === 'todos' && !todos && dados) carregarTodos();
+    // A aba Notas também usa a lista completa (bloco das canceladas sem financeiro)
+    if ((aba === 'todos' || aba === 'notas') && !todos && dados) carregarTodos();
     montarSituacao();
     desenhar();
     el('pesquisa-termo').placeholder = PESQUISA[aba];

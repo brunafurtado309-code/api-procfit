@@ -111,6 +111,7 @@
           <h2>Notas de venda canceladas com financeiro</h2>
           <p id="resumo-vendas" class="valor-grande">—</p>
           <p id="resumo-vendas-explica" class="explica"></p>
+          <p id="resumo-notas-total" class="explica"></p>
         </div>
       </section>
 
@@ -132,6 +133,27 @@
                 <th scope="col">Recebido</th>
                 <th scope="col" class="esquerda">Nota que substituiu</th>
                 <th scope="col" class="esquerda">O que fazer</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="bloco">
+        <h2 id="titulo-sem-financeiro">Notas e cupons cancelados sem financeiro</h2>
+        <p class="bloco__descricao">Canceladas do jeito certo: a nota fiscal ficou sem título em aberto e sem recebimento preso,
+          e o cupom do caixa, que é pago na hora, não gera título. Estão aqui para conferir com o PROCFIT: não há nada a fazer.</p>
+        <div class="tabela-rolagem">
+          <table class="tabela tabela-cartoes" id="tabela-sem-financeiro">
+            <thead>
+              <tr>
+                <th scope="col" class="esquerda">Tipo</th>
+                <th scope="col" class="esquerda">Número</th>
+                <th scope="col" class="esquerda">Cancelada em</th>
+                <th scope="col" class="esquerda">Cliente</th>
+                <th scope="col">Valor</th>
+                <th scope="col" class="esquerda">Observação</th>
               </tr>
             </thead>
             <tbody></tbody>
