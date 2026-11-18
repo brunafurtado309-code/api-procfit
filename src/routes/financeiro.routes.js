@@ -10,6 +10,8 @@ const clientesCredito = require('../controllers/clientes-credito.controller');
 const router = Router();
 
 router.get('/resumo', controller.resumo);
+// Pedidos não pagos ainda sem título (somam no Total a receber)
+router.get('/pedidos-pendentes', controller.pedidosPendentes);
 router.get('/cartoes', controller.cartoes);
 router.get('/indicadores', controller.indicadores);
 router.get('/previsao', controller.previsao);

@@ -220,11 +220,28 @@ function desenharBarras(area, itens, { aoClicar = null, cor = 'verde' } = {}) {
   );
 }
 
-function mostrarResumo(resumo) {
-  el('total-pendente').textContent = dinheiro(resumo.pendente);
-  el('resumo-linha').textContent =
-    `${numero(resumo.titulos)} títulos de ${numero(resumo.clientes)} clientes · ` +
-    `valor original ${dinheiro(resumo.valor_original)} · já recebido ${dinheiro(resumo.recebido)}`;
+// Total a receber = saldo dos títulos + pedidos não pagos que ainda não viraram título.
+// Os pedidos só entram na visão geral (sem cartão, pesquisa, filtro de coluna, forma ou
+// recorte de vencimento): eles não têm vencimento, forma de pagamento nem título para filtrar.
+function mostrarResumo(resumo, pedidos, comPedidos) {
+  const semTitulo = comPedidos && pedidos ? Number(pedidos.valor_sem_titulo) || 0 : 0;
+  el('total-pendente').textContent = dinheiro((Number(resumo.pendente) || 0) + semTitulo);
+  const linhas = [
+    `${numero(resumo.titulos)} títulos de ${numero(resumo.clientes)} clientes: ${dinheiro(resumo.pendente)} · ` +
+    `valor original ${dinheiro(resumo.valor_original)} · já recebido ${dinheiro(resumo.recebido)}`,
+  ];
+  if (comPedidos && pedidos && Number(pedidos.pendentes) > 0) {
+    const parados = Number(pedidos.sem_titulo_parados) || 0;
+    if (Number(pedidos.sem_titulo) > 0) {
+      linhas.push(`+ ${numero(pedidos.sem_titulo)} pedidos não pagos ainda sem título: ${dinheiro(pedidos.valor_sem_titulo)}`
+        + `${parados ? ` (${numero(parados)} parados há mais de 7 dias)` : ''}`);
+    }
+    linhas.push(`No Follow-up do PROCFIT (valor cheio dos ${numero(pedidos.pendentes)} pedidos pendentes de pagamento, `
+      + `últimos ${numero(pedidos.dias)} dias): ${dinheiro(pedidos.valor_follow_up)}`);
+  } else if (!comPedidos) {
+    linhas.push('Só títulos: os pedidos ainda sem título entram no total quando não há filtro.');
+  }
+  el('resumo-linha').replaceChildren(...linhas.flatMap((t, i) => (i ? [document.createElement('br'), t] : [t])));
 }
 
 // Cada cartão filtra a lista quando clicado. Clicar de novo tira o filtro.
@@ -763,8 +780,15 @@ async function carregar() {
     const { inicio, fim, modalidade, busca, origem } = filtros;
     const filtrosDaTela = { inicio, fim, modalidade, busca, origem, devedor: valorCampo('devedor') };
 
-    const [resumo, totais, indicadores, faixas, previsaoSemanas, ranking, dados] = await Promise.all([
+    // Pedidos sem título só entram na visão geral do que está em aberto (ver mostrarResumo)
+    const comPedidos = !cartaoAtual && !faixaAtual && !atrasoRapido && !busca && !modalidade && !inicio && !fim
+      && !origem && !valorCampo('devedor') && !ABAS[abaAtual].somenteVencidos && !ABAS[abaAtual].modalidade
+      && ['aberto', undefined, null].includes(ABAS[abaAtual].situacao)
+      && !Object.values(filtrosColuna).some((v) => v !== null && v !== undefined && v !== '');
+
+    const [resumo, pedidos, totais, indicadores, faixas, previsaoSemanas, ranking, dados] = await Promise.all([
       buscar('resumo', filtros),
+      comPedidos ? buscar('pedidos-pendentes', {}).catch(() => null) : Promise.resolve(null),
       buscar('cartoes', filtrosDaTela),
       buscar('indicadores', filtrosDaTela),
       buscar('faixas-atraso', filtrosDaTela),
@@ -774,7 +798,7 @@ async function carregar() {
     ]);
 
     mostrarMarcadores();
-    mostrarResumo(resumo);
+    mostrarResumo(resumo, pedidos, comPedidos);
     mostrarCartoes(totais);
     mostrarIndicadores(indicadores);
     mostrarFaixas(faixas);

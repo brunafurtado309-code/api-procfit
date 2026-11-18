@@ -29,6 +29,7 @@ const download = (fn) => async (req, res, next) => {
 
 module.exports = {
   resumo: acao(service.resumo),
+  pedidosPendentes: acao(service.pedidosPendentes),
   cartoes: acao(service.cartoes),
   indicadores: acao(service.indicadores),
   previsao: acao(service.previsao),

@@ -136,6 +136,8 @@ function montarFiltros(query) {
 }
 
 const resumo = (query) => repo.resumo(montarFiltros(query));
+// Pedidos não pagos que ainda não viraram título (entram no Total a receber)
+const pedidosPendentes = (query) => repo.pedidosPendentes(montarFiltros(query));
 const porFaixaAtraso = (query) => repo.porFaixaAtraso(montarFiltros(query));
 const titulos = (query) => repo.titulos(montarFiltros(query));
 const cartoes = (query) => repo.cartoes(montarFiltros(query));
@@ -248,6 +250,6 @@ function fichaCliente(query, params) {
 }
 
 module.exports = {
-  resumo, cartoes, indicadores, previsao, porFaixaAtraso, porCliente, titulos, fichaCliente, baixasPorMes,
+  resumo, pedidosPendentes, cartoes, indicadores, previsao, porFaixaAtraso, porCliente, titulos, fichaCliente, baixasPorMes,
   recebimentos, exportarRecebimentos, montarFiltros, // usado pela exportação para Excel (mesmas regras da tela)
 };

@@ -788,7 +788,94 @@ async function baixasPorMes(filtros) {
   return recordset;
 }
 
+// Pedidos que ainda não foram pagos e que, na maioria, AINDA NÃO VIRARAM TÍTULO.
+// Nov/2026 (loja 05): o "Total a receber" mostrava R$ 2,10 (só os títulos) e o Follow-up de
+// pedidos do PROCFIT mostrava R$ 6.336,70 em 9 pedidos "Pendente Pagamento": 8 deles não tinham
+// título nenhum (não foram faturados nem passaram no caixa). Esses pedidos entram no total a
+// receber pelo valor cheio; o pedido que já tem título entra só pelo saldo do título (que o resumo
+// já soma). Regra de pedido pendente, igual à tela Faturamento > Pedidos:
+//   - status "Pedido Processado" (orçamento e pendente de aprovação ainda não são venda);
+//   - sem cancelamento (CANCELAMENTOS_PEDIDOS_PREVENDAS);
+//   - sem cupom válido no caixa (PDV_PREVENDAS.PEDIDO_INTERNET -> PDV_VENDAS, STATUS 'C' não conta);
+//   - sem título, ou com título ainda com saldo.
+// O título se liga ao pedido por TITULOS_RECEBER.PEDIDO_PREVENDA ou pela nota do pedido
+// (NF_FATURAMENTO.PEDIDO_CLIENTE). Só os pedidos dos últimos DIAS_PEDIDOS_PENDENTES dias.
+const DIAS_PEDIDOS_PENDENTES = 90;
+
+async function pedidosPendentes(filtros) {
+  const pool = await getPool();
+  const { recordset } = await pool
+    .request()
+    .input('empresa', sql.Int, filtros.empresa ?? null)
+    .input('dias', sql.Int, DIAS_PEDIDOS_PENDENTES)
+    .query(`
+      SET NOCOUNT ON;
+      IF OBJECT_ID('tempdb..#PP') IS NOT NULL DROP TABLE #PP;
+      IF OBJECT_ID('tempdb..#PT') IS NOT NULL DROP TABLE #PT;
+      DECLARE @desde date = DATEADD(day, -@dias, CAST(GETDATE() AS date));
+
+      -- 1. Pedidos processados, sem cancelamento e sem cupom válido no caixa
+      SELECT P.PEDIDO_PREVENDA, P.DATA_HORA, ISNULL(TOT.PRECO_TOTAL, 0) AS valor
+      INTO #PP
+      FROM PEDIDOS_PREVENDAS P WITH (NOLOCK)
+      JOIN PEDIDOS_PREVENDAS_TOTAIS TOT WITH (NOLOCK) ON TOT.PEDIDO_PREVENDA = P.PEDIDO_PREVENDA
+      WHERE P.DATA_HORA >= @desde
+        AND (@empresa IS NULL OR P.EMPRESA = @empresa)
+        AND LTRIM(RTRIM(ISNULL(TOT.STATUS, ''))) = 'Pedido Processado'
+        AND NOT EXISTS (SELECT 1 FROM CANCELAMENTOS_PEDIDOS_PREVENDAS X WITH (NOLOCK)
+                        WHERE X.PEDIDO_PREVENDA = P.PEDIDO_PREVENDA)
+        AND NOT EXISTS (SELECT 1
+                        FROM PDV_PREVENDAS PPV WITH (NOLOCK)
+                        JOIN PDV_VENDAS PV WITH (NOLOCK) ON PV.PREVENDA = PPV.PREVENDA AND PV.LOJA = PPV.LOJA
+                        WHERE PPV.PEDIDO_INTERNET = P.PEDIDO_PREVENDA
+                          AND ISNULL(PV.STATUS, '') NOT LIKE 'C')
+      OPTION (RECOMPILE);
+      CREATE CLUSTERED INDEX IX_PP ON #PP (PEDIDO_PREVENDA);
+
+      -- 2. Títulos desses pedidos (pelo pedido ou pela nota do pedido), com o saldo de cada um
+      SELECT X.pedido, COUNT(*) AS titulos,
+             SUM(ISNULL(S.PENDENTE, 0)) AS saldo
+      INTO #PT
+      FROM (
+        SELECT T.PEDIDO_PREVENDA AS pedido, T.TITULO_RECEBER
+        FROM TITULOS_RECEBER T WITH (NOLOCK)
+        JOIN #PP PP ON PP.PEDIDO_PREVENDA = T.PEDIDO_PREVENDA
+        UNION
+        SELECT PP.PEDIDO_PREVENDA, T.TITULO_RECEBER
+        FROM NF_FATURAMENTO N WITH (NOLOCK)
+        JOIN #PP PP ON PP.PEDIDO_PREVENDA = TRY_CAST(LTRIM(RTRIM(N.PEDIDO_CLIENTE)) AS numeric(18, 0))
+        JOIN TITULOS_RECEBER T WITH (NOLOCK)
+          ON T.TAB_MASTER_ORIGEM = ${TAB_NOTA_FISCAL} AND T.REG_MASTER_ORIGEM = N.NF_FATURAMENTO
+        WHERE N.MOVIMENTO >= @desde
+      ) X
+      OUTER APPLY (
+        SELECT SUM(ISNULL(TX.CREDITO, 0)) - SUM(ISNULL(TX.DEBITO, 0)) AS PENDENTE
+        FROM TITULOS_RECEBER_TRANSACOES TX WITH (NOLOCK)
+        WHERE TX.TITULO_RECEBER = X.TITULO_RECEBER
+      ) S
+      GROUP BY X.pedido;
+
+      -- 3. Resumo: sem título (entra no total pelo valor cheio) e com título em aberto
+      --    (já está no total pelo saldo). "Valor no Follow-up" = valor cheio de todos.
+      SELECT
+        SUM(CASE WHEN PT.pedido IS NULL THEN 1 ELSE 0 END)                         AS sem_titulo,
+        ISNULL(SUM(CASE WHEN PT.pedido IS NULL THEN PP.valor ELSE 0 END), 0)       AS valor_sem_titulo,
+        SUM(CASE WHEN PT.pedido IS NULL AND PP.DATA_HORA < DATEADD(day, -7, GETDATE()) THEN 1 ELSE 0 END)
+                                                                                   AS sem_titulo_parados,
+        SUM(CASE WHEN PT.saldo > 0.009 THEN 1 ELSE 0 END)                          AS com_titulo,
+        ISNULL(SUM(CASE WHEN PT.saldo > 0.009 THEN PT.saldo ELSE 0 END), 0)        AS saldo_com_titulo,
+        SUM(CASE WHEN PT.pedido IS NULL OR PT.saldo > 0.009 THEN 1 ELSE 0 END)     AS pendentes,
+        ISNULL(SUM(CASE WHEN PT.pedido IS NULL OR PT.saldo > 0.009 THEN PP.valor ELSE 0 END), 0)
+                                                                                   AS valor_follow_up,
+        @dias                                                                      AS dias
+      FROM #PP PP
+      LEFT JOIN #PT PT ON PT.pedido = PP.PEDIDO_PREVENDA;
+    `);
+  return recordset[0];
+}
+
 module.exports = {
+  pedidosPendentes,
   resumo, cartoes, indicadores, previsao, porFaixaAtraso, porCliente, titulos, fichaCliente, analiseClientes,
   baixasPorMes, recebimentos, ORIGENS_RECEBIMENTO, ORDENACAO_RECEBIMENTOS, FORMAS_RECEBIMENTO,
 };
