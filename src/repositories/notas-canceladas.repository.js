@@ -509,4 +509,110 @@ async function todosCancelamentos(filtros) {
   return { lista: recordset, limite: LIMITE_TODOS };
 }
 
-module.exports = { listar, todosCancelamentos, TAB_NOTA_DEVOLUCAO };
+// ===== Notas de devolução do período (nov/2026): TODAS, não só as canceladas =====
+// Tela Faturamento > Devolução. Período = dia da devolução (MOVIMENTO da nota de devolução).
+// Para cada nota: gerou título financeiro ou não, e QUAL título.
+//   - O que se viu no SSMS (comentário do topo): a devolução mexe no financeiro ABATENDO o título da nota
+//     original (transação 16, TAB_MASTER_ORIGEM = 753293, REG_MASTER_ORIGEM = NF_FATURAMENTO_DEVOLUCAO).
+//     "Gerou título" = abateu algum título; a tela mostra o nº do título, o valor abatido e o saldo hoje.
+//   - Também procura título a receber com origem na própria devolução (TITULOS_RECEBER.TAB_MASTER_ORIGEM =
+//     753293). Nas 129 devoluções conferidas não havia nenhum; se o PROCFIT passar a criar, ele aparece aqui.
+//   - Devolução cancelada continua na lista (marcada): se o abatimento ainda vale, a tela avisa.
+async function devolucoesDoPeriodo(filtros) {
+  const pool = await getPool();
+  const { recordsets } = await pool.request()
+    .input('inicio', sql.VarChar(10), filtros.inicio)
+    .input('fim', sql.VarChar(10), filtros.fim)
+    .input('empresa', sql.Int, filtros.empresa ?? null)
+    .query(`
+      SET NOCOUNT ON;
+      IF OBJECT_ID('tempdb..#D') IS NOT NULL DROP TABLE #D;
+      IF OBJECT_ID('tempdb..#AB') IS NOT NULL DROP TABLE #AB;
+      DECLARE @ini date = CAST(@inicio AS date);
+      DECLARE @ate date = DATEADD(day, 1, CAST(@fim AS date));
+
+      -- 1. As notas de devolução do período, com a nota original e o cancelamento (se houver)
+      SELECT DV.NF_FATURAMENTO_DEVOLUCAO                          AS id,
+             DV.NF_NUMERO                                         AS nota_devolucao,
+             DV.MOVIMENTO                                         AS dia,
+             DV.DATA_HORA                                         AS lancada_em,
+             DV.USUARIO_LOGADO                                    AS usuario,
+             N.NF_NUMERO                                          AS nota_origem,
+             N.NF_FATURAMENTO                                     AS nota_origem_registro,
+             N.MOVIMENTO                                          AS nota_origem_dia,
+             TRY_CAST(LTRIM(RTRIM(N.PEDIDO_CLIENTE)) AS numeric(18, 0)) AS pedido,
+             N.EMPRESA                                            AS empresa,
+             N.ENTIDADE                                           AS cod_cliente,
+             N.VENDEDOR                                           AS cod_vendedor,
+             ISNULL(DT.TOTAL_GERAL, 0)                            AS valor_devolucao,
+             C.DATA_HORA                                          AS cancelado_em,
+             CASE WHEN C.PROTOCOLO IS NOT NULL THEN 1 ELSE 0 END  AS com_protocolo
+      INTO #D
+      FROM NF_FATURAMENTO_DEVOLUCOES DV WITH (NOLOCK)
+      LEFT JOIN NF_FATURAMENTO_DEVOLUCOES_TOTAIS DT WITH (NOLOCK) ON DT.NF_FATURAMENTO_DEVOLUCAO = DV.NF_FATURAMENTO_DEVOLUCAO
+      LEFT JOIN NF_FATURAMENTO N WITH (NOLOCK) ON N.NF_FATURAMENTO = DV.NF_FATURAMENTO_ORIGEM
+      OUTER APPLY (SELECT TOP 1 NC.DATA_HORA, NC.PROTOCOLO
+                   FROM CANCELAMENTOS_NOTAS_FISCAIS NC WITH (NOLOCK)
+                   WHERE NC.TIPO = 3 AND NC.CHAVE = DV.NF_FATURAMENTO_DEVOLUCAO
+                   ORDER BY NC.DATA_HORA DESC) C
+      WHERE DV.MOVIMENTO >= @ini AND DV.MOVIMENTO < @ate
+        AND (@empresa IS NULL OR N.EMPRESA = @empresa)
+      OPTION (RECOMPILE);
+      CREATE CLUSTERED INDEX IX_D ON #D (id);
+
+      -- 2. O que cada devolução fez nos títulos (abatimento e, se houver, o estorno dele), por título
+      SELECT TX.REG_MASTER_ORIGEM                                                            AS id,
+             TX.TITULO_RECEBER,
+             SUM(CASE WHEN TX.TRANSACAO_FINANCEIRA = 16 THEN ISNULL(TX.DEBITO, 0) ELSE 0 END) AS abatido,
+             SUM(ISNULL(TX.CREDITO, 0))                                                       AS desfeito,
+             SUM(ISNULL(TX.DEBITO, 0) - ISNULL(TX.CREDITO, 0))                                AS efeito,
+             MIN(TX.DATA)                                                                     AS abatido_em
+      INTO #AB
+      FROM TITULOS_RECEBER_TRANSACOES TX WITH (NOLOCK)
+      JOIN #D D ON TX.TAB_MASTER_ORIGEM = ${TAB_NOTA_DEVOLUCAO} AND TX.REG_MASTER_ORIGEM = D.id
+      GROUP BY TX.REG_MASTER_ORIGEM, TX.TITULO_RECEBER;
+
+      -- [0] Uma linha por nota de devolução
+      SELECT D.id, D.nota_devolucao,
+             CONVERT(varchar(10), D.dia, 23)               AS devolucao_dia,
+             CONVERT(varchar(16), D.lancada_em, 120)       AS lancada_em,
+             COALESCE(NULLIF(LTRIM(RTRIM(U.NOME)), ''), LTRIM(RTRIM(U.LOGIN))) AS usuario,
+             D.nota_origem, D.nota_origem_registro,
+             CONVERT(varchar(10), D.nota_origem_dia, 23)   AS nota_origem_dia,
+             D.pedido, D.empresa, D.cod_cliente, LTRIM(RTRIM(E.NOME)) AS cliente,
+             D.cod_vendedor, LTRIM(RTRIM(V.NOME)) AS vendedor,
+             D.valor_devolucao,
+             CONVERT(varchar(16), D.cancelado_em, 120)     AS cancelado_em,
+             D.com_protocolo
+      FROM #D D
+      LEFT JOIN ENTIDADES E WITH (NOLOCK) ON E.ENTIDADE = D.cod_cliente
+      LEFT JOIN VENDEDORES V WITH (NOLOCK) ON V.VENDEDOR = D.cod_vendedor
+      LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = D.usuario
+      ORDER BY D.dia DESC, D.id DESC;
+
+      -- [1] Os títulos de cada devolução: os abatidos e (se existir) título próprio da devolução
+      SELECT A.id, 'abatimento' AS como, LTRIM(RTRIM(T.TITULO)) AS titulo,
+             CONVERT(varchar(10), T.VENCIMENTO, 23) AS vencimento, T.VALOR AS valor,
+             A.abatido, A.desfeito, A.efeito, CONVERT(varchar(10), A.abatido_em, 23) AS abatido_em,
+             ISNULL(S.pendente, T.VALOR) AS pendente
+      FROM #AB A
+      JOIN TITULOS_RECEBER T WITH (NOLOCK) ON T.TITULO_RECEBER = A.TITULO_RECEBER
+      OUTER APPLY (SELECT SUM(ISNULL(X.CREDITO, 0)) - SUM(ISNULL(X.DEBITO, 0)) AS pendente
+                   FROM TITULOS_RECEBER_TRANSACOES X WITH (NOLOCK)
+                   WHERE X.TITULO_RECEBER = T.TITULO_RECEBER) S
+      UNION ALL
+      SELECT D.id, 'proprio' AS como, LTRIM(RTRIM(T.TITULO)) AS titulo,
+             CONVERT(varchar(10), T.VENCIMENTO, 23) AS vencimento, T.VALOR AS valor,
+             0 AS abatido, 0 AS desfeito, 0 AS efeito, NULL AS abatido_em,
+             ISNULL(S.pendente, T.VALOR) AS pendente
+      FROM #D D
+      JOIN TITULOS_RECEBER T WITH (NOLOCK) ON T.TAB_MASTER_ORIGEM = ${TAB_NOTA_DEVOLUCAO} AND T.REG_MASTER_ORIGEM = D.id
+      OUTER APPLY (SELECT SUM(ISNULL(X.CREDITO, 0)) - SUM(ISNULL(X.DEBITO, 0)) AS pendente
+                   FROM TITULOS_RECEBER_TRANSACOES X WITH (NOLOCK)
+                   WHERE X.TITULO_RECEBER = T.TITULO_RECEBER) S
+      ORDER BY 1, 3;
+    `);
+  return { devolucoes: recordsets[0], titulos: recordsets[1] };
+}
+
+module.exports = { listar, todosCancelamentos, devolucoesDoPeriodo, TAB_NOTA_DEVOLUCAO };

@@ -46,7 +46,7 @@
         </form>
       </div>
       <form id="filtros" class="filtros">
-        <label>Cancelada de <input type="date" id="inicio"></label>
+        <label><span id="rotulo-inicio">Cancelada de</span> <input type="date" id="inicio"></label>
         <label>até <input type="date" id="fim"></label>
         <div class="atalhos" id="atalhos" aria-label="Períodos prontos">
           <button type="button" class="botao-secundario" data-dias="30">Últimos 30 dias</button>
@@ -72,30 +72,30 @@
       <div id="aba-devolucoes">
       <section class="destaque canceladas-resumo">
         <div>
-          <h2>Devoluções canceladas gerando financeiro</h2>
+          <h2>Notas de devolução no período</h2>
           <p id="resumo-devolucoes" class="valor-grande">—</p>
           <p id="resumo-devolucoes-explica" class="explica"></p>
         </div>
       </section>
 
       <section class="bloco">
-        <h2 id="titulo-devolucoes">Notas de devolução canceladas</h2>
-        <p class="bloco__descricao">Quando a devolução é lançada, o PROCFIT abate o valor no título da nota original. Se a nota de
-          devolução é cancelada e esse abatimento não é desfeito, o cliente continua com um desconto de uma devolução que
-          não existe mais. "Ainda abatendo" é o que continua valendo no título.</p>
+        <h2 id="titulo-devolucoes">Notas de devolução</h2>
+        <p class="bloco__descricao">Todas as notas de devolução do período (pelo dia da devolução). Quando a devolução é lançada,
+          o PROCFIT abate o valor no título da nota original: a coluna "Título financeiro" mostra qual título foi abatido e quanto
+          ainda está em aberto nele hoje. "Não gerou" = a devolução não mexeu em nenhum título. Devolução cancelada aparece marcada;
+          se o abatimento dela continua valendo, a linha fica em alerta.</p>
         <div class="tabela-rolagem">
           <table class="tabela tabela-cartoes" id="tabela-devolucoes">
             <thead>
               <tr>
-                <th scope="col" class="esquerda">Devolução (registro)</th>
-                <th scope="col" class="esquerda">Cancelada em</th>
+                <th scope="col" class="esquerda">Nota de devolução</th>
+                <th scope="col" class="esquerda">Devolvida em</th>
                 <th scope="col" class="esquerda">Nota original</th>
                 <th scope="col" class="esquerda">Cliente</th>
                 <th scope="col">Valor da devolução</th>
+                <th scope="col" class="esquerda">Título financeiro</th>
                 <th scope="col">Abatido no título</th>
-                <th scope="col">Ainda abatendo</th>
-                <th scope="col" class="esquerda">Títulos</th>
-                <th scope="col" class="esquerda">O que fazer</th>
+                <th scope="col" class="esquerda">Situação</th>
               </tr>
             </thead>
             <tbody></tbody>

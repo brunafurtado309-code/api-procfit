@@ -167,6 +167,74 @@ async function cancelamentosTodos(query) {
   };
 }
 
+// Devolução: TODAS as notas de devolução do período (dia da devolução), dizendo se gerou título
+// financeiro e qual (regras em repositories/notas-canceladas.repository.js, função devolucoesDoPeriodo)
+const SITUACOES_DEVOLUCAO = {
+  com_titulo: 'Gerou título financeiro',
+  sem_titulo: 'Não gerou título financeiro',
+  cancelada: 'Cancelada',
+};
+async function devolucoes(query) {
+  const filtros = montarFiltros(query);
+  const r = await require('../repositories/notas-canceladas.repository').devolucoesDoPeriodo(filtros);
+  const n = (v) => Number(v) || 0;
+  const moeda = (v) => n(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+  // Títulos de cada devolução (o id pode vir do banco como texto)
+  const titulosPor = new Map();
+  for (const t of r.titulos) {
+    const chave = String(n(t.id));
+    if (!titulosPor.has(chave)) titulosPor.set(chave, []);
+    titulosPor.get(chave).push(t);
+  }
+
+  const lista = r.devolucoes.map((d) => {
+    const titulos = titulosPor.get(String(n(d.id))) || [];
+    const abatido = titulos.reduce((t, x) => t + n(x.abatido), 0);
+    const desfeito = titulos.reduce((t, x) => t + n(x.desfeito), 0);
+    const efeito = titulos.reduce((t, x) => t + n(x.efeito), 0);
+    const cancelada = Boolean(d.cancelado_em);
+    const numeros = titulos.map((t) => t.titulo).join(', ');
+    const situacao = cancelada ? 'cancelada' : titulos.length ? 'com_titulo' : 'sem_titulo';
+    const abatendo = cancelada && efeito > 0.009;
+    let acao;
+    if (abatendo) {
+      acao = `Devolução cancelada, mas o abatimento de ${moeda(efeito)} continua no título ${numeros}: desfazer o abatimento.`;
+    } else if (cancelada) {
+      acao = 'Cancelada, sem efeito nos títulos. ✓';
+    } else if (titulos.some((t) => t.como === 'proprio')) {
+      acao = `Gerou título próprio: ${titulos.filter((t) => t.como === 'proprio').map((t) => t.titulo).join(', ')}.`;
+    } else if (titulos.length) {
+      acao = `Abateu ${moeda(efeito)} no título ${numeros} da nota ${d.nota_origem ?? '—'}.`;
+    } else {
+      acao = 'Não abateu nenhum título nem gerou título novo. Conferir como o valor voltou para o cliente.';
+    }
+    return {
+      ...d, titulos, numeros_titulos: numeros, abatido, desfeito, efeito,
+      titulos_pendente: titulos.reduce((t, x) => t + n(x.pendente), 0),
+      situacao, abatendo, acao,
+    };
+  });
+
+  const validas = lista.filter((d) => d.situacao !== 'cancelada');
+  const com = validas.filter((d) => d.situacao === 'com_titulo');
+  return {
+    periodo: { inicio: filtros.inicio, fim: filtros.fim },
+    situacoes: SITUACOES_DEVOLUCAO,
+    resumo: {
+      notas: validas.length,
+      valor: validas.reduce((t, d) => t + n(d.valor_devolucao), 0),
+      com_titulo: com.length,
+      valor_abatido: com.reduce((t, d) => t + d.efeito, 0),
+      sem_titulo: validas.length - com.length,
+      valor_sem_titulo: validas.filter((d) => d.situacao === 'sem_titulo').reduce((t, d) => t + n(d.valor_devolucao), 0),
+      canceladas: lista.length - validas.length,
+      canceladas_abatendo: lista.filter((d) => d.abatendo).length,
+    },
+    lista,
+  };
+}
+
 const vendedores = (query) => repo.vendedores(montarFiltros(query));
 
 async function detalhe(query, params) {
@@ -329,6 +397,6 @@ async function exportarNotasVendedor(query) {
 }
 
 module.exports = {
-  analise, detalhe, vendedores, exportar, notasVendedor, exportarNotasVendedor, notasCanceladas, cancelamentosTodos, ETAPA_TEXTO,
+  analise, detalhe, vendedores, exportar, notasVendedor, exportarNotasVendedor, notasCanceladas, cancelamentosTodos, devolucoes, ETAPA_TEXTO,
   montarFiltros, // usado também pelo Vendas > Vendedores (vendas-vendedores.service.js)
 };

@@ -14,6 +14,10 @@
   const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
   let dados = null;
+  // Aba Devolução (nov/2026): todas as notas de devolução do período, com o título que geraram.
+  // Consulta à parte (/faturamento/devolucoes), carregada quando a aba está aberta.
+  let devol = null;
+  let devolCarregando = null;
   // Aba "Todos os cancelamentos": carrega só quando a aba é aberta (consulta à parte)
   let todos = null;
   let todosCarregando = null;
@@ -21,12 +25,12 @@
   let abaAtual = 'devolucoes';
   // Situações do filtro em cada aba ("gerando" junta as duas que ainda abatem)
   const OPCOES_SITUACAO = {
-    devolucoes: [['gerando', 'Gerando financeiro'], ['abatendo', 'Ainda abatendo o título'], ['abatendo_estorno', 'Abatendo, com estorno depois'], ['corrigida', 'Já corrigida'], ['', 'Todas']],
+    devolucoes: [['', 'Todas'], ['com_titulo', 'Gerou título financeiro'], ['sem_titulo', 'Não gerou título financeiro'], ['cancelada', 'Canceladas']],
     notas: [['', 'Todas'], ['com', 'Gerando financeiro'], ['cobranca_dupla', 'Cobrança em dobro'], ['recebida', 'Cancelada com recebimento'],
       ['em_aberto', 'Título em aberto'], ['sem', 'Sem financeiro']],
     todos: [['', 'Todos'], ['mexe', 'Mexe no financeiro'], ['ok', 'Sem efeito no financeiro']],
   };
-  const situacaoEscolhida = { devolucoes: 'gerando', notas: '', todos: '' };
+  const situacaoEscolhida = { devolucoes: '', notas: '', todos: '' };
 
   const criar = (tag, classe, texto) => {
     const e = document.createElement(tag);
@@ -64,7 +68,9 @@
       if (!r.ok) throw new Error(corpo.erro || 'Não foi possível carregar.');
       dados = corpo;
       todos = null; // período ou loja mudou: a lista completa busca de novo
+      devol = null; // e a lista de devoluções também
       if (abaAtual === 'todos' || abaAtual === 'notas') carregarTodos();
+      if (abaAtual === 'devolucoes') carregarDevolucoes();
       montarOpcoes();
       desenhar();
       status('');
@@ -100,7 +106,7 @@
   function montarOpcoes() {
     const vendedores = new Map();
     const clientes = new Set();
-    for (const l of [...dados.devolucoes, ...dados.vendas, ...(todos?.lista || [])]) {
+    for (const l of [...(dados?.devolucoes || []), ...(dados?.vendas || []), ...(todos?.lista || []), ...(devol?.lista || [])]) {
       if (l.cod_vendedor != null) vendedores.set(String(l.cod_vendedor), l.vendedor || `Vendedor ${l.cod_vendedor}`);
       if (l.cliente) clientes.add(l.cliente);
     }
@@ -118,57 +124,14 @@
 
   function desenhar() {
     if (abaAtual === 'todos') { desenharTodos(); return; }
+    if (abaAtual === 'devolucoes') { desenharDevolucoes(); return; }
     if (!dados) return;
     const termo = el('pesquisa-termo').value.trim().toLowerCase();
     const r = dados.resumo;
 
-    el('resumo-devolucoes').textContent = r.devolucoes_gerando ? dinheiro(r.valor_devolucoes_gerando) : 'Nenhuma';
-    el('resumo-devolucoes-explica').textContent = `${plural(r.devolucoes_gerando, 'devolução cancelada ainda abate', 'devoluções canceladas ainda abatem')} título · ${plural(r.devolucoes_canceladas, 'devolução cancelada', 'devoluções canceladas')} no período`;
     el('resumo-vendas').textContent = r.vendas_com_financeiro ? dinheiro(r.valor_vendas_pendente + r.valor_vendas_recebido) : 'Nenhuma';
     el('resumo-vendas-explica').textContent = `${plural(r.vendas_com_financeiro, 'nota', 'notas')} · ${dinheiro(r.valor_vendas_pendente)} em aberto e ${dinheiro(r.valor_vendas_recebido)} recebidos sem estorno`
       + `${r.vendas_cobranca_dupla ? ` · ${plural(r.vendas_cobranca_dupla, 'cobrança em dobro', 'cobranças em dobro')}` : ''} · ${plural(r.vendas_canceladas, 'nota de venda cancelada', 'notas de venda canceladas')} no período`;
-
-    // A. Devoluções canceladas
-    const devolucoes = dados.devolucoes
-      .filter((d) => passaFiltros(d, d.gerando_financeiro ? d.gerando : d.valor_devolucao))
-      .filter((d) => bate(termo, d.nota_devolucao, d.id, d.nota_origem_registro, d.nota_origem, d.pedido, d.cliente, d.cod_cliente, d.numeros_titulos));
-    el('titulo-devolucoes').textContent = `Notas de devolução canceladas (${devolucoes.length})`;
-    const corpoA = el('tabela-devolucoes').tBodies[0];
-    corpoA.replaceChildren(...devolucoes.map((d) => {
-      const tr = criar('tr', d.gerando_financeiro ? 'linha-vencida' : 'canceladas-ok');
-      const origem = criar('span');
-      origem.append(`nota ${d.nota_origem ?? '—'}`);
-      if (d.nota_origem_registro) origem.append(criar('span', 'qtd', `registro ${d.nota_origem_registro}`));
-      const notaOrigem = criar('td', 'esquerda');
-      notaOrigem.append(origem);
-      if (d.pedido) notaOrigem.append(criar('span', 'qtd', `pedido ${d.pedido}`));
-      let acao;
-      if (d.gerando_financeiro) {
-        acao = `Desfazer o abatimento de ${dinheiro(d.gerando)} no título.`;
-        if (n(d.estornado_depois) > 0.009) acao += ` Teve estorno de ${dinheiro(d.estornado_depois)} depois: confira se já foi a correção.`;
-      } else {
-        acao = n(d.abatido) > 0.009 ? 'O abatimento já foi desfeito. ✓' : 'Não chegou a abater título. ✓';
-      }
-      tr.append(
-        celula(`${d.nota_devolucao}`, 'esquerda', `registro ${d.id} · devolvida em ${dataBR(d.devolucao_dia)}`),
-        celula(dataHoraBR(d.cancelado_em), 'esquerda', d.com_protocolo ? 'com protocolo SEFAZ' : 'sem protocolo SEFAZ'),
-        notaOrigem,
-        celula(d.cliente || `cliente ${d.cod_cliente ?? '—'}`, 'esquerda', d.vendedor ? `vendedor ${d.vendedor}` : ''),
-        celula(dinheiro(d.valor_devolucao)),
-        celula(dinheiro(d.abatido), '', n(d.desfeito) > 0.009 ? `desfeito ${dinheiro(d.desfeito)}` : ''),
-        celula(dinheiro(d.gerando), d.gerando_financeiro ? 'negativo' : ''),
-        celula(d.numeros_titulos || '—', 'esquerda', n(d.titulos) ? `${dinheiro(d.titulos_pendente)} em aberto hoje` : ''),
-        celula(acao, 'esquerda canceladas-acao'),
-      );
-      return tr;
-    }));
-    if (!devolucoes.length) {
-      const tr = criar('tr');
-      const td = criar('td', 'vazio', 'Nenhuma devolução cancelada com esses filtros no período.');
-      td.colSpan = 9;
-      tr.append(td);
-      corpoA.append(tr);
-    }
 
     // C. Notas e cupons cancelados SEM financeiro (da lista completa), mais o resumo com e sem
     desenharSemFinanceiro(termo);
@@ -207,6 +170,105 @@
       td.colSpan = 9;
       tr.append(td);
       corpoB.append(tr);
+    }
+  }
+
+  // ---------- Aba Devolução: todas as notas de devolução, com o título que geraram ----------
+  async function carregarDevolucoes() {
+    if (devolCarregando) return devolCarregando;
+    const url = new URL('/faturamento/devolucoes', location.origin);
+    url.searchParams.set('inicio', el('inicio').value);
+    url.searchParams.set('fim', el('fim').value);
+    if (typeof modulos !== 'undefined') modulos.marcarLoja(url);
+    el('titulo-devolucoes').textContent = 'Notas de devolução (carregando…)';
+    devolCarregando = (async () => {
+      try {
+        const r = await fetch(url, { headers: { 'x-api-key': sessionStorage.getItem('apiKey') || '' } });
+        const corpo = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(corpo.erro || 'Não foi possível carregar as devoluções.');
+        devol = corpo;
+        el('painel').hidden = false;
+        montarOpcoes();
+        if (abaAtual === 'devolucoes') desenhar();
+      } catch (err) {
+        status(err.message, true);
+        el('titulo-devolucoes').textContent = 'Notas de devolução';
+      } finally {
+        devolCarregando = null;
+      }
+    })();
+    return devolCarregando;
+  }
+
+  const SELO_DEVOLUCAO = { com_titulo: 'Gerou título', sem_titulo: 'Não gerou título', cancelada: 'Cancelada' };
+
+  function desenharDevolucoes() {
+    const corpo = el('tabela-devolucoes').tBodies[0];
+    if (!devol) {
+      el('resumo-devolucoes').textContent = '—';
+      el('resumo-devolucoes-explica').textContent = '';
+      corpo.replaceChildren();
+      return;
+    }
+    const termo = el('pesquisa-termo').value.trim().toLowerCase();
+    const r = devol.resumo;
+    el('resumo-devolucoes').textContent = r.notas ? dinheiro(r.valor) : 'Nenhuma';
+    el('resumo-devolucoes-explica').textContent = [
+      plural(r.notas, 'nota de devolução', 'notas de devolução'),
+      `${plural(r.com_titulo, 'gerou', 'geraram')} título (${dinheiro(r.valor_abatido)} abatidos)`,
+      `${plural(r.sem_titulo, 'não gerou', 'não geraram')} título (${dinheiro(r.valor_sem_titulo)})`,
+      r.canceladas ? `${plural(r.canceladas, 'cancelada', 'canceladas')}${r.canceladas_abatendo ? `, ${plural(r.canceladas_abatendo, 'ainda abatendo', 'ainda abatendo')} título` : ''}` : null,
+    ].filter(Boolean).join(' · ');
+
+    const lista = devol.lista
+      .filter((d) => passaFiltros(d, d.valor_devolucao))
+      .filter((d) => bate(termo, d.nota_devolucao, d.id, d.nota_origem, d.nota_origem_registro, d.pedido, d.cliente, d.cod_cliente, d.numeros_titulos));
+    el('titulo-devolucoes').textContent = `Notas de devolução (${lista.length})`;
+
+    corpo.replaceChildren(...lista.map((d) => {
+      const tr = criar('tr', d.abatendo ? 'linha-vencida' : d.situacao === 'cancelada' ? 'canceladas-ok' : '');
+      const origem = criar('td', 'esquerda');
+      origem.append(`nota ${d.nota_origem ?? '—'}`);
+      origem.append(criar('span', 'qtd', [d.nota_origem_registro ? `registro ${d.nota_origem_registro}` : '',
+        d.nota_origem_dia ? `de ${dataBR(d.nota_origem_dia)}` : '', d.pedido ? `pedido ${d.pedido}` : ''].filter(Boolean).join(' · ')));
+
+      // Título financeiro: cada título numa linha, com o vencimento e quanto está em aberto hoje
+      const titulo = criar('td', 'esquerda');
+      if (d.titulos.length) {
+        for (const t of d.titulos) {
+          const linha = criar('span', 'canceladas-baixa__linha');
+          linha.append(criar('strong', null, `título ${t.titulo}`));
+          linha.append(` · ${t.como === 'proprio' ? 'título da devolução' : 'abatido'}${t.vencimento ? ` · vence ${dataBR(t.vencimento)}` : ''}`);
+          titulo.append(linha);
+          titulo.append(criar('span', 'qtd', n(t.pendente) > 0.009 ? `${dinheiro(t.pendente)} em aberto hoje` : 'título quitado'));
+        }
+      } else {
+        titulo.append(criar('span', d.situacao === 'sem_titulo' ? 'negativo' : '', 'Não gerou título'));
+      }
+
+      const selo = criar('span', `tipo-cancelamento tipo-cancelamento--${d.situacao === 'cancelada' ? 'devolucao' : 'nota'}`, SELO_DEVOLUCAO[d.situacao]);
+      const situacao = criar('td', 'esquerda canceladas-acao');
+      situacao.append(selo, criar('span', `qtd${d.abatendo ? ' negativo' : ''}`, d.acao));
+
+      tr.append(
+        celula(`${d.nota_devolucao}`, 'esquerda', `registro ${d.id}${d.usuario ? ` · por ${d.usuario}` : ''}`),
+        celula(dataBR(d.devolucao_dia), 'esquerda', d.cancelado_em
+          ? `cancelada em ${dataHoraBR(d.cancelado_em)}${d.com_protocolo ? '' : ' (sem protocolo SEFAZ)'}` : ''),
+        origem,
+        celula(d.cliente || `cliente ${d.cod_cliente ?? '—'}`, 'esquerda', d.vendedor ? `vendedor ${d.vendedor}` : ''),
+        celula(dinheiro(d.valor_devolucao)),
+        titulo,
+        celula(dinheiro(d.efeito), '', n(d.desfeito) > 0.009 ? `abateu ${dinheiro(d.abatido)} · desfeito ${dinheiro(d.desfeito)}` : ''),
+        situacao,
+      );
+      return tr;
+    }));
+    if (!lista.length) {
+      const tr = criar('tr');
+      const td = criar('td', 'vazio', 'Nenhuma nota de devolução com esses filtros no período.');
+      td.colSpan = 8;
+      tr.append(td);
+      corpo.append(tr);
     }
   }
 
@@ -417,6 +479,9 @@
     abaAtual = aba;
     // A aba Notas também usa a lista completa (bloco das canceladas sem financeiro)
     if ((aba === 'todos' || aba === 'notas') && !todos && dados) carregarTodos();
+    if (aba === 'devolucoes' && !devol && dados) carregarDevolucoes();
+    // Na Devolução o período é o dia da devolução; nas outras abas, o dia do cancelamento
+    el('rotulo-inicio').textContent = aba === 'devolucoes' ? 'Devolvida de' : 'Cancelada de';
     montarSituacao();
     desenhar();
     el('pesquisa-termo').placeholder = PESQUISA[aba];
