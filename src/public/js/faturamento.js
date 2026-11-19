@@ -657,6 +657,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   const guardado = estado.aplicarCampos('faturamento', {
     inicio: 'inicio', fim: 'fim', busca: 'pesquisa-termo', vendedor: 'filtro-vendedor',
   });
+  // O filtro de vendedor só ganha as opções depois da primeira carga. Sem a opção, o navegador
+  // jogava o vendedor guardado fora, e a tela voltava com TODOS os vendedores (números diferentes).
+  // Cria a opção na hora, para a tela voltar exatamente como estava.
+  if (guardado.vendedor && !el('filtro-vendedor').querySelector(`option[value="${CSS.escape(String(guardado.vendedor))}"]`)) {
+    el('filtro-vendedor').append(Object.assign(document.createElement('option'), {
+      value: String(guardado.vendedor), textContent: `Vendedor ${guardado.vendedor}`,
+    }));
+    el('filtro-vendedor').value = String(guardado.vendedor);
+  }
   if (guardado.filtro) filtroAtual = guardado.filtro;
   el('limpar-pesquisa').hidden = !el('pesquisa-termo').value.trim();
   marcarAtalho();

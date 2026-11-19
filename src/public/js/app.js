@@ -1289,7 +1289,9 @@ function textoUltimoRegistro(ultimo) {
 
 // ===== Versão do painel =====
 // Se o painel foi atualizado no servidor, a tela recarrega sozinha (a chave continua guardada na aba).
+// O período da tela é guardado antes de recarregar, para não voltar para o mês atual.
 let versaoPainel = null;
+const PERIODO_ANTES_DE_RECARREGAR = 'painel:vendas:periodo-recarga';
 
 async function painelFoiAtualizado() {
   try {
@@ -1628,6 +1630,13 @@ function mostrarPedidosVendedor() {
 async function carregar({ automatico = false } = {}) {
   if (automatico && await painelFoiAtualizado() && !el('detalhe').open && !el('fat-janela').open) {
     mostrarStatus('Painel atualizado. Recarregando…');
+    // Guarda o período que está na tela: depois de recarregar, a tela volta nele
+    // (antes voltava sempre para o mês atual, e os números "mudavam sozinhos")
+    try {
+      sessionStorage.setItem(PERIODO_ANTES_DE_RECARREGAR, JSON.stringify(filtrosCarregados ?? filtrosAtuais()));
+    } catch {
+      // sem sessionStorage, recarrega no mês atual como antes
+    }
     window.location.reload();
     return;
   }
@@ -2005,6 +2014,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const hoje = new Date();
   el('inicio').value = formatarData(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
   el('fim').value = formatarData(hoje);
+  // Voltou de uma recarga automática (painel atualizado no servidor): usa o período que estava na tela
+  try {
+    const antes = JSON.parse(sessionStorage.getItem(PERIODO_ANTES_DE_RECARREGAR) ?? 'null');
+    sessionStorage.removeItem(PERIODO_ANTES_DE_RECARREGAR);
+    if (antes?.inicio && antes?.fim) {
+      el('inicio').value = antes.inicio;
+      el('fim').value = antes.fim;
+    }
+  } catch {
+    // guardado inválido: fica no mês atual
+  }
 
   el('form-chave').addEventListener('submit', (evento) => {
     evento.preventDefault();
