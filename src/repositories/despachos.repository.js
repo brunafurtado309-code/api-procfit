@@ -532,6 +532,9 @@ async function titulosDasCargas(cargasLista) {
     )
     SELECT
       TT.carga, TT.nota, TT.pedido,
+      -- Valor total da nota fiscal na carga (aba "Inadimplentes por rota" do Excel)
+      (SELECT TOP 1 FDN.NF_TOTAL FROM FATURAMENTO_DESPACHO_NOTAS FDN WITH (NOLOCK)
+        WHERE FDN.FATURAMENTO_DESPACHO = TT.carga AND FDN.NF_NUMERO = TT.nota) AS valor_nota,
       T.TITULO_RECEBER                        AS titulo_receber,
       LTRIM(RTRIM(T.TITULO))                  AS titulo,
       T.ENTIDADE                              AS codigo_cliente,

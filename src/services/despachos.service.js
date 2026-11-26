@@ -276,19 +276,21 @@ function linhasDoTitulo(t, c) {
 }
 
 // Resumo por cliente dos títulos das cargas (aba "Clientes" do Excel)
-function resumoPorCliente(titulos) {
+function resumoPorCliente(titulos, rotaDaCarga = () => null) {
   const porCliente = new Map();
   for (const t of titulos) {
     if (Number(t.adquirente) === 1) continue; // cartão: cobrado da adquirente, não do cliente
     const chave = String(t.codigo_cliente ?? '');
     if (!porCliente.has(chave)) {
       porCliente.set(chave, {
-        codigo: t.codigo_cliente, cliente: t.cliente, cargas: new Set(), notas: new Set(),
+        codigo: t.codigo_cliente, cliente: t.cliente, cargas: new Set(), notas: new Set(), rotas: new Set(),
         titulos: 0, titulos_abertos: 0, valor_titulos: 0, em_aberto: 0, vencimento_mais_antigo: null,
       });
     }
     const c = porCliente.get(chave);
     c.cargas.add(t.carga);
+    const rota = rotaDaCarga(t.carga);
+    if (rota) c.rotas.add(String(rota));
     if (t.nota != null) c.notas.add(t.nota);
     c.titulos += 1;
     c.valor_titulos += num(t.valor);
@@ -302,7 +304,12 @@ function resumoPorCliente(titulos) {
     }
   }
   return [...porCliente.values()]
-    .map((c) => ({ ...c, despachos: [...c.cargas].sort((a, b) => b - a).join(', '), qtd_notas: c.notas.size }))
+    .map((c) => ({
+      ...c,
+      despachos: [...c.cargas].sort((a, b) => b - a).join(', '),
+      rotas_texto: [...c.rotas].sort((a, b) => Number(a) - Number(b) || a.localeCompare(b)).join(', '),
+      qtd_notas: c.notas.size,
+    }))
     .sort((a, b) => b.em_aberto - a.em_aberto || String(a.cliente ?? '').localeCompare(String(b.cliente ?? ''), 'pt-BR'));
 }
 
@@ -316,7 +323,9 @@ async function exportarCargas(query) {
   const workbook = excel.novaPlanilha();
 
   const todosOsTitulos = await repo.titulosDasCargas(todasAsCargas);
-  const todosOsClientes = resumoPorCliente(todosOsTitulos);
+  const cargaPorNumero = new Map(todasAsCargas.map((c) => [Number(c.carga), c]));
+  const rotaDaCarga = (carga) => cargaPorNumero.get(Number(carga))?.rota ?? null;
+  const todosOsClientes = resumoPorCliente(todosOsTitulos, rotaDaCarga);
   const clientes = soDevendo ? todosOsClientes.filter((c) => c.em_aberto > 0.009) : todosOsClientes;
   const devedores = new Set(clientes.map((c) => String(c.codigo ?? '')));
   const titulos = soDevendo
@@ -326,7 +335,51 @@ async function exportarCargas(query) {
   const lista = soDevendo ? todasAsCargas.filter((c) => cargasDosDevedores.has(Number(c.carga))) : todasAsCargas;
   const recorte = soDevendo ? 'só clientes devendo' : 'todos os clientes';
 
-  // Aba 0: um cliente por linha (quem deve primeiro)
+  // Aba "Inadimplentes por rota" (nov/2026): uma linha por título de cliente EM ABERTO, só com o que
+  // a cobrança usa: rota, cliente, nota fiscal, pedido, valor da nota, título e quanto falta pagar.
+  // Ordem: rota, cliente, vencimento. Título de adquirente (cartão) não entra.
+  const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Fortaleza' });
+  const diasDeAtraso = (venc) => (venc && venc < hoje ? Math.round((Date.parse(hoje) - Date.parse(venc)) / 86400000) : 0);
+  const emAberto = titulos
+    .filter((t) => Number(t.adquirente) !== 1 && num(t.pendente) > 0.009)
+    .map((t) => {
+      const carga = cargaPorNumero.get(Number(t.carga)) ?? {};
+      return {
+        rota: carga.rota ?? null, carga: t.carga, saida: carga.saida ?? null,
+        codigo_cliente: t.codigo_cliente, cliente: t.cliente, nota: t.nota, pedido: t.pedido,
+        valor_nota: t.valor_nota, titulo: t.titulo, vencimento: t.vencimento, atraso: diasDeAtraso(t.vencimento),
+        valor_titulo: t.valor, a_pagar: num(t.pendente),
+      };
+    })
+    .sort((a, b) => (Number(a.rota) || 9999) - (Number(b.rota) || 9999)
+      || String(a.rota ?? '').localeCompare(String(b.rota ?? ''))
+      || String(a.cliente ?? '').localeCompare(String(b.cliente ?? ''), 'pt-BR')
+      || String(a.vencimento ?? '').localeCompare(String(b.vencimento ?? '')));
+  const vencidos = emAberto.filter((t) => t.atraso > 0);
+  excel.adicionarTabela(workbook, 'Inadimplentes por rota', {
+    titulo: `Títulos em aberto por rota (${recorte}) | Belo Norte`,
+    subtitulo: `${emAberto.length} títulos em aberto · ${vencidos.length} vencidos · `
+      + `${new Set(emAberto.map((t) => t.codigo_cliente)).size} clientes · gerado em ${geradoEm}`,
+    colunas: [
+      { titulo: 'Rota', chave: 'rota', largura: 7 },
+      { titulo: 'Despacho', chave: 'carga', tipo: 'codigo', largura: 10 },
+      { titulo: 'Saída', chave: 'saida', tipo: 'data', largura: 11 },
+      { titulo: 'Cód. cliente', chave: 'codigo_cliente', tipo: 'codigo', largura: 10 },
+      { titulo: 'Cliente', chave: 'cliente', largura: 38 },
+      { titulo: 'Nota fiscal', chave: 'nota', tipo: 'codigo', largura: 10 },
+      { titulo: 'Pedido', chave: 'pedido', tipo: 'codigo', largura: 9 },
+      { titulo: 'Valor total da nota', chave: 'valor_nota', tipo: 'moeda', largura: 15 },
+      { titulo: 'Título', chave: 'titulo', largura: 12 },
+      { titulo: 'Vencimento', chave: 'vencimento', tipo: 'data', largura: 11 },
+      { titulo: 'Dias de atraso', chave: 'atraso', tipo: 'inteiro', largura: 9 },
+      { titulo: 'Valor do título', chave: 'valor_titulo', tipo: 'moeda', largura: 14 },
+      { titulo: 'A pagar (em aberto)', chave: 'a_pagar', tipo: 'moeda', largura: 15, somar: true },
+    ],
+    linhas: emAberto,
+    totais: true,
+  });
+
+  // Aba: um cliente por linha (quem deve primeiro)
   excel.adicionarTabela(workbook, 'Clientes', {
     titulo: `Clientes dos despachos (${recorte}) | Belo Norte`,
     subtitulo: `${clientes.length} ${clientes.length === 1 ? 'cliente' : 'clientes'}`
@@ -335,6 +388,7 @@ async function exportarCargas(query) {
     colunas: [
       { titulo: 'Cód. cliente', chave: 'codigo', tipo: 'codigo', largura: 11 },
       { titulo: 'Cliente', chave: 'cliente', largura: 38 },
+      { titulo: 'Rotas', chave: 'rotas_texto', largura: 10 },
       { titulo: 'Despachos', chave: 'despachos', largura: 22 },
       { titulo: 'Notas', chave: 'qtd_notas', tipo: 'inteiro', largura: 8, somar: true },
       { titulo: 'Títulos', chave: 'titulos', tipo: 'inteiro', largura: 8, somar: true },
