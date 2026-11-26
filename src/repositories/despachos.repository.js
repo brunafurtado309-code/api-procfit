@@ -360,10 +360,11 @@ async function detalhe(acerto) {
 }
 
 // Situação no contas a receber de cada nota do acerto (nov/2026).
-// Caso real: NF 14608 (pedido 21190) voltou "sem pagamento informado" no acerto e o painel mostrava
+// Casos reais: NF 14608 (pedido 21190) voltou "sem pagamento informado" no acerto e o painel mostrava
 // falta R$ 443,00, mas no PROCFIT o pedido tinha saldo devedor de R$ 10,00: R$ 433,00 tinham sido
-// baixados no título da nota por outra tela (Bancos, caixa...). O detalhe só olhava o que foi
-// informado no acerto. Mesma regra já validada em pagasForaDoAcerto (cartão "Pagas fora do acerto"):
+// baixados no título da nota por outra tela (Bancos, caixa...). NF 16958 (pedido 24503): falta R$ 675,00
+// no painel e "Pago" no PROCFIT, pago na hora no caixa (cupom do PDV). O detalhe só olhava o que foi
+// informado no acerto. Agora traz os dois caminhos: baixa no título da nota fora do acerto e cupom do caixa. Mesma regra já validada em pagasForaDoAcerto (cartão "Pagas fora do acerto"):
 //   título da nota = origem 753289/650512, mesmo cliente, TITULO "nota/parcela"
 //   pago fora      = recebimento (12) que NÃO veio do acerto (455510) nem do PIX do acerto
 //                    (668401 com FORM_ORIGEM 456558)
@@ -373,32 +374,57 @@ async function notasNoFinanceiro(pool, acerto) {
     .input('acerto', sql.Decimal(18, 0), acerto)
     .query(`
       WITH N AS (
-        SELECT DISTINCT DT.NF_NUMERO, DT.ENTIDADE
+        SELECT DT.NF_NUMERO, DT.ENTIDADE, MAX(NULLIF(DT.PEDIDO_PREVENDA, 0)) AS pedido
         FROM ${D}_DETALHES DT WITH (NOLOCK)
         WHERE DT.RECEBIMENTO_FATURAMENTO_DESPACHO = @acerto AND DT.NF_NUMERO IS NOT NULL
+        GROUP BY DT.NF_NUMERO, DT.ENTIDADE
+      ),
+      T AS (
+        SELECT N.NF_NUMERO,
+               COUNT(*)                        AS titulos,
+               SUM(ISNULL(S.pendente, 0))      AS pendente,
+               SUM(ISNULL(S.recebido_fora, 0)) AS recebido_fora,
+               SUM(ISNULL(S.renegociado, 0))   AS renegociado
+        FROM N
+        JOIN TITULOS_RECEBER TR WITH (NOLOCK)
+          ON TR.TAB_MASTER_ORIGEM IN (753289, 650512)
+         AND TR.ENTIDADE = N.ENTIDADE
+         AND LTRIM(RTRIM(TR.TITULO)) LIKE CAST(CAST(N.NF_NUMERO AS bigint) AS varchar(20)) + '/%'
+        OUTER APPLY (
+          SELECT SUM(ISNULL(X.CREDITO, 0)) - SUM(ISNULL(X.DEBITO, 0)) AS pendente,
+                 SUM(CASE WHEN X.TRANSACAO_FINANCEIRA = 12 AND ISNULL(X.TAB_MASTER_ORIGEM, 0) <> 455510
+                           AND NOT (X.TAB_MASTER_ORIGEM = 668401 AND ISNULL(XB.FORM_ORIGEM, 0) = 456558)
+                          THEN ISNULL(X.DEBITO, 0) ELSE 0 END)       AS recebido_fora,
+                 SUM(CASE WHEN X.TRANSACAO_FINANCEIRA = 43 THEN ISNULL(X.DEBITO, 0) ELSE 0 END) AS renegociado
+          FROM TITULOS_RECEBER_TRANSACOES X WITH (NOLOCK)
+          LEFT JOIN RECEBIMENTOS_BANCOS XB WITH (NOLOCK)
+            ON X.TAB_MASTER_ORIGEM = 668401 AND XB.RECEBIMENTO_BANCO = X.REG_MASTER_ORIGEM
+          WHERE X.TITULO_RECEBER = TR.TITULO_RECEBER
+        ) S
+        GROUP BY N.NF_NUMERO
       )
-      SELECT N.NF_NUMERO                    AS nota,
-             COUNT(*)                       AS titulos,
-             SUM(ISNULL(S.pendente, 0))      AS pendente,
-             SUM(ISNULL(S.recebido_fora, 0)) AS recebido_fora,
-             SUM(ISNULL(S.renegociado, 0))   AS renegociado
+      SELECT N.NF_NUMERO                        AS nota,
+             N.pedido                           AS pedido,
+             ISNULL(T.titulos, 0)               AS titulos,
+             T.pendente                         AS pendente,
+             ISNULL(T.recebido_fora, 0)         AS recebido_fora,
+             ISNULL(T.renegociado, 0)           AS renegociado,
+             -- Pago na hora no caixa: o pedido virou cupom válido no PDV (mesma ligação do
+             -- Follow-up do PROCFIT e da tela Faturamento; cupom cancelado, STATUS 'C', não conta)
+             LTRIM(RTRIM(C.ECF_CUPOM))          AS cupom,
+             C.CAIXA                            AS cupom_caixa,
+             CONVERT(varchar(10), C.MOVIMENTO, 23) AS cupom_data
       FROM N
-      JOIN TITULOS_RECEBER TR WITH (NOLOCK)
-        ON TR.TAB_MASTER_ORIGEM IN (753289, 650512)
-       AND TR.ENTIDADE = N.ENTIDADE
-       AND LTRIM(RTRIM(TR.TITULO)) LIKE CAST(CAST(N.NF_NUMERO AS bigint) AS varchar(20)) + '/%'
+      LEFT JOIN T ON T.NF_NUMERO = N.NF_NUMERO
       OUTER APPLY (
-        SELECT SUM(ISNULL(X.CREDITO, 0)) - SUM(ISNULL(X.DEBITO, 0)) AS pendente,
-               SUM(CASE WHEN X.TRANSACAO_FINANCEIRA = 12 AND ISNULL(X.TAB_MASTER_ORIGEM, 0) <> 455510
-                         AND NOT (X.TAB_MASTER_ORIGEM = 668401 AND ISNULL(XB.FORM_ORIGEM, 0) = 456558)
-                        THEN ISNULL(X.DEBITO, 0) ELSE 0 END)       AS recebido_fora,
-               SUM(CASE WHEN X.TRANSACAO_FINANCEIRA = 43 THEN ISNULL(X.DEBITO, 0) ELSE 0 END) AS renegociado
-        FROM TITULOS_RECEBER_TRANSACOES X WITH (NOLOCK)
-        LEFT JOIN RECEBIMENTOS_BANCOS XB WITH (NOLOCK)
-          ON X.TAB_MASTER_ORIGEM = 668401 AND XB.RECEBIMENTO_BANCO = X.REG_MASTER_ORIGEM
-        WHERE X.TITULO_RECEBER = TR.TITULO_RECEBER
-      ) S
-      GROUP BY N.NF_NUMERO;`));
+        SELECT TOP 1 PV.ECF_CUPOM, PV.CAIXA, PV.MOVIMENTO
+        FROM PDV_PREVENDAS PPV WITH (NOLOCK)
+        JOIN PDV_VENDAS PV WITH (NOLOCK) ON PV.PREVENDA = PPV.PREVENDA AND PV.LOJA = PPV.LOJA
+        WHERE N.pedido IS NOT NULL
+          AND PPV.PEDIDO_INTERNET = N.pedido
+          AND ISNULL(PV.STATUS, '') NOT LIKE 'C'
+        ORDER BY PV.MOVIMENTO DESC
+      ) C;`));
 }
 
 // ===== Processamento do acerto (botão Processar do PROCFIT) =====

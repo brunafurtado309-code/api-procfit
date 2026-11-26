@@ -689,12 +689,21 @@ function montarAcerto(numero, resposta, opcoes = {}) {
     // "Pago" da nota. Antes a nota aparecia com tudo faltando mesmo já paga (ex.: NF 14608).
     for (const nota of porNota.values()) {
       const fin = financeiroPorNota.get(String(nota.nota));
-      nota.titulo_pendente = fin ? Number(fin.pendente) || 0 : null;
+      nota.titulo_pendente = fin && Number(fin.titulos) > 0 ? Number(fin.pendente) || 0 : null;
       const fora = fin ? Number(fin.recebido_fora) || 0 : 0;
       if (fora > 0.009) {
         nota.pago += fora;
         nota.pago_fora = fora;
         nota.formas.push({ nome: 'Pago fora do acerto', valor: fora });
+      }
+      // Pago na hora no caixa (cupom válido do pedido no PDV): o que ainda faltava está pago, a não
+      // ser que o título da nota continue com saldo (aí vale o saldo do título)
+      const faltando = (Number(nota.valor_nota) || 0) - nota.pago;
+      if (fin?.cupom && faltando > 0.01 && !(nota.titulo_pendente > 0.009)) {
+        nota.pago += faltando;
+        nota.pago_fora = (nota.pago_fora ?? 0) + faltando;
+        nota.formas.push({ nome: `Pago no caixa (cupom ${fin.cupom}${fin.cupom_caixa ? `, caixa ${fin.cupom_caixa}` : ''}`
+          + `${fin.cupom_data ? `, ${dataBR(fin.cupom_data)}` : ''})`, valor: faltando });
       }
     }
     const listaNotas = [...porNota.values()];
