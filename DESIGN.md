@@ -195,5 +195,10 @@ chegou agora não achar que são números diferentes.
 (ex.: **próximas semanas**, **últimos 6 meses**). Não comparar número de "posição hoje" com número
 "no período" sem dizer isso na tela.
 
-**Menu do financeiro** (pelo caminho do dinheiro): Contas a receber · Acerto de despachos ·
+**Menu do financeiro** (pelo caminho do dinheiro): Visão geral · Contas a receber · Acerto de despachos ·
 Tesouraria (Recebimentos, Caixa por pessoa, Conciliação) · Contas a pagar.
+
+**Visão geral** (`visao-geral.html`, rota `/financeiro/visao-geral`): não tem SQL de saldo próprio,
+junta as consultas das telas de detalhe (`visaoGeral` em financeiro.repository e pagar.repository,
+`baixasPorMes`, `pedidosPendentes`, despachos `pendentes`). Número novo de saldo entra primeiro na
+tela de detalhe e depois aparece aqui, para os dois sempre baterem.

@@ -874,8 +874,72 @@ async function pedidosPendentes(filtros) {
   return recordset[0];
 }
 
+// ===== Visão geral do financeiro (nov/2026) =====
+// Usa os MESMOS blocos SALDOS/TITULOS das outras telas: assim o número daqui sempre bate
+// com o do Contas a receber e o do Recebíveis de cartão.
+// Semana = segunda-feira, pela mesma conta do contas a pagar (01/01/1900 foi segunda;
+// não depende da configuração de idioma do servidor).
+const SEMANA_SQL = `CONVERT(varchar(10), DATEADD(day,
+  -(DATEDIFF(day, '19000101', CAST(vencimento AS date)) % 7), CAST(vencimento AS date)), 23)`;
+
+async function visaoGeral(filtros) {
+  const request = await criarRequest({ empresa: filtros.empresa });
+  request.input('semanas', sql.Int, filtros.semanas);
+  const { recordsets } = await request.query(`
+    ${SALDOS},
+    ${TITULOS}
+    -- 1) Posição de hoje, separada por quem deve (cliente x adquirente do cartão)
+    SELECT
+      tipo_devedor,
+      SUM(pendente)                                                  AS aberto,
+      COUNT(*)                                                       AS titulos,
+      SUM(CASE WHEN dias_atraso > 0 THEN pendente ELSE 0 END)        AS vencido,
+      COUNT(CASE WHEN dias_atraso > 0 THEN 1 END)                    AS vencido_titulos,
+      SUM(CASE WHEN dias_atraso <= 0 THEN pendente ELSE 0 END)       AS a_vencer,
+      SUM(CASE WHEN dias_atraso > 90 THEN pendente ELSE 0 END)       AS antigo,
+      COUNT(CASE WHEN dias_atraso > 90 THEN 1 END)                   AS antigo_titulos,
+      COUNT(DISTINCT cod_cliente)                                    AS devedores
+    FROM TITULOS
+    WHERE situacao IN ('ABERTO', 'PARCIAL')
+    GROUP BY tipo_devedor;
+
+    ${SALDOS},
+    ${TITULOS}
+    -- 2) Entradas previstas por semana (só o que ainda vai vencer), por quem deve
+    SELECT ${SEMANA_SQL} AS semana, tipo_devedor, SUM(pendente) AS valor
+    FROM TITULOS
+    WHERE situacao IN ('ABERTO', 'PARCIAL')
+      AND dias_atraso <= 0
+      AND CAST(vencimento AS date) < DATEADD(week, @semanas, CAST(GETDATE() AS date))
+    GROUP BY ${SEMANA_SQL}, tipo_devedor;
+  `);
+
+  // 3) Prazo médio de recebimento (últimos 90 dias): da emissão até o dia do recebimento,
+  //    ponderado pelo valor recebido. Só clientes (cartão não é prazo dado ao cliente) e sem
+  //    a carga inicial do sistema antigo (999999), que tem emissão de anos atrás.
+  const prazo = await (await criarRequest({ empresa: filtros.empresa })).query(`
+    SELECT
+      SUM(CAST(DATEDIFF(day, T.EMISSAO, TX.DATA) AS decimal(18, 2)) * TX.DEBITO)
+        / NULLIF(SUM(TX.DEBITO), 0)                                AS prazo_medio,
+      SUM(TX.DEBITO)                                               AS recebido,
+      COUNT(DISTINCT T.TITULO_RECEBER)                             AS titulos
+    FROM TITULOS_RECEBER_TRANSACOES TX WITH (NOLOCK)
+    JOIN TITULOS_RECEBER T WITH (NOLOCK) ON T.TITULO_RECEBER = TX.TITULO_RECEBER
+    WHERE TX.TRANSACAO_FINANCEIRA = 12
+      AND ISNULL(TX.DEBITO, 0) > 0
+      AND TX.DATA >= DATEADD(day, -90, CAST(GETDATE() AS date))
+      AND T.EMISSAO <= TX.DATA
+      AND (T.TAB_MASTER_ORIGEM IS NULL OR T.TAB_MASTER_ORIGEM <> 999999)
+      AND (@empresa IS NULL OR T.EMPRESA = @empresa)
+      AND NOT EXISTS (SELECT 1 FROM ADQUIRENTES A WITH (NOLOCK)
+                      WHERE A.ENTIDADE = T.ENTIDADE AND A.ENTIDADE > 1);
+  `);
+
+  return { porDevedor: recordsets[0], semanas: recordsets[1], prazo: prazo.recordset[0] ?? {} };
+}
+
 module.exports = {
   pedidosPendentes,
   resumo, cartoes, indicadores, previsao, porFaixaAtraso, porCliente, titulos, fichaCliente, analiseClientes,
-  baixasPorMes, recebimentos, ORIGENS_RECEBIMENTO, ORDENACAO_RECEBIMENTOS, FORMAS_RECEBIMENTO,
+  baixasPorMes, recebimentos, visaoGeral, ORIGENS_RECEBIMENTO, ORDENACAO_RECEBIMENTOS, FORMAS_RECEBIMENTO,
 };

@@ -3654,3 +3654,10 @@ html, body { max-width: 100%; overflow-x: clip; }
 /* Contas a pagar x Caixa por pessoa (pagar.html): mostra só a parte escolhida no menu */
 .parte-caixa > .barra-filtros,
 .parte-caixa #painel > :not(#bloco-caixa) { display: none !important; }
+
+/* ===== Visão geral do financeiro (visao-geral.html, nov/2026) ===== */
+a.cartao.cartao--link { display: block; color: inherit; text-decoration: none; }
+a.cartao.cartao--link:hover { border-color: var(--verde); background: var(--verde-suave); }
+.cartao-valor.negativo,
+.tela-visao-geral .tabela td.negativo { color: var(--alerta); }
+.tela-visao-geral #grafico-semanas { margin-bottom: 0.75rem; }

@@ -6,8 +6,12 @@ const pedidos = require('../controllers/pedidos.controller');
 const despachos = require('../controllers/despachos.controller');
 const pagar = require('../controllers/pagar.controller');
 const clientesCredito = require('../controllers/clientes-credito.controller');
+const visaoGeral = require('../controllers/visao-geral.controller');
 
 const router = Router();
+
+// Visão geral do financeiro: posição de hoje, entradas x saídas, saúde dos números e prazos
+router.get('/visao-geral', visaoGeral.painel);
 
 router.get('/resumo', controller.resumo);
 // Pedidos não pagos ainda sem título (somam no Total a receber)

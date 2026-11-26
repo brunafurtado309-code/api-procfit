@@ -539,6 +539,73 @@ async function entradasCaixa(filtros) {
   return recordset;
 }
 
+// ===== Visão geral do financeiro (nov/2026) =====
+// Só o resumo do que a empresa deve, as saídas por semana, a saúde das baixas e o prazo médio
+// de pagamento. Mesmos SALDOS/TITULOS da tela de contas a pagar (os números batem com ela),
+// mas sem a lista de títulos, que é o que pesa no painel().
+async function visaoGeral(filtros) {
+  const pool = await getPool();
+  const request = criarRequest(pool, { empresa: filtros.empresa });
+  request.input('semanas', sql.Int, filtros.semanas);
+  const { recordsets } = await request.query(`
+    ${SALDOS}
+    -- 1) Posição de hoje
+    SELECT
+      SUM(CASE WHEN pendente > 0.009 THEN pendente ELSE 0 END)                               AS aberto,
+      COUNT(CASE WHEN pendente > 0.009 THEN 1 END)                                           AS titulos,
+      SUM(CASE WHEN pendente > 0.009 AND dias_atraso > 0 THEN pendente ELSE 0 END)           AS vencido,
+      SUM(CASE WHEN pendente > 0.009 AND dias_atraso <= 0 THEN pendente ELSE 0 END)          AS a_vencer,
+      COUNT(DISTINCT CASE WHEN pendente > 0.009 THEN cod_fornecedor END)                     AS fornecedores,
+      SUM(CASE WHEN pendente > 0.009 AND enviado_banco IS NOT NULL THEN pendente ELSE 0 END) AS enviado,
+      COUNT(CASE WHEN pendente > 0.009 AND enviado_banco IS NOT NULL THEN 1 END)             AS enviado_titulos
+    FROM TITULOS;
+
+    ${SALDOS}
+    -- 2) Saídas previstas por semana (só o que ainda vai vencer)
+    SELECT
+      CONVERT(varchar(10), DATEADD(day, -(DATEDIFF(day, '19000101', CAST(vencimento_data AS date)) % 7),
+        CAST(vencimento_data AS date)), 23) AS semana,
+      SUM(pendente)                         AS valor
+    FROM TITULOS
+    WHERE pendente > 0.009 AND dias_atraso <= 0
+      AND vencimento_data < DATEADD(week, @semanas, CAST(GETDATE() AS date))
+    GROUP BY CONVERT(varchar(10), DATEADD(day, -(DATEDIFF(day, '19000101', CAST(vencimento_data AS date)) % 7),
+        CAST(vencimento_data AS date)), 23);
+
+    ${SALDOS}
+    -- 3) Baixas em dia? (últimos 6 meses), igual ao bloco da tela de contas a pagar
+    SELECT
+      CONVERT(varchar(7), vencimento_data, 120)                                    AS mes,
+      SUM(CASE WHEN dias_atraso >= 0 THEN valor ELSE 0 END)                        AS ja_venceu,
+      SUM(CASE WHEN dias_atraso > 0 AND pendente > 0.009 THEN pendente ELSE 0 END) AS vencido_sem_baixa
+    FROM TITULOS
+    WHERE vencimento_data >= DATEADD(month, -5, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
+      AND vencimento_data <  DATEADD(month, 1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
+    GROUP BY CONVERT(varchar(7), vencimento_data, 120)
+    ORDER BY 1;
+
+    -- 4) Prazo médio de pagamento (últimos 90 dias): da emissão até o pagamento, ponderado pelo valor
+    SELECT
+      SUM(CAST(DATEDIFF(day, T.EMISSAO, TX.DATA) AS decimal(18, 2)) * TX.DEBITO)
+        / NULLIF(SUM(TX.DEBITO), 0)                    AS prazo_medio,
+      SUM(TX.DEBITO)                                   AS pago,
+      COUNT(DISTINCT T.TITULO_PAGAR)                   AS titulos
+    FROM TITULOS_PAGAR_TRANSACOES TX WITH (NOLOCK)
+    JOIN TITULOS_PAGAR T WITH (NOLOCK) ON T.TITULO_PAGAR = TX.TITULO_PAGAR
+    WHERE TX.TRANSACAO_FINANCEIRA = 11
+      AND ISNULL(TX.DEBITO, 0) > 0
+      AND TX.DATA >= DATEADD(day, -90, CAST(GETDATE() AS date))
+      AND T.EMISSAO <= TX.DATA
+      AND (@empresa IS NULL OR T.EMPRESA = @empresa);
+  `);
+  return {
+    resumo: recordsets[0][0] ?? {},
+    semanas: recordsets[1],
+    baixas: recordsets[2],
+    prazo: recordsets[3][0] ?? {},
+  };
+}
+
 module.exports = {
-  painel, pagamentos, pessoasPagamento, fornecedores, entradasCaixa, ORDENACAO, FILTRO_SITUACAO,
+  painel, pagamentos, pessoasPagamento, fornecedores, entradasCaixa, visaoGeral, ORDENACAO, FILTRO_SITUACAO,
 };

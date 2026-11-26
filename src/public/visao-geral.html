@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <script src="/painel/js/sessao.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Visão geral | Painel financeiro | Belo Norte</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/modulos.js" defer></script>
+  <script src="js/graficos.js" defer></script>
+  <script src="js/visao-geral.js" defer></script>
+</head>
+<body>
+  <header class="topo">
+    <div>
+      <p class="marca">Belo Norte</p>
+      <h1>Painel financeiro</h1>
+    </div>
+    <div class="topo-acoes">
+      <nav id="modulos" class="modulos" aria-label="Módulos do painel" hidden></nav>
+      <button id="trocar-chave" class="botao-texto" type="button">Trocar chave</button>
+    </div>
+  </header>
+
+  <!-- Visão geral do financeiro (nov/2026): a primeira tela do módulo. Mostra, para quem chegou
+       agora, como está o dinheiro da empresa. Os números vêm das mesmas consultas das telas de
+       detalhe, e cada bloco leva para a tela que explica ou resolve. -->
+  <main class="conteudo conteudo--largo tela-visao-geral">
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+
+    <div id="painel" hidden>
+      <!-- 1. Posição de hoje -->
+      <section class="bloco" aria-labelledby="titulo-posicao">
+        <div class="bloco-topo">
+          <h2 id="titulo-posicao">Posição hoje</h2>
+          <span class="etiqueta-tempo">posição hoje</span>
+        </div>
+        <p class="bloco__descricao">Quanto a empresa tem a receber e a pagar agora. Clique num cartão para ver o detalhe.</p>
+        <p id="aviso-posicao" class="aviso-alerta" hidden></p>
+        <div class="cartoes" id="cartoes-posicao"></div>
+      </section>
+
+      <!-- 2. Entradas x saídas previstas -->
+      <section class="bloco" aria-labelledby="titulo-semanas">
+        <div class="bloco-topo">
+          <h2 id="titulo-semanas">Entradas × saídas previstas</h2>
+          <span class="etiqueta-tempo" id="etiqueta-semanas">próximas semanas</span>
+        </div>
+        <p class="bloco__descricao">Pelo vencimento dos títulos em aberto: entradas = clientes e cartão a vencer;
+          saídas = contas a pagar a vencer. O que já venceu não entra aqui (está na Saúde dos números).</p>
+        <div id="grafico-semanas"></div>
+        <div class="tabela-rolagem">
+          <table class="tabela" id="tabela-semanas">
+            <thead>
+              <tr><th>Semana</th><th>Clientes</th><th>Cartão</th><th>Entradas</th><th>Saídas</th>
+                  <th>Saldo da semana</th><th class="coluna-saldo">Acumulado</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 3. Saúde dos números -->
+      <section class="bloco" aria-labelledby="titulo-saude">
+        <div class="bloco-topo">
+          <h2 id="titulo-saude">Saúde dos números</h2>
+          <span class="etiqueta-tempo">posição hoje</span>
+        </div>
+        <p class="bloco__descricao">O que precisa ser arrumado para os números acima serem confiáveis.
+          Cada linha abre a tela que resolve.</p>
+        <div class="tabela-rolagem">
+          <table class="tabela" id="tabela-saude">
+            <thead>
+              <tr><th>Situação</th><th class="esquerda">O que é</th><th>Títulos / itens</th><th>Valor</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 4. Prazos médios -->
+      <section class="bloco" aria-labelledby="titulo-prazos">
+        <div class="bloco-topo">
+          <h2 id="titulo-prazos">Prazos médios</h2>
+          <span class="etiqueta-tempo">últimos 90 dias</span>
+        </div>
+        <p class="bloco__descricao">Da emissão do título até o dinheiro entrar (ou sair), ponderado pelo valor.
+          Só clientes no recebimento: cartão não é prazo dado ao cliente.</p>
+        <p id="aviso-prazos" class="aviso-alerta" hidden></p>
+        <dl class="numeros" id="numeros-prazos"></dl>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

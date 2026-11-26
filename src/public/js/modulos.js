@@ -70,11 +70,14 @@ const modulos = (() => {
       { titulo: 'Caixa das lojas', pagina: 'index.html#caixa', aba: 'caixa' },
     ],
     // Financeiro organizado pelo caminho do dinheiro (nov/2026):
+    //   Visão geral = a foto do financeiro inteiro (nov/2026)
     //   Contas a receber = o que os outros devem (posição hoje)
     //   Acerto de despachos = carga que saiu e o acerto do que voltou
     //   Tesouraria = o dinheiro que de fato entrou/saiu e a conferência com o banco (no período)
     //   Contas a pagar = o que a empresa deve
     financeiro: [
+      // Primeira tela do módulo: quem clica em Financeiro entra por aqui
+      { titulo: 'Visão geral', pagina: 'visao-geral.html' },
       { titulo: 'Contas a receber', itens: [
         { titulo: 'Títulos em aberto', pagina: 'financeiro.html#titulos', aba: 'titulos' },
         { titulo: 'Boletos e prazos', pagina: 'financeiro.html#boletos', aba: 'boletos' },
