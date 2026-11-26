@@ -842,7 +842,7 @@ async function baixarExcel() {
 
 // ===== Saída: as cargas que deixaram a empresa =====
 const SITUACOES_CARGA = {
-  EM_ROTA: { texto: 'Pendente de recebimento', classe: 'situacao--sem' },
+  EM_ROTA: { texto: 'Sem acerto', classe: 'situacao--sem' },
   PARCIAL: { texto: 'Acertada em parte', classe: 'situacao--devolucao' },
   ACERTADA: { texto: 'Acertada', classe: 'situacao--faturada' },
 };
@@ -876,20 +876,23 @@ async function carregarCargas() {
 function mostrarResumoCargas(r) {
   el('carga-total').textContent = dinheiro(r.valor);
   el('carga-explica').textContent = `${plural(r.cargas, 'carga', 'cargas')} · ${plural(r.notas, 'nota', 'notas')}`;
+  // Pendente de recebimento = sem acerto + acertada em parte (as duas ainda têm dinheiro a receber)
   el('carga-ind-rota').previousElementSibling.textContent = 'Pendentes de recebimento';
-  el('carga-ind-rota').replaceChildren(inteiro(r.em_rota), span(`${dinheiro(r.valor_em_rota)} sem acerto`));
+  el('carga-ind-rota').replaceChildren(inteiro(r.pendentes), span(`${dinheiro(r.valor_pendente)} a receber`));
   el('carga-ind-parcial').replaceChildren(inteiro(r.parciais), span(`${dinheiro(r.valor_parcial)} faltando`));
   el('carga-ind-acertada').replaceChildren(inteiro(r.acertadas), span('cargas fechadas'));
   el('carga-ind-informado').replaceChildren(dinheiro(r.informado), span('recebido dos motoristas'));
-  el('carga-ind-rota').classList.toggle('negativo', Number(r.em_rota) > 0);
+  el('carga-ind-rota').classList.toggle('negativo', Number(r.pendentes) > 0);
   el('carga-ind-parcial').classList.toggle('negativo', Number(r.parciais) > 0);
 }
 
 function mostrarCartoesCargas(r) {
   const itens = [
     { id: null, titulo: 'Todas', valor: inteiro(r.cargas), nota: `${dinheiro(r.valor)} em notas` },
-    { id: 'EM_ROTA', titulo: 'Pendentes de recebimento', valor: inteiro(r.em_rota), nota: `${dinheiro(r.valor_em_rota)} sem acerto`, alerta: true },
-    { id: 'PARCIAL', titulo: 'Acertadas em parte', valor: inteiro(r.parciais), nota: `${dinheiro(r.valor_parcial)} faltando`, alerta: true },
+    // Nov/2026: "Pendentes" é o total; "Sem acerto" e "Acertadas em parte" são as duas partes dele
+    { id: 'PENDENTE', titulo: 'Pendentes de recebimento', valor: inteiro(r.pendentes), nota: `${dinheiro(r.valor_pendente)} a receber`, alerta: true },
+    { id: 'EM_ROTA', titulo: 'Sem acerto', valor: inteiro(r.em_rota), nota: `${dinheiro(r.valor_em_rota)} · nenhuma nota acertada`, alerta: true },
+    { id: 'PARCIAL', titulo: 'Acertadas em parte', valor: inteiro(r.parciais), nota: `${dinheiro(r.valor_parcial)} faltando · parte das notas`, alerta: true },
     { id: 'NAO_PROC', titulo: 'Acerto não processado', valor: inteiro(r.nao_processados ?? 0), nota: 'lançado e sem títulos gerados', alerta: true },
     { id: 'ACERTADA', titulo: 'Acertadas', valor: inteiro(r.acertadas), nota: 'nada pendente' },
   ];
@@ -944,7 +947,7 @@ function mostrarCargas() {
     if (typeof x === 'number' || typeof y === 'number') return ((Number(x) || 0) - (Number(y) || 0)) * fator;
     return String(x ?? '').localeCompare(String(y ?? ''), 'pt-BR', { sensitivity: 'base' }) * fator;
   });
-  const nomesFiltro = { EM_ROTA: 'pendentes de recebimento', PARCIAL: 'acertadas em parte', ACERTADA: 'acertadas',
+  const nomesFiltro = { PENDENTE: 'pendentes de recebimento', EM_ROTA: 'sem acerto', PARCIAL: 'acertadas em parte', ACERTADA: 'acertadas',
     NAO_PROC: 'acerto não processado' };
   const filtroAtivo = soPagasFora ? 'pagos fora do acerto' : nomesFiltro[cargaSituacao];
   el('carga-titulo-lista').textContent = `Despachos${filtroAtivo ? ` · só ${filtroAtivo}` : ''} (${inteiro(lista.length)})`;

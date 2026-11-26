@@ -83,7 +83,8 @@ async function painel(query) {
     pagar.visaoGeral(filtros),
     receber.baixasPorMes({ empresa, devedor: 'cliente' }),
     receber.pedidosPendentes({ empresa }),
-    despachos.pendentes({ empresa, fim: null, busca: null }),
+    // Pendente de recebimento = sem acerto + acertada em parte (mesma regra da tela de despachos)
+    despachos.cargas({ empresa, situacao: 'PENDENTE', inicio: null, fim: null, busca: null }),
   ]);
   const pReceber = parte(rReceber, 'o contas a receber');
   const pPagar = parte(rPagar, 'o contas a pagar');
@@ -135,9 +136,10 @@ async function painel(query) {
   const baixasReceber = mesesComBaixaAtrasada(pBaixas.dados);
   const baixasPagar = mesesComBaixaAtrasada(pPagar.dados?.baixas);
   const pedidos = pPedidos.dados ?? {};
-  const emRota = pDespachos.dados ?? [];
+  const cargasPendentes = pDespachos.dados?.lista ?? [];
+  const resumoDespachos = pDespachos.dados?.resumo ?? {};
   const limiteParado = Date.now() - DIAS_DESPACHO_PARADO * 86400000;
-  const parados = emRota.filter((c) => new Date(c.saida_data).getTime() < limiteParado);
+  const parados = cargasPendentes.filter((c) => new Date(c.saida_data).getTime() < limiteParado);
   const listaMeses = (meses) => meses.map((m) => `${m.mes.slice(5)}/${m.mes.slice(0, 4)}`).join(', ');
 
   const saude = [
@@ -175,9 +177,9 @@ async function painel(query) {
       nivel: num(pedidos.sem_titulo_parados) > 0 ? 'atencao' : 'ok', link: 'faturamento.html', erro: pPedidos.erro,
     }),
     alerta({
-      id: 'despachos_em_rota', texto: 'Despachos sem acerto',
-      valor: emRota.reduce((t, c) => t + num(c.valor), 0), quantidade: emRota.length,
-      detalhe: parados.length ? `${parados.length} na rua há mais de ${DIAS_DESPACHO_PARADO} dias` : 'nenhum parado',
+      id: 'despachos_pendentes', texto: 'Despachos com recebimento pendente (sem acerto ou acertados em parte)',
+      valor: resumoDespachos.valor_pendente, quantidade: num(resumoDespachos.pendentes),
+      detalhe: parados.length ? `${parados.length} ${parados.length === 1 ? 'saiu' : 'saíram'} há mais de ${DIAS_DESPACHO_PARADO} dias e ainda falta receber` : 'nenhum parado',
       nivel: parados.length ? 'atencao' : 'ok', link: 'despachos.html', erro: pDespachos.erro,
     }),
   ];

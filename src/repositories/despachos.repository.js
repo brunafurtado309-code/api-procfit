@@ -594,7 +594,10 @@ const CARGAS = `
     LEFT JOIN USUARIOS U WITH (NOLOCK) ON U.USUARIO = FD.USUARIO_LOGADO
   )`;
 
+// PENDENTE (nov/2026) = tudo que ainda tem dinheiro a receber: sem acerto (EM_ROTA) + acertada em
+// parte (PARCIAL). Acertada em parte também é pendente de recebimento: falta o resto das notas.
 const SITUACOES_CARGA = {
+  PENDENTE: 'situacao IN (\'EM_ROTA\', \'PARCIAL\')',
   EM_ROTA: 'situacao = \'EM_ROTA\'',
   PARCIAL: 'situacao = \'PARCIAL\'',
   ACERTADA: 'situacao = \'ACERTADA\'',
@@ -616,6 +619,10 @@ async function cargas(filtros) {
         COUNT(*)                                                          AS cargas,
         SUM(notas)                                                        AS notas,
         SUM(valor)                                                        AS valor,
+        -- Pendente de recebimento = sem acerto (valor cheio) + acertada em parte (o que falta)
+        SUM(CASE WHEN situacao IN ('EM_ROTA', 'PARCIAL') THEN 1 ELSE 0 END) AS pendentes,
+        SUM(CASE WHEN situacao = 'EM_ROTA' THEN valor
+                 WHEN situacao = 'PARCIAL' THEN valor - informado ELSE 0 END) AS valor_pendente,
         SUM(CASE WHEN situacao = 'EM_ROTA'  THEN 1 ELSE 0 END)             AS em_rota,
         SUM(CASE WHEN situacao = 'EM_ROTA'  THEN valor ELSE 0 END)         AS valor_em_rota,
         SUM(CASE WHEN situacao = 'PARCIAL'  THEN 1 ELSE 0 END)             AS parciais,

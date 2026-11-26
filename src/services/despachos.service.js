@@ -159,7 +159,7 @@ async function exportar(query) {
 
 // ===== Saída: as cargas que deixaram a empresa =====
 const SITUACAO_CARGA_TEXTO = {
-  EM_ROTA: 'Pendente de recebimento', PARCIAL: 'Acertada em parte', ACERTADA: 'Acertada',
+  PENDENTE: 'Pendente de recebimento', EM_ROTA: 'Sem acerto', PARCIAL: 'Acertada em parte', ACERTADA: 'Acertada',
   NAO_PROC: 'Acerto não processado',
 };
 
