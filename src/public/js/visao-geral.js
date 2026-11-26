@@ -161,7 +161,23 @@ function mostrarSaude(itens) {
   }));
 }
 
-// ===== 4. Prazos médios =====
+// ===== 4. Onde o dinheiro está =====
+function mostrarEtapas(etapas) {
+  el('cartoes-etapas').replaceChildren(...etapas.map((e) => {
+    const li = document.createElement('li');
+    li.className = 'etapa';
+    const card = cartao({
+      titulo: `${e.etapa} · ${e.titulo}`,
+      valor: e.erro ? '—' : dinheiro(e.valor),
+      nota: e.erro ?? `${inteiro(e.quantidade)} ${e.unidade} · ${e.nota}`,
+      link: e.link,
+    });
+    li.append(card);
+    return li;
+  }));
+}
+
+// ===== 5. Prazos médios =====
 function mostrarPrazos(p) {
   aviso('aviso-prazos', p.erro);
   const dias = (v) => (v === null || v === undefined ? '—' : `${inteiro(v)} dias`);
@@ -199,6 +215,7 @@ async function carregar() {
     mostrarPosicao(dados.posicao);
     mostrarSemanas(dados.semanas, dados.semanas_previstas);
     mostrarSaude(dados.saude);
+    mostrarEtapas(dados.etapas ?? []);
     mostrarPrazos(dados.prazos);
     el('painel').hidden = false;
     const hora = new Date(dados.atualizado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });

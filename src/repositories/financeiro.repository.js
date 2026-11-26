@@ -935,7 +935,22 @@ async function visaoGeral(filtros) {
                       WHERE A.ENTIDADE = T.ENTIDADE AND A.ENTIDADE > 1);
   `);
 
-  return { porDevedor: recordsets[0], semanas: recordsets[1], prazo: prazo.recordset[0] ?? {} };
+  // 4) Recebido no mês atual (todas as baixas de recebimento, clientes e cartão): a última etapa
+  //    do caminho do dinheiro, que depois é conferida com o extrato do banco na Conciliação
+  const mes = await (await criarRequest({ empresa: filtros.empresa })).query(`
+    SELECT SUM(TX.DEBITO) AS recebido, COUNT(*) AS baixas
+    FROM TITULOS_RECEBER_TRANSACOES TX WITH (NOLOCK)
+    JOIN TITULOS_RECEBER T WITH (NOLOCK) ON T.TITULO_RECEBER = TX.TITULO_RECEBER
+    WHERE TX.TRANSACAO_FINANCEIRA = 12
+      AND ISNULL(TX.DEBITO, 0) > 0
+      AND TX.DATA >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)
+      AND (@empresa IS NULL OR T.EMPRESA = @empresa);
+  `);
+
+  return {
+    porDevedor: recordsets[0], semanas: recordsets[1], prazo: prazo.recordset[0] ?? {},
+    recebidoMes: mes.recordset[0] ?? {},
+  };
 }
 
 module.exports = {

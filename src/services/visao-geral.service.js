@@ -15,10 +15,12 @@ const AppError = require('../utils/AppError');
 const receber = require('../repositories/financeiro.repository');
 const pagar = require('../repositories/pagar.repository');
 const despachos = require('../repositories/despachos.repository');
+const extratos = require('../repositories/extratos.repository');
 
 const SEMANAS = 8;
 const BAIXA_MINIMA = 0.8;
 const DIAS_DESPACHO_PARADO = 3;
+const DIAS_EXTRATO_ATRASADO = 3; // extrato mais velho que isso = conciliação atrasada
 const FUSO = 'America/Fortaleza';
 
 function empresaOpcional(valor) {
@@ -78,19 +80,21 @@ async function painel(query) {
   const empresa = empresaOpcional(query.empresa);
   const filtros = { empresa, semanas: SEMANAS };
 
-  const [rReceber, rPagar, rBaixasReceber, rPedidos, rDespachos] = await Promise.allSettled([
+  const [rReceber, rPagar, rBaixasReceber, rPedidos, rDespachos, rExtratos] = await Promise.allSettled([
     receber.visaoGeral(filtros),
     pagar.visaoGeral(filtros),
     receber.baixasPorMes({ empresa, devedor: 'cliente' }),
     receber.pedidosPendentes({ empresa }),
     // Pendente de recebimento = sem acerto + acertada em parte (mesma regra da tela de despachos)
     despachos.cargas({ empresa, situacao: 'PENDENTE', inicio: null, fim: null, busca: null }),
+    extratos.ultimaData(),
   ]);
   const pReceber = parte(rReceber, 'o contas a receber');
   const pPagar = parte(rPagar, 'o contas a pagar');
   const pBaixas = parte(rBaixasReceber, 'as baixas do contas a receber');
   const pPedidos = parte(rPedidos, 'os pedidos sem título');
   const pDespachos = parte(rDespachos, 'os despachos');
+  const pExtratos = parte(rExtratos, 'os extratos do banco');
 
   // ----- Posição de hoje -----
   const clientes = posicaoDoDevedor(pReceber.dados?.porDevedor, 'CLIENTE');
@@ -140,6 +144,13 @@ async function painel(query) {
   const resumoDespachos = pDespachos.dados?.resumo ?? {};
   const limiteParado = Date.now() - DIAS_DESPACHO_PARADO * 86400000;
   const parados = cargasPendentes.filter((c) => new Date(c.saida_data).getTime() < limiteParado);
+  // Extrato do banco: o dia mais recente já enviado (de qualquer origem) e quantos dias faz
+  const extratoAte = (pExtratos.dados ?? []).map((e) => e.ate).filter(Boolean).sort().pop() ?? null;
+  const hojeIso = new Date().toLocaleDateString('en-CA', { timeZone: FUSO });
+  const diasSemExtrato = extratoAte ? Math.round((Date.parse(hojeIso) - Date.parse(extratoAte)) / 86400000) : null;
+  const textoExtrato = extratoAte
+    ? `extrato importado até ${extratoAte.slice(8, 10)}/${extratoAte.slice(5, 7)}${diasSemExtrato > DIAS_EXTRATO_ATRASADO ? ` (${diasSemExtrato} dias atrás)` : ''}`
+    : 'nenhum extrato importado ainda';
   const listaMeses = (meses) => meses.map((m) => `${m.mes.slice(5)}/${m.mes.slice(0, 4)}`).join(', ');
 
   const saude = [
@@ -182,6 +193,27 @@ async function painel(query) {
       detalhe: parados.length ? `${parados.length} ${parados.length === 1 ? 'saiu' : 'saíram'} há mais de ${DIAS_DESPACHO_PARADO} dias e ainda falta receber` : 'nenhum parado',
       nivel: parados.length ? 'atencao' : 'ok', link: 'despachos.html', erro: pDespachos.erro,
     }),
+    alerta({
+      id: 'extrato_banco', texto: 'Extrato do banco enviado para a Conciliação',
+      valor: null, quantidade: (pExtratos.dados ?? []).length, detalhe: textoExtrato,
+      nivel: !extratoAte ? 'atencao' : diasSemExtrato > DIAS_EXTRATO_ATRASADO ? 'atencao' : 'ok',
+      link: 'conciliacao.html', erro: pExtratos.erro,
+    }),
+  ];
+
+  // ----- Onde o dinheiro está: o caminho do dinheiro, etapa por etapa -----
+  // Os valores NÃO se somam: uma nota em rota pode já ter título em aberto, por exemplo.
+  const recebidoMes = pReceber.dados?.recebidoMes ?? {};
+  const etapas = [
+    { etapa: 1, titulo: 'Pedido sem título', valor: arred(pedidos.valor_sem_titulo), quantidade: num(pedidos.sem_titulo), unidade: 'pedidos',
+      nota: 'pedido processado e não pago, ainda sem título', link: 'faturamento.html', erro: pPedidos.erro },
+    { etapa: 2, titulo: 'Despacho pendente', valor: arred(resumoDespachos.valor_pendente), quantidade: num(resumoDespachos.pendentes), unidade: 'cargas',
+      nota: 'carga que saiu e ainda falta acertar', link: 'despachos.html', erro: pDespachos.erro },
+    { etapa: 3, titulo: 'Título em aberto', valor: arred(clientes.aberto + cartao.aberto), quantidade: clientes.titulos + cartao.titulos, unidade: 'títulos',
+      nota: `clientes ${clientes.aberto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} · cartão ${cartao.aberto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`,
+      link: 'financeiro.html#titulos', erro: pReceber.erro },
+    { etapa: 4, titulo: 'Recebido no mês', valor: arred(recebidoMes.recebido), quantidade: num(recebidoMes.baixas), unidade: 'baixas',
+      nota: `conferir com o banco · ${textoExtrato}`, link: 'conciliacao.html', erro: pReceber.erro },
   ];
 
   // ----- Prazos médios -----
@@ -194,7 +226,7 @@ async function painel(query) {
     erro: pReceber.erro ?? pPagar.erro,
   };
 
-  return { atualizado_em: new Date().toISOString(), semanas_previstas: SEMANAS, posicao, semanas, saude, prazos };
+  return { atualizado_em: new Date().toISOString(), semanas_previstas: SEMANAS, posicao, semanas, saude, etapas, prazos };
 }
 
 module.exports = { painel };

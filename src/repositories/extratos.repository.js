@@ -114,4 +114,16 @@ async function removerArquivo(arquivo) {
   return { removidos: rowCount };
 }
 
-module.exports = { guardar, doMes, importacoes, removerArquivo };
+// Até que dia o extrato do banco já foi enviado, por origem (Itaú, Rede, boletos...).
+// Usado na Visão geral: extrato atrasado = a conciliação não consegue conferir os últimos dias.
+async function ultimaData() {
+  const pool = await conexao();
+  const { rows } = await pool.query(`
+    SELECT origem, to_char(MAX(data), 'YYYY-MM-DD') AS ate
+    FROM extrato_lancamentos
+    GROUP BY origem
+    ORDER BY origem`);
+  return rows;
+}
+
+module.exports = { guardar, doMes, importacoes, removerArquivo, ultimaData };

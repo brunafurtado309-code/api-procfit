@@ -3661,3 +3661,12 @@ a.cartao.cartao--link:hover { border-color: var(--verde); background: var(--verd
 .cartao-valor.negativo,
 .tela-visao-geral .tabela td.negativo { color: var(--alerta); }
 .tela-visao-geral #grafico-semanas { margin-bottom: 0.75rem; }
+/* Onde o dinheiro está: as 4 etapas em fila, com seta entre elas (vira coluna no celular) */
+.etapas { list-style: none; padding: 0; margin: 0; }
+.etapas .etapa { position: relative; display: flex; }
+.etapas .etapa > .cartao { flex: 1; }
+.etapas .etapa + .etapa::before {
+  content: "→"; position: absolute; left: -0.62rem; top: 50%; transform: translateY(-50%);
+  color: var(--tinta-suave); font-size: var(--texto-pequeno);
+}
+@media (max-width: 700px) { .etapas .etapa + .etapa::before { content: none; } }
