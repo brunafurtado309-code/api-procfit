@@ -227,24 +227,20 @@ function desenharBarras(area, itens, { aoClicar = null, cor = 'verde' } = {}) {
 // Os pedidos só entram na visão geral (sem cartão, pesquisa, filtro de coluna, forma ou
 // recorte de vencimento): eles não têm vencimento, forma de pagamento nem título para filtrar.
 function mostrarResumo(resumo, pedidos, comPedidos) {
-  const semTitulo = comPedidos && pedidos ? Number(pedidos.valor_sem_titulo) || 0 : 0;
+  // Divergência corrigida (nov/2026): o número grande somava os pedidos sem título e não batia com o
+  // cartão "Em aberto" nem com a Visão geral. Agora é SÓ títulos; os pedidos sem título ficam numa
+  // linha à parte (na Visão geral eles são a etapa 1 do caminho do dinheiro).
   el('titulo-pendente').textContent = ehCartao() ? 'Cartão a receber das adquirentes' : 'Total a receber de clientes';
-  el('total-pendente').textContent = dinheiro((Number(resumo.pendente) || 0) + semTitulo);
+  el('total-pendente').textContent = dinheiro(Number(resumo.pendente) || 0);
   const quem = ehCartao() ? 'adquirentes' : 'clientes';
   const linhas = [
-    `${numero(resumo.titulos)} títulos de ${numero(resumo.clientes)} ${quem}: ${dinheiro(resumo.pendente)} · ` +
+    `${numero(resumo.titulos)} títulos de ${numero(resumo.clientes)} ${quem} · ` +
     `valor original ${dinheiro(resumo.valor_original)} · já recebido ${dinheiro(resumo.recebido)}`,
   ];
-  if (comPedidos && pedidos && Number(pedidos.pendentes) > 0) {
+  if (comPedidos && pedidos && Number(pedidos.sem_titulo) > 0) {
     const parados = Number(pedidos.sem_titulo_parados) || 0;
-    if (Number(pedidos.sem_titulo) > 0) {
-      linhas.push(`+ ${numero(pedidos.sem_titulo)} pedidos não pagos ainda sem título: ${dinheiro(pedidos.valor_sem_titulo)}`
-        + `${parados ? ` (${numero(parados)} parados há mais de 7 dias)` : ''}`);
-    }
-    linhas.push(`No Follow-up do PROCFIT (valor cheio dos ${numero(pedidos.pendentes)} pedidos pendentes de pagamento, `
-      + `últimos ${numero(pedidos.dias)} dias): ${dinheiro(pedidos.valor_follow_up)}`);
-  } else if (!comPedidos && !ehCartao()) {
-    linhas.push('Só títulos: os pedidos ainda sem título entram no total quando não há filtro.');
+    linhas.push(`Fora deste total: ${numero(pedidos.sem_titulo)} pedidos não pagos ainda sem título, `
+      + `${dinheiro(pedidos.valor_sem_titulo)}${parados ? ` (${numero(parados)} parados há mais de 7 dias)` : ''}`);
   }
   el('resumo-linha').replaceChildren(...linhas.flatMap((t, i) => (i ? [document.createElement('br'), t] : [t])));
 }

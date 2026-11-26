@@ -190,8 +190,8 @@ async function painel(query) {
     alerta({
       id: 'despachos_pendentes', texto: 'Despachos com recebimento pendente (sem acerto ou acertados em parte)',
       valor: resumoDespachos.valor_pendente, quantidade: num(resumoDespachos.pendentes),
-      detalhe: parados.length ? `${parados.length} ${parados.length === 1 ? 'saiu' : 'saíram'} há mais de ${DIAS_DESPACHO_PARADO} dias e ainda falta receber` : 'nenhum parado',
-      nivel: parados.length ? 'atencao' : 'ok', link: 'despachos.html', erro: pDespachos.erro,
+      detalhe: `${parados.length ? `${parados.length} ${parados.length === 1 ? 'saiu' : 'saíram'} há mais de ${DIAS_DESPACHO_PARADO} dias e ainda falta receber` : 'nenhum parado'} · todas as datas de saída`,
+      nivel: parados.length ? 'atencao' : 'ok', link: 'despachos.html#pendentes-tudo', erro: pDespachos.erro,
     }),
     alerta({
       id: 'extrato_banco', texto: 'Extrato do banco enviado para a Conciliação',
@@ -208,7 +208,7 @@ async function painel(query) {
     { etapa: 1, titulo: 'Pedido sem título', valor: arred(pedidos.valor_sem_titulo), quantidade: num(pedidos.sem_titulo), unidade: 'pedidos',
       nota: 'pedido processado e não pago, ainda sem título', link: 'faturamento.html', erro: pPedidos.erro },
     { etapa: 2, titulo: 'Despacho pendente', valor: arred(resumoDespachos.valor_pendente), quantidade: num(resumoDespachos.pendentes), unidade: 'cargas',
-      nota: 'carga que saiu e ainda falta acertar', link: 'despachos.html', erro: pDespachos.erro },
+      nota: 'carga com título em aberto · todas as datas de saída', link: 'despachos.html#pendentes-tudo', erro: pDespachos.erro },
     { etapa: 3, titulo: 'Título em aberto', valor: arred(clientes.aberto + cartao.aberto), quantidade: clientes.titulos + cartao.titulos, unidade: 'títulos',
       nota: `clientes ${clientes.aberto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} · cartão ${cartao.aberto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`,
       link: 'financeiro.html#titulos', erro: pReceber.erro },
