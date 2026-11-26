@@ -723,55 +723,153 @@ async function cargas(filtros) {
         AND ${situacao}
       ORDER BY saida_data DESC, carga DESC;
     `);
-  const lista = recordsets[1];
-  await pagasForaDoAcerto(pool, lista);
   const resumo = recordsets[0][0] ?? {};
-  await descontarPagoFora(pool, filtros, resumo);
+  const lista = await aplicarTitulosEmAberto(pool, filtros, resumo, recordsets[1]);
+  await pagasForaDoAcerto(pool, lista);
   return { resumo, lista };
 }
 
-// Totais de "Pendentes de recebimento" (nov/2026): o valor sem acerto e o faltando das acertadas em
-// parte descontam o que já foi pago FORA do acerto (baixa no título da nota por outra tela ou cupom
-// do caixa). Antes contavam como falta, e o total ficava maior que o real (ex.: NF 14608 e 16958).
-// Olha TODAS as cargas pendentes do período (não só as da lista filtrada), com a mesma regra da
-// coluna "Pago fora do acerto". Se a consulta falhar, os totais ficam como antes (sem desconto).
-async function descontarPagoFora(pool, filtros, resumo) {
-  resumo.pago_fora_pendentes = 0;
-  const { recordset } = await pool
-    .request()
-    .input('inicio', sql.VarChar(10), filtros.inicio ?? null)
-    .input('fim', sql.VarChar(10), filtros.fim ?? null)
-    .input('busca', sql.VarChar(60), filtros.busca ?? null)
-    .input('empresa', sql.Int, filtros.empresa ?? null)
-    .query(`
-      ${CARGAS}
-      SELECT carga, situacao
-      FROM CARGAS
-      WHERE situacao IN ('EM_ROTA', 'PARCIAL')
-        AND (@empresa IS NULL OR empresa = @empresa)
-        AND (@inicio IS NULL OR saida >= @inicio)
-        AND (@fim IS NULL OR saida <= @fim)
-        AND (@busca IS NULL
-          OR CAST(carga AS varchar(20)) = @busca
-          OR rota LIKE '%' + @busca + '%'
-          OR conferente LIKE '%' + @busca + '%'
-          OR responsavel LIKE '%' + @busca + '%');
-    `).catch((erro) => {
-      console.warn(`[despachos] cargas pendentes para o desconto falhou: ${erro.message}`);
-      return { recordset: [] };
-    });
-  if (!recordset.length) return;
-  await pagasForaDoAcerto(pool, recordset);
-  const fora = (situacao) => recordset
-    .filter((c) => c.situacao === situacao)
-    .reduce((t, c) => t + (Number(c.valor_pago_fora) || 0), 0);
-  const foraRota = fora('EM_ROTA');
-  const foraParcial = fora('PARCIAL');
-  const menos = (valor, desconto) => Math.max(0, (Number(valor) || 0) - desconto);
-  resumo.valor_em_rota = menos(resumo.valor_em_rota, foraRota);
-  resumo.valor_parcial = menos(resumo.valor_parcial, foraParcial);
-  resumo.valor_pendente = resumo.valor_em_rota + resumo.valor_parcial;
-  resumo.pago_fora_pendentes = foraRota + foraParcial;
+// "Pendentes de recebimento" pelos TÍTULOS EM ABERTO (nov/2026).
+// Carga pendente = carga sem acerto ou acertada em parte que AINDA TEM título de cliente com saldo.
+// Antes bastava a situação do acerto: carga com todas as notas pagas fora do acerto (Bancos, caixa)
+// continuava como pendente. Agora:
+//   - o valor pendente é o saldo dos títulos (igual ao "saldo devedor" do Follow-up do PROCFIT);
+//   - carga sem nenhum título em aberto sai dos pendentes (fica em "resolvidas fora do acerto");
+//   - título de adquirente (cartão) não conta: para a carga, o cartão já foi acertado.
+// Títulos da carga = os das notas (nota 753289, renegociação 650512, acerto 455510) pelo nome
+// "nota/parcela" e cliente + os gerados nos acertos dela (mesma ligação do Excel detalhado).
+async function saldoDosTitulosDasCargas(pool, numeros) {
+  if (!numeros.length) return new Map();
+  const lista = numeros.join(','); // números vêm do banco e são validados como inteiros
+  const { recordset } = await pool.request().query(`
+    WITH NN AS (
+      SELECT FDN.FATURAMENTO_DESPACHO AS carga, FDN.NF_NUMERO AS nota, FDN.ENTIDADE,
+             NULLIF(FDN.PEDIDO_PREVENDA, 0) AS pedido, ISNULL(FDN.NF_TOTAL, 0) AS valor_nota
+      FROM FATURAMENTO_DESPACHO_NOTAS FDN WITH (NOLOCK)
+      WHERE FDN.FATURAMENTO_DESPACHO IN (${lista})
+    ),
+    TT AS (
+      SELECT NN.carga, NN.nota, T.TITULO_RECEBER
+      FROM NN
+      JOIN TITULOS_RECEBER T WITH (NOLOCK)
+        ON T.TAB_MASTER_ORIGEM IN (753289, 650512, 455510)
+       AND T.ENTIDADE = NN.ENTIDADE
+       AND LTRIM(RTRIM(T.TITULO)) LIKE CAST(CAST(NN.nota AS bigint) AS varchar(20)) + '/%'
+      UNION
+      SELECT R.FATURAMENTO_DESPACHO_FILTRO, DT.NF_NUMERO, COALESCE(TA.TITULO_RECEBER, RS.TITULO_RECEBER)
+      FROM ${D}_RESULTADOS RS WITH (NOLOCK)
+      JOIN ${D} R WITH (NOLOCK) ON R.RECEBIMENTO_FATURAMENTO_DESPACHO = RS.RECEBIMENTO_FATURAMENTO_DESPACHO
+      LEFT JOIN ${D}_DETALHES DT WITH (NOLOCK)
+        ON DT.RECEBIMENTO_FATURAMENTO_DESPACHO_DETALHE = RS.RECEBIMENTO_FATURAMENTO_DESPACHO_DETALHE
+      ${TITULO_DO_ACERTO}
+      WHERE R.FATURAMENTO_DESPACHO_FILTRO IN (${lista})
+        AND COALESCE(TA.TITULO_RECEBER, RS.TITULO_RECEBER) IS NOT NULL
+    ),
+    SALDO AS (
+      SELECT TT.carga, TT.nota, T.TITULO_RECEBER,
+             SUM(ISNULL(X.CREDITO, 0)) - SUM(ISNULL(X.DEBITO, 0)) AS pendente
+      FROM TT
+      JOIN TITULOS_RECEBER T WITH (NOLOCK) ON T.TITULO_RECEBER = TT.TITULO_RECEBER
+      JOIN TITULOS_RECEBER_TRANSACOES X WITH (NOLOCK) ON X.TITULO_RECEBER = T.TITULO_RECEBER
+      WHERE NOT EXISTS (SELECT 1 FROM ADQUIRENTES A WITH (NOLOCK)
+                        WHERE A.ENTIDADE = T.ENTIDADE AND A.ENTIDADE > 1)
+      GROUP BY TT.carga, TT.nota, T.TITULO_RECEBER
+    ),
+    -- Nota SEM título nenhum, sem valor informado no acerto e sem cupom válido no caixa:
+    -- ninguém recebeu ainda, então conta pelo valor da nota (não pode sumir dos pendentes)
+    SEM AS (
+      SELECT NN.carga, NN.nota, NN.valor_nota AS pendente
+      FROM NN
+      WHERE NN.valor_nota > 0.009
+        AND NOT EXISTS (SELECT 1 FROM TT WHERE TT.carga = NN.carga AND TT.nota = NN.nota)
+        AND NOT EXISTS (
+          SELECT 1
+          FROM ${D}_DETALHES DT WITH (NOLOCK)
+          JOIN ${D} R WITH (NOLOCK) ON R.RECEBIMENTO_FATURAMENTO_DESPACHO = DT.RECEBIMENTO_FATURAMENTO_DESPACHO
+          WHERE R.FATURAMENTO_DESPACHO_FILTRO = NN.carga AND DT.NF_NUMERO = NN.nota
+            AND ISNULL(DT.VALOR_PAGAMENTO, 0) > 0)
+        AND NOT EXISTS (
+          SELECT 1
+          FROM PDV_PREVENDAS PPV WITH (NOLOCK)
+          JOIN PDV_VENDAS PV WITH (NOLOCK) ON PV.PREVENDA = PPV.PREVENDA AND PV.LOJA = PPV.LOJA
+          WHERE NN.pedido IS NOT NULL AND PPV.PEDIDO_INTERNET = NN.pedido
+            AND ISNULL(PV.STATUS, '') NOT LIKE 'C')
+    ),
+    U AS (
+      SELECT carga, nota, pendente, 0 AS sem_titulo FROM SALDO
+      UNION ALL
+      SELECT carga, nota, pendente, 1 AS sem_titulo FROM SEM
+    )
+    SELECT carga,
+           COUNT(CASE WHEN pendente > 0.009 AND sem_titulo = 0 THEN 1 END) AS titulos_abertos,
+           COUNT(CASE WHEN sem_titulo = 1 THEN 1 END)                      AS notas_sem_titulo,
+           COUNT(DISTINCT CASE WHEN pendente > 0.009 THEN nota END)        AS notas_abertas,
+           SUM(CASE WHEN pendente > 0.009 THEN pendente ELSE 0 END)        AS valor_aberto
+    FROM U
+    GROUP BY carga;`);
+  return new Map(recordset.map((l) => [Number(l.carga), l]));
+}
+
+// Ajusta os totais e a lista de cargas pelo saldo dos títulos. Se a consulta falhar, fica como antes
+// (pela situação do acerto) e resumo.criterio avisa a tela.
+async function aplicarTitulosEmAberto(pool, filtros, resumo, lista) {
+  resumo.criterio = 'acerto';
+  let candidatas;
+  let saldos;
+  try {
+    ({ recordset: candidatas } = await pool
+      .request()
+      .input('inicio', sql.VarChar(10), filtros.inicio ?? null)
+      .input('fim', sql.VarChar(10), filtros.fim ?? null)
+      .input('busca', sql.VarChar(60), filtros.busca ?? null)
+      .input('empresa', sql.Int, filtros.empresa ?? null)
+      .query(`
+        ${CARGAS}
+        SELECT carga, situacao, valor
+        FROM CARGAS
+        WHERE situacao IN ('EM_ROTA', 'PARCIAL')
+          AND (@empresa IS NULL OR empresa = @empresa)
+          AND (@inicio IS NULL OR saida >= @inicio)
+          AND (@fim IS NULL OR saida <= @fim)
+          AND (@busca IS NULL
+            OR CAST(carga AS varchar(20)) = @busca
+            OR rota LIKE '%' + @busca + '%'
+            OR conferente LIKE '%' + @busca + '%'
+            OR responsavel LIKE '%' + @busca + '%');
+      `));
+    saldos = await saldoDosTitulosDasCargas(pool, candidatas.map((c) => Number(c.carga)));
+  } catch (erro) {
+    console.warn(`[despachos] saldo dos títulos das cargas falhou (totais pela situação do acerto): ${erro.message}`);
+    return lista;
+  }
+
+  const aberto = (c) => Number(saldos.get(Number(c.carga))?.valor_aberto) || 0;
+  const pendentes = candidatas.filter((c) => aberto(c) > 0.009);
+  const soma = (l) => l.reduce((t, c) => t + aberto(c), 0);
+  const daSituacao = (sit) => pendentes.filter((c) => c.situacao === sit);
+  resumo.criterio = 'titulos';
+  resumo.pendentes = pendentes.length;
+  resumo.valor_pendente = soma(pendentes);
+  resumo.em_rota = daSituacao('EM_ROTA').length;
+  resumo.valor_em_rota = soma(daSituacao('EM_ROTA'));
+  resumo.parciais = daSituacao('PARCIAL').length;
+  resumo.valor_parcial = soma(daSituacao('PARCIAL'));
+  // Sem acerto ou acertada em parte, mas sem título em aberto: resolvidas fora do acerto
+  resumo.resolvidas_fora = candidatas.length - pendentes.length;
+
+  for (const c of lista) {
+    const sal = saldos.get(Number(c.carga));
+    if (!sal && !['EM_ROTA', 'PARCIAL'].includes(c.situacao)) continue;
+    c.valor_titulos_aberto = Number(sal?.valor_aberto) || 0;
+    c.titulos_abertos = Number(sal?.titulos_abertos) || 0;
+    c.notas_abertas = Number(sal?.notas_abertas) || 0;
+    c.notas_sem_titulo = Number(sal?.notas_sem_titulo) || 0;
+  }
+  // Filtro de pendentes (cartões Pendentes, Sem acerto, Acertadas em parte): só quem ainda deve
+  if (['PENDENTE', 'EM_ROTA', 'PARCIAL'].includes(filtros.situacao)) {
+    return lista.filter((c) => (c.valor_titulos_aberto ?? 0) > 0.009);
+  }
+  return lista;
 }
 
 // Notas que NÃO passaram pelo acerto do despacho, mas cujo título da nota já foi baixado

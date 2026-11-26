@@ -907,10 +907,9 @@ function mostrarResumoCargas(r) {
   el('carga-explica').textContent = `${plural(r.cargas, 'carga', 'cargas')} · ${plural(r.notas, 'nota', 'notas')}`;
   // Pendente de recebimento = sem acerto + acertada em parte (as duas ainda têm dinheiro a receber)
   el('carga-ind-rota').previousElementSibling.textContent = 'Pendentes de recebimento';
-  // Os valores já descontam o que foi pago fora do acerto (título baixado em outra tela ou cupom do caixa)
-  const descontado = Number(r.pago_fora_pendentes) > 0.009
-    ? ` (já descontados ${dinheiro(r.pago_fora_pendentes)} pagos fora do acerto)` : '';
-  el('carga-ind-rota').replaceChildren(inteiro(r.pendentes), span(`${dinheiro(r.valor_pendente)} a receber${descontado}`));
+  // Nov/2026: pendente = ainda tem título em aberto (saldo dos títulos, como o saldo devedor do PROCFIT)
+  el('carga-ind-rota').replaceChildren(inteiro(r.pendentes),
+    span(`${dinheiro(r.valor_pendente)} ${r.criterio === 'titulos' ? 'em títulos em aberto' : 'a receber'}`));
   el('carga-ind-parcial').replaceChildren(inteiro(r.parciais), span(`${dinheiro(r.valor_parcial)} faltando`));
   el('carga-ind-acertada').replaceChildren(inteiro(r.acertadas), span('cargas fechadas'));
   el('carga-ind-informado').replaceChildren(dinheiro(r.informado), span('recebido dos motoristas'));
@@ -922,10 +921,13 @@ function mostrarCartoesCargas(r) {
   const itens = [
     { id: null, titulo: 'Todas', valor: inteiro(r.cargas), nota: `${dinheiro(r.valor)} em notas` },
     // Nov/2026: "Pendentes" é o total; "Sem acerto" e "Acertadas em parte" são as duas partes dele
+    // Nov/2026: só entra quem ainda tem título em aberto. Carga sem acerto (ou acertada em parte) que já
+    // foi toda paga fora do acerto sai daqui e aparece em "Resolvidas fora do acerto".
     { id: 'PENDENTE', titulo: 'Pendentes de recebimento', valor: inteiro(r.pendentes),
-      nota: `${dinheiro(r.valor_pendente)} a receber${Number(r.pago_fora_pendentes) > 0.009 ? ' · sem o pago fora do acerto' : ''}`, alerta: true },
-    { id: 'EM_ROTA', titulo: 'Sem acerto', valor: inteiro(r.em_rota), nota: `${dinheiro(r.valor_em_rota)} · nenhuma nota acertada`, alerta: true },
-    { id: 'PARCIAL', titulo: 'Acertadas em parte', valor: inteiro(r.parciais), nota: `${dinheiro(r.valor_parcial)} faltando · parte das notas`, alerta: true },
+      nota: r.criterio === 'titulos' ? `${dinheiro(r.valor_pendente)} em títulos em aberto` : `${dinheiro(r.valor_pendente)} a receber`,
+      alerta: true },
+    { id: 'EM_ROTA', titulo: 'Sem acerto', valor: inteiro(r.em_rota), nota: `${dinheiro(r.valor_em_rota)} em aberto · nenhuma nota acertada`, alerta: true },
+    { id: 'PARCIAL', titulo: 'Acertadas em parte', valor: inteiro(r.parciais), nota: `${dinheiro(r.valor_parcial)} em aberto · parte das notas`, alerta: true },
     { id: 'NAO_PROC', titulo: 'Acerto não processado', valor: inteiro(r.nao_processados ?? 0), nota: 'lançado e sem títulos gerados', alerta: true },
     { id: 'ACERTADA', titulo: 'Acertadas', valor: inteiro(r.acertadas), nota: 'nada pendente' },
   ];
@@ -989,7 +991,8 @@ function mostrarCargas() {
   const cab = document.createElement('tr');
   for (const [texto, campo, esquerda] of [['Despacho', 'carga', true], ['Saída', 'saida', true], ['Rota', 'rota', true],
     ['Conferente', 'conferente', true], ['Notas', 'notas'], ['Valor que saiu', 'valor'],
-    ['Acertado', 'informado'], ['Pago fora do acerto', 'valor_pago_fora'], ['Situação', 'situacao', true], ['', null, true]]) {
+    ['Acertado', 'informado'], ['Pago fora do acerto', 'valor_pago_fora'], ['Em aberto', 'valor_titulos_aberto'],
+    ['Situação', 'situacao', true], ['', null, true]]) {
     const th = document.createElement('th');
     th.scope = 'col';
     if (esquerda) th.className = 'esquerda';
@@ -1020,7 +1023,7 @@ function mostrarCargas() {
   if (!lista.length) {
     const linha = document.createElement('tr');
     const vazio = td('Nenhum despacho com esses filtros.', 'vazio');
-    vazio.colSpan = 10;
+    vazio.colSpan = 11;
     linha.append(vazio);
     linhas.push(linha);
   }
@@ -1069,6 +1072,14 @@ function mostrarCargas() {
         Number(c.notas_renegociadas) > 0 ? plural(c.notas_renegociadas, 'renegociada', 'renegociadas') : null,
         aindaDeve && todasPagasFora ? `${dinheiro(c.valor_aberto_sem_acerto)} a receber` : null]
           .filter(Boolean).join(' · ') || null),
+      // Saldo dos títulos de cliente da carga (o que ainda falta receber de verdade)
+      c.valor_titulos_aberto == null ? td('—')
+        : comAuxiliar(c.valor_titulos_aberto > 0.009 ? dinheiro(c.valor_titulos_aberto) : 'nada',
+          c.valor_titulos_aberto > 0.009
+            ? [c.titulos_abertos ? plural(c.titulos_abertos, 'título', 'títulos') : null,
+              c.notas_sem_titulo ? `${plural(c.notas_sem_titulo, 'nota', 'notas')} sem título` : null].filter(Boolean).join(' · ') || null
+            : null,
+          c.valor_titulos_aberto > 0.009 ? 'negativo' : null),
       td(span(infoTela.texto, `situacao ${infoTela.classe}`), 'esquerda'),
       td(botao, 'esquerda'),
     );
@@ -1085,7 +1096,7 @@ function mostrarCargas() {
       detalhe.className = 'linha-itens';
       detalhe.id = `carga-notas-${c.carga}`;
       const celula = document.createElement('td');
-      celula.colSpan = 10;
+      celula.colSpan = 11;
       celula.append(span('Carregando as notas da carga…', 'explica'));
       detalhe.append(celula);
       linhas.push(detalhe);
@@ -1098,7 +1109,8 @@ function mostrarCargas() {
   const rotulo = td(`Total (${plural(lista.length, 'despacho', 'despachos')})`, 'esquerda');
   rotulo.colSpan = 4;
   rodape.append(rotulo, td(inteiro(soma('notas'))), td(dinheiro(soma('valor'))), td(dinheiro(soma('informado'))),
-    td(soma('valor_pago_fora') > 0.009 ? dinheiro(soma('valor_pago_fora')) : '—'), td(''), td(''));
+    td(soma('valor_pago_fora') > 0.009 ? dinheiro(soma('valor_pago_fora')) : '—'),
+    td(soma('valor_titulos_aberto') > 0.009 ? dinheiro(soma('valor_titulos_aberto')) : '—'), td(''), td(''));
   tabela.tFoot.replaceChildren(rodape);
 }
 
