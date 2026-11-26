@@ -725,7 +725,53 @@ async function cargas(filtros) {
     `);
   const lista = recordsets[1];
   await pagasForaDoAcerto(pool, lista);
-  return { resumo: recordsets[0][0] ?? {}, lista };
+  const resumo = recordsets[0][0] ?? {};
+  await descontarPagoFora(pool, filtros, resumo);
+  return { resumo, lista };
+}
+
+// Totais de "Pendentes de recebimento" (nov/2026): o valor sem acerto e o faltando das acertadas em
+// parte descontam o que já foi pago FORA do acerto (baixa no título da nota por outra tela ou cupom
+// do caixa). Antes contavam como falta, e o total ficava maior que o real (ex.: NF 14608 e 16958).
+// Olha TODAS as cargas pendentes do período (não só as da lista filtrada), com a mesma regra da
+// coluna "Pago fora do acerto". Se a consulta falhar, os totais ficam como antes (sem desconto).
+async function descontarPagoFora(pool, filtros, resumo) {
+  resumo.pago_fora_pendentes = 0;
+  const { recordset } = await pool
+    .request()
+    .input('inicio', sql.VarChar(10), filtros.inicio ?? null)
+    .input('fim', sql.VarChar(10), filtros.fim ?? null)
+    .input('busca', sql.VarChar(60), filtros.busca ?? null)
+    .input('empresa', sql.Int, filtros.empresa ?? null)
+    .query(`
+      ${CARGAS}
+      SELECT carga, situacao
+      FROM CARGAS
+      WHERE situacao IN ('EM_ROTA', 'PARCIAL')
+        AND (@empresa IS NULL OR empresa = @empresa)
+        AND (@inicio IS NULL OR saida >= @inicio)
+        AND (@fim IS NULL OR saida <= @fim)
+        AND (@busca IS NULL
+          OR CAST(carga AS varchar(20)) = @busca
+          OR rota LIKE '%' + @busca + '%'
+          OR conferente LIKE '%' + @busca + '%'
+          OR responsavel LIKE '%' + @busca + '%');
+    `).catch((erro) => {
+      console.warn(`[despachos] cargas pendentes para o desconto falhou: ${erro.message}`);
+      return { recordset: [] };
+    });
+  if (!recordset.length) return;
+  await pagasForaDoAcerto(pool, recordset);
+  const fora = (situacao) => recordset
+    .filter((c) => c.situacao === situacao)
+    .reduce((t, c) => t + (Number(c.valor_pago_fora) || 0), 0);
+  const foraRota = fora('EM_ROTA');
+  const foraParcial = fora('PARCIAL');
+  const menos = (valor, desconto) => Math.max(0, (Number(valor) || 0) - desconto);
+  resumo.valor_em_rota = menos(resumo.valor_em_rota, foraRota);
+  resumo.valor_parcial = menos(resumo.valor_parcial, foraParcial);
+  resumo.valor_pendente = resumo.valor_em_rota + resumo.valor_parcial;
+  resumo.pago_fora_pendentes = foraRota + foraParcial;
 }
 
 // Notas que NÃO passaram pelo acerto do despacho, mas cujo título da nota já foi baixado
@@ -740,7 +786,8 @@ async function pagasForaDoAcerto(pool, lista) {
   if (!numeros.length) return;
   const linhas = await opcional(pool, 'pagas-fora-do-acerto', (r) => r.query(`
     WITH N AS (
-      SELECT FDN.FATURAMENTO_DESPACHO AS carga, FDN.NF_NUMERO, FDN.ENTIDADE
+      SELECT FDN.FATURAMENTO_DESPACHO AS carga, FDN.NF_NUMERO, FDN.ENTIDADE,
+             NULLIF(FDN.PEDIDO_PREVENDA, 0) AS pedido, ISNULL(FDN.NF_TOTAL, 0) AS valor_nota
       FROM FATURAMENTO_DESPACHO_NOTAS FDN WITH (NOLOCK)
       WHERE FDN.FATURAMENTO_DESPACHO IN (${numeros.join(',')})
         AND NOT EXISTS (
@@ -751,14 +798,16 @@ async function pagasForaDoAcerto(pool, lista) {
             AND DT.NF_NUMERO = FDN.NF_NUMERO
             AND ISNULL(DT.VALOR_PAGAMENTO, 0) > 0)
     ),
-    T AS (
-      SELECT N.carga, N.NF_NUMERO,
+    -- Títulos de cada nota (LEFT: nota paga no caixa pode não ter título nenhum)
+    TN AS (
+      SELECT N.carga, N.NF_NUMERO, N.valor_nota, N.pedido,
+             COUNT(TR.TITULO_RECEBER)                                                    AS titulos,
              SUM(CASE WHEN TR.TAB_MASTER_ORIGEM = 753289 THEN ISNULL(S.pendente, 0) ELSE 0 END) AS nf_pendente,
              SUM(ISNULL(S.pendente, 0))      AS pendente,
              SUM(ISNULL(S.recebido_fora, 0)) AS recebido_fora,
              SUM(ISNULL(S.renegociado, 0))   AS renegociado
       FROM N
-      JOIN TITULOS_RECEBER TR WITH (NOLOCK)
+      LEFT JOIN TITULOS_RECEBER TR WITH (NOLOCK)
         ON TR.TAB_MASTER_ORIGEM IN (753289, 650512)
        AND TR.ENTIDADE = N.ENTIDADE
        AND LTRIM(RTRIM(TR.TITULO)) LIKE CAST(CAST(N.NF_NUMERO AS bigint) AS varchar(20)) + '/%'
@@ -773,25 +822,44 @@ async function pagasForaDoAcerto(pool, lista) {
           ON X.TAB_MASTER_ORIGEM = 668401 AND XB.RECEBIMENTO_BANCO = X.REG_MASTER_ORIGEM
         WHERE X.TITULO_RECEBER = TR.TITULO_RECEBER
       ) S
-      GROUP BY N.carga, N.NF_NUMERO
+      GROUP BY N.carga, N.NF_NUMERO, N.valor_nota, N.pedido
+    ),
+    -- Nov/2026: pago na hora no caixa (cupom válido do pedido no PDV) também é pago fora do acerto.
+    -- Vale o que faltava da nota, a não ser que o título dela ainda tenha saldo (aí vale o título).
+    T AS (
+      SELECT TN.*,
+             CASE WHEN C.tem_cupom = 1 AND TN.pendente <= 0.009 AND TN.valor_nota - TN.recebido_fora > 0.009
+                  THEN TN.valor_nota - TN.recebido_fora ELSE 0 END AS pago_caixa
+      FROM TN
+      OUTER APPLY (
+        SELECT TOP 1 1 AS tem_cupom
+        FROM PDV_PREVENDAS PPV WITH (NOLOCK)
+        JOIN PDV_VENDAS PV WITH (NOLOCK) ON PV.PREVENDA = PPV.PREVENDA AND PV.LOJA = PPV.LOJA
+        WHERE TN.pedido IS NOT NULL
+          AND PPV.PEDIDO_INTERNET = TN.pedido
+          AND ISNULL(PV.STATUS, '') NOT LIKE 'C'
+      ) C
     )
     SELECT Q.carga,
            Q.notas_sem_acerto,
            ISNULL(A.notas_pagas_fora, 0)  AS notas_pagas_fora,
            ISNULL(A.notas_parciais_fora, 0) AS notas_parciais_fora,
            ISNULL(A.valor_pago_fora, 0)   AS valor_pago_fora,
+           ISNULL(A.valor_pago_caixa, 0)  AS valor_pago_caixa,
            ISNULL(A.valor_aberto, 0)      AS valor_aberto_sem_acerto,
            ISNULL(A.notas_resolvidas, 0)  AS notas_resolvidas,
            ISNULL(A.notas_renegociadas, 0) AS notas_renegociadas
     FROM (SELECT carga, COUNT(*) AS notas_sem_acerto FROM N GROUP BY carga) Q
     LEFT JOIN (
       SELECT carga,
-             SUM(CASE WHEN recebido_fora > 0.009 AND pendente <= 0.009 THEN 1 ELSE 0 END) AS notas_pagas_fora,
-             SUM(CASE WHEN recebido_fora > 0.009 AND pendente > 0.009 THEN 1 ELSE 0 END)  AS notas_parciais_fora,
-             SUM(recebido_fora)                                                          AS valor_pago_fora,
+             SUM(CASE WHEN recebido_fora + pago_caixa > 0.009 AND pendente <= 0.009 THEN 1 ELSE 0 END) AS notas_pagas_fora,
+             SUM(CASE WHEN recebido_fora + pago_caixa > 0.009 AND pendente > 0.009 THEN 1 ELSE 0 END)  AS notas_parciais_fora,
+             SUM(recebido_fora + pago_caixa)                                             AS valor_pago_fora,
+             SUM(pago_caixa)                                                             AS valor_pago_caixa,
              SUM(CASE WHEN pendente > 0.009 THEN pendente ELSE 0 END)                    AS valor_aberto,
              -- nota resolvida fora do acerto: o título da NOTA foi zerado (pago, renegociado...)
-             SUM(CASE WHEN nf_pendente <= 0.009 THEN 1 ELSE 0 END)                       AS notas_resolvidas,
+             -- (só conta nota que TEM título; nota paga no caixa sem título já entra em pagas_fora)
+             SUM(CASE WHEN titulos > 0 AND nf_pendente <= 0.009 THEN 1 ELSE 0 END)       AS notas_resolvidas,
              SUM(CASE WHEN renegociado > 0.009 THEN 1 ELSE 0 END)                        AS notas_renegociadas
       FROM T GROUP BY carga
     ) A ON A.carga = Q.carga;`));
@@ -802,6 +870,7 @@ async function pagasForaDoAcerto(pool, lista) {
     c.notas_pagas_fora = l ? Number(l.notas_pagas_fora) : 0;
     c.notas_parciais_fora = l ? Number(l.notas_parciais_fora) : 0;
     c.valor_pago_fora = l ? Number(l.valor_pago_fora) : 0;
+    c.valor_pago_caixa = l ? Number(l.valor_pago_caixa) : 0;
     c.valor_aberto_sem_acerto = l ? Number(l.valor_aberto_sem_acerto) : 0;
     c.notas_resolvidas = l ? Number(l.notas_resolvidas) : 0;
     c.notas_renegociadas = l ? Number(l.notas_renegociadas) : 0;
