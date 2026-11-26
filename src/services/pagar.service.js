@@ -7,7 +7,7 @@ const excel = require('../utils/excel');
 const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
 const SITUACAO_TEXTO = { ABERTO: 'Em aberto', PARCIAL: 'Pago em parte', PAGO: 'Pago', CANCELADO: 'Cancelado' };
 const CARTAO_TEXTO = {
-  aberto: 'Em aberto', vencidos: 'Vencidos', enviados: 'Enviados ao banco, sem baixa', '7dias': 'Vencem em 7 dias',
+  aberto: 'Em aberto', vencidos: 'Vencidos', a_vencer: 'A vencer', enviados: 'Enviados ao banco, sem baixa', '7dias': 'Vencem em 7 dias',
   '30dias': 'Vencem em 30 dias', pago: 'Pagos',
 };
 

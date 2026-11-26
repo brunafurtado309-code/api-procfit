@@ -99,6 +99,7 @@ const FILTRO_BUSCA = `
 const FILTRO_SITUACAO = {
   aberto: 'pendente > 0.009',
   vencidos: 'pendente > 0.009 AND dias_atraso > 0',
+  a_vencer: 'pendente > 0.009 AND dias_atraso <= 0',
   enviados: 'pendente > 0.009 AND enviado_banco IS NOT NULL',
   '7dias': 'pendente > 0.009 AND dias_atraso BETWEEN -7 AND 0',
   '30dias': 'pendente > 0.009 AND dias_atraso BETWEEN -30 AND 0',
@@ -141,6 +142,9 @@ async function painel(filtros) {
       COUNT(CASE WHEN pendente > 0.009 THEN 1 END)                                     AS aberto_titulos,
       SUM(CASE WHEN pendente > 0.009 AND dias_atraso > 0 THEN pendente ELSE 0 END)     AS vencido,
       COUNT(CASE WHEN pendente > 0.009 AND dias_atraso > 0 THEN 1 END)                 AS vencido_titulos,
+      -- Nov/2026: em aberto = vencido + a vencer (as duas partes aparecem como cartões)
+      SUM(CASE WHEN pendente > 0.009 AND dias_atraso <= 0 THEN pendente ELSE 0 END)    AS a_vencer,
+      COUNT(CASE WHEN pendente > 0.009 AND dias_atraso <= 0 THEN 1 END)                AS a_vencer_titulos,
       SUM(CASE WHEN pendente > 0.009 AND dias_atraso BETWEEN -7 AND 0 THEN pendente ELSE 0 END)  AS proximos_7,
       COUNT(CASE WHEN pendente > 0.009 AND dias_atraso BETWEEN -7 AND 0 THEN 1 END)              AS proximos_7_titulos,
       SUM(CASE WHEN pendente > 0.009 AND dias_atraso BETWEEN -30 AND 0 THEN pendente ELSE 0 END) AS proximos_30,

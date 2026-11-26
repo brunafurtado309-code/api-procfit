@@ -22,13 +22,17 @@ const chave = {
   apagar: () => sessionStorage.removeItem('apiKey'),
 };
 
+// Nov/2026, mesmo padrão do contas a receber: Em aberto = Vencidos + A vencer. Os outros cartões são
+// PEDAÇOS do em aberto (a nota diz isso), e "Pagos" é histórico, separado no fim.
 const CARTOES = [
-  { id: 'aberto', titulo: 'Em aberto', valor: 'aberto', qtd: 'aberto_titulos' },
+  { id: 'aberto', titulo: 'Em aberto', valor: 'aberto', qtd: 'aberto_titulos', nota: 'vencidos + a vencer' },
   { id: 'vencidos', titulo: 'Vencidos', valor: 'vencido', qtd: 'vencido_titulos', alerta: true },
-  { id: 'enviados', titulo: 'Enviados ao banco, sem baixa', valor: 'enviado', qtd: 'enviado_titulos', alerta: true },
-  { id: '7dias', titulo: 'Vencem em 7 dias', valor: 'proximos_7', qtd: 'proximos_7_titulos' },
-  { id: '30dias', titulo: 'Vencem em 30 dias', valor: 'proximos_30', qtd: 'proximos_30_titulos' },
-  { id: 'pago', titulo: 'Pagos', valor: 'pago', qtd: 'pago_titulos' },
+  { id: 'a_vencer', titulo: 'A vencer', valor: 'a_vencer', qtd: 'a_vencer_titulos', nota: 'no prazo' },
+  { id: '7dias', titulo: 'Vencem em 7 dias', valor: 'proximos_7', qtd: 'proximos_7_titulos', nota: 'parte do a vencer' },
+  { id: '30dias', titulo: 'Vencem em 30 dias', valor: 'proximos_30', qtd: 'proximos_30_titulos', nota: 'parte do a vencer' },
+  { id: 'enviados', titulo: 'Enviados ao banco, sem baixa', valor: 'enviado', qtd: 'enviado_titulos', alerta: true,
+    nota: 'parte do em aberto · provável pago' },
+  { id: 'pago', titulo: 'Pagos (histórico)', valor: 'pago', qtd: 'pago_titulos', nota: 'não entra no em aberto · use o período' },
 ];
 const SITUACAO = {
   ABERTO: { texto: 'Em aberto', classe: 'situacao--cancelada' },
@@ -182,7 +186,7 @@ function mostrarCartoes(r) {
     nota.className = 'cartao-nota';
     nota.textContent = c.id === 'vencidos' && Number(r.vencido_enviado) > 0.009
       ? `${plural(r[c.qtd], 'título', 'títulos')} · ${compacto(r.vencido_enviado)} já enviados ao banco`
-      : plural(r[c.qtd], 'título', 'títulos');
+      : [plural(r[c.qtd], 'título', 'títulos'), c.nota].filter(Boolean).join(' · ');
     botao.append(titulo, valor, nota);
     botao.addEventListener('click', () => {
       cartaoAtual = c.id;
