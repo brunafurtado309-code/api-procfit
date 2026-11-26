@@ -43,9 +43,8 @@
 
       <nav class="abas" id="abas">
         <button class="aba aba--ativa" type="button" data-aba="titulos">Títulos em aberto</button>
-        <button class="aba" type="button" data-aba="parciais">Baixa parcial</button>
         <button class="aba" type="button" data-aba="boletos">Boletos e prazos</button>
-        <button class="aba" type="button" data-aba="cobranca">Cobrança</button>
+        <button class="aba" type="button" data-aba="cartao">Recebíveis de cartão</button>
         <a class="aba" href="despachos.html">Despachos</a>
         <a class="aba" href="clientes.html">Clientes e crédito</a>
         <a class="aba" href="recebimentos.html">Recebimentos</a>
@@ -100,13 +99,6 @@
               <option value="3">Cheque</option>
             </select>
           </label>
-          <label>Quem deve
-            <select id="devedor">
-              <option value="">Todos</option>
-              <option value="cliente">Clientes</option>
-              <option value="adquirente">Adquirentes (cartão)</option>
-            </select>
-          </label>
           <label>Origem
             <select id="origem">
               <option value="">Todas</option>
@@ -133,7 +125,7 @@
 
       <section class="destaque painel-topo" aria-labelledby="titulo-pendente">
         <div>
-          <h2 id="titulo-pendente">Total a receber</h2>
+          <h2 id="titulo-pendente">Total a receber de clientes</h2>
           <p id="total-pendente" class="valor-grande">—</p>
           <p id="resumo-linha" class="explica"></p>
         </div>

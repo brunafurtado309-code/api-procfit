@@ -337,15 +337,14 @@ async function cartoes(filtros) {
       COUNT(CASE WHEN situacao <> 'QUITADO' AND dias_atraso <= 0 THEN 1 END)                AS a_vencer_titulos,
       SUM(CASE WHEN situacao = 'PARCIAL' THEN pendente ELSE 0 END)                          AS parcial,
       COUNT(CASE WHEN situacao = 'PARCIAL' THEN 1 END)                                      AS parcial_titulos,
-      SUM(CASE WHEN situacao = 'QUITADO' THEN valor ELSE 0 END)                             AS quitado,
-      COUNT(CASE WHEN situacao = 'QUITADO' THEN 1 END)                                      AS quitado_titulos,
-      SUM(CASE WHEN situacao <> 'QUITADO' AND tipo_devedor = 'CLIENTE' THEN pendente ELSE 0 END)    AS de_clientes,
-      COUNT(CASE WHEN situacao <> 'QUITADO' AND tipo_devedor = 'CLIENTE' THEN 1 END)                 AS de_clientes_titulos,
-      SUM(CASE WHEN situacao <> 'QUITADO' AND tipo_devedor = 'ADQUIRENTE' THEN pendente ELSE 0 END)  AS de_adquirentes,
-      COUNT(CASE WHEN situacao <> 'QUITADO' AND tipo_devedor = 'ADQUIRENTE' THEN 1 END)              AS de_adquirentes_titulos,
+      -- Vencido há mais de 90 dias: candidato a revisão (pago e não baixado, cancelar ou cobrar)
+      SUM(CASE WHEN situacao <> 'QUITADO' AND dias_atraso > 90 THEN pendente ELSE 0 END)    AS antigo,
+      COUNT(CASE WHEN situacao <> 'QUITADO' AND dias_atraso > 90 THEN 1 END)                AS antigo_titulos,
       COUNT(DISTINCT CASE WHEN situacao <> 'QUITADO' THEN cod_cliente END)                  AS clientes
     FROM TITULOS
-    WHERE ${filtroOrigem(filtros.origem)} AND ${FILTRO_COMUM}
+    -- Nov/2026: cliente e cartão (adquirente) não se misturam mais nos cartões do topo.
+    -- A aba escolhida manda o devedor: as abas de cliente mandam "cliente", a de cartão "adquirente".
+    WHERE ${filtroOrigem(filtros.origem)} AND ${filtroDevedor(filtros.devedor)} AND ${FILTRO_COMUM}
   `);
   return recordset[0];
 }
@@ -781,6 +780,7 @@ async function baixasPorMes(filtros) {
     FROM TITULOS
     WHERE vencimento >= CONVERT(varchar(10), DATEADD(month, -5, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)), 23)
       AND vencimento <  CONVERT(varchar(10), DATEADD(month, 1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)), 23)
+      AND ${filtroDevedor(filtros.devedor)}
       AND ${FILTRO_COMUM}
     GROUP BY LEFT(vencimento, 7)
     ORDER BY 1

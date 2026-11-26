@@ -72,9 +72,8 @@ const modulos = (() => {
     financeiro: [
       { titulo: 'Contas a receber', itens: [
         { titulo: 'Títulos em aberto', pagina: 'financeiro.html#titulos', aba: 'titulos' },
-        { titulo: 'Baixa parcial', pagina: 'financeiro.html#parciais', aba: 'parciais' },
         { titulo: 'Boletos e prazos', pagina: 'financeiro.html#boletos', aba: 'boletos' },
-        { titulo: 'Cobrança', pagina: 'financeiro.html#cobranca', aba: 'cobranca' },
+        { titulo: 'Recebíveis de cartão', pagina: 'financeiro.html#cartao', aba: 'cartao' },
         { titulo: 'Despachos', pagina: 'despachos.html' },
         { titulo: 'Clientes e crédito', pagina: 'clientes.html' },
         { titulo: 'Recebimentos', pagina: 'recebimentos.html' },
