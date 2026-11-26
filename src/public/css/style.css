@@ -3634,3 +3634,23 @@ html, body { max-width: 100%; overflow-x: clip; }
 .tela-canceladas .tipo-cancelamento--devolucao { background: rgba(130, 110, 220, 0.18); color: #A99BEF; }
 .tela-canceladas .tipo-cancelamento--cupom { background: rgba(70, 150, 230, 0.18); color: #7DB8F0; }
 .tela-canceladas .tipo-cancelamento--pedido { background: var(--alerta-claro); color: var(--alerta); }
+
+/* ===== Etiqueta de tempo (nov/2026) =====
+   Diz se o número é uma FOTOGRAFIA ("posição hoje") ou um FILME ("no período").
+   Fica logo depois do título do bloco, em todas as telas do financeiro. */
+.etiqueta-tempo {
+  display: inline-block;
+  margin: 0.15rem 0 0.35rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  font-size: var(--texto-mini);
+  font-weight: 600;
+  color: var(--tinta-suave);
+  box-shadow: inset 0 0 0 1px var(--linha-forte);
+  white-space: nowrap;
+}
+.bloco-topo .etiqueta-tempo { margin: 0 auto 0 0.5rem; align-self: center; }
+
+/* Contas a pagar x Caixa por pessoa (pagar.html): mostra só a parte escolhida no menu */
+.parte-caixa > .barra-filtros,
+.parte-caixa #painel > :not(#bloco-caixa) { display: none !important; }

@@ -173,3 +173,27 @@ valor exato na dica ao passar o mouse; número importante também escrito em tex
 - [ ] Sem caixa em volta de seção (só linha fina)
 - [ ] Testado na largura do notebook e no celular (F12 → ícone de celular no Chrome)
 - [ ] Classes novas com nome que não existe em outra tela
+
+## Vocabulário do financeiro (nov/2026)
+
+As telas do financeiro usam SEMPRE estas palavras. Tela nova segue esta lista, para um gestor que
+chegou agora não achar que são números diferentes.
+
+| Termo | Significa | Tipo |
+|---|---|---|
+| **Em aberto** | O que ainda falta receber (ou pagar) de um título: valor − recebido. Inclui a baixa parcial. Não usar "pendente", "falta receber" nem "a pagar" no contas a receber | posição hoje |
+| **Vencido** | Em aberto com o vencimento já passado | posição hoje |
+| **A vencer** | Em aberto ainda no prazo | posição hoje |
+| **Baixa parcial** | Título em aberto que já recebeu uma parte. É um pedaço do "Em aberto", nunca soma por fora | posição hoje |
+| **Recebido** | Dinheiro que entrou (baixa lançada no PROCFIT). No contas a pagar: **Pago** | no período |
+| **Recebíveis de cartão** | O que a adquirente (Rede etc.) vai depositar. Não é dívida de cliente: fica numa aba própria e não entra nos totais de clientes | posição hoje |
+| **Cliente / Adquirente** | Quem deve: o cliente da venda ou a maquininha do cartão | — |
+
+**Etiqueta de tempo:** todo bloco com número leva logo depois do título um
+`<span class="etiqueta-tempo">` com **posição hoje** (fotografia do que está em aberto agora),
+**no período** (o que aconteceu entre as datas escolhidas) ou o recorte fixo do bloco
+(ex.: **próximas semanas**, **últimos 6 meses**). Não comparar número de "posição hoje" com número
+"no período" sem dizer isso na tela.
+
+**Menu do financeiro** (pelo caminho do dinheiro): Contas a receber · Acerto de despachos ·
+Tesouraria (Recebimentos, Caixa por pessoa, Conciliação) · Contas a pagar.

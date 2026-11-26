@@ -466,7 +466,7 @@ const COLUNAS_TITULO = [
     filtroSelect: 'modalidade' },
   { titulo: 'Valor', ordem: 'valor', valor: (t) => dinheiro(t.valor) },
   { titulo: 'Recebido', ordem: 'recebido', valor: (t) => dinheiro(t.recebido) },
-  { titulo: 'Pendente', ordem: 'pendente', valor: (t) => dinheiro(t.pendente),
+  { titulo: 'Em aberto', ordem: 'pendente', valor: (t) => dinheiro(t.pendente),
     filtros: [{ campo: 'f_valor_min', dica: 'de R$' }, { campo: 'f_valor_max', dica: 'até R$' }] },
 ];
 
@@ -481,12 +481,12 @@ const COLUNAS_NOTA = [
     filtros: [{ campo: 'f_cliente', dica: 'nome ou código' }] },
   { titulo: 'Valor da nota', ordem: 'nota_valor', valor: (t) => dinheiro(t.nota_valor),
     nota: (t) => (t.nota_parcelas > 1 ? `${numero(t.nota_parcelas)} parcelas` : '1 parcela') },
-  { titulo: 'Pago da nota', ordem: 'nota_recebido', valor: (t) => dinheiro(t.nota_recebido),
+  { titulo: 'Recebido da nota', ordem: 'nota_recebido', valor: (t) => dinheiro(t.nota_recebido),
     nota: (t) => (t.ultimo_recebimento ? `última baixa ${dataBR(t.ultimo_recebimento)}` : null) },
-  { titulo: 'A pagar da nota', ordem: 'nota_pendente', valor: (t) => dinheiro(t.nota_pendente) },
+  { titulo: 'Em aberto da nota', ordem: 'nota_pendente', valor: (t) => dinheiro(t.nota_pendente) },
   { titulo: 'Parcela', ordem: 'titulo', valor: (t) => t.titulo ?? '—', nota: (t) => t.modalidade ?? null },
-  { titulo: 'Pago na parcela', ordem: 'recebido', valor: (t) => dinheiro(t.recebido) },
-  { titulo: 'Falta na parcela', ordem: 'pendente', valor: (t) => dinheiro(t.pendente) },
+  { titulo: 'Recebido na parcela', ordem: 'recebido', valor: (t) => dinheiro(t.recebido) },
+  { titulo: 'Em aberto na parcela', ordem: 'pendente', valor: (t) => dinheiro(t.pendente) },
 ];
 
 // A visão da nota entra quando o assunto é baixa parcial
@@ -611,7 +611,7 @@ function trocarVisao(porCliente) {
 // Mostra em marcadores tudo que está filtrando a lista, com "x" para remover
 const ROTULOS_FILTRO = {
   f_nota: 'Nota', f_pedido: 'Pedido', f_titulo: 'Título', f_cliente: 'Devedor',
-  f_valor_min: 'Pendente de R$', f_valor_max: 'Pendente até R$',
+  f_valor_min: 'Em aberto de R$', f_valor_max: 'Em aberto até R$',
 };
 
 // Filtro rápido logo acima da tabela de títulos: vencimento e nome/código do devedor.
@@ -1079,7 +1079,7 @@ async function abrirFicha(codigo, nome) {
 
     el('ficha-cartoes').replaceChildren(
       ...[
-        { titulo: 'Pendente', valor: dinheiro(financeiro.pendente), nota: `${numero(financeiro.titulos_abertos)} títulos em aberto` },
+        { titulo: 'Em aberto', valor: dinheiro(financeiro.pendente), nota: `${numero(financeiro.titulos_abertos)} títulos em aberto` },
         { titulo: 'Vencido', valor: dinheiro(financeiro.vencido), nota: financeiro.maior_atraso ? `maior atraso: ${numero(financeiro.maior_atraso)} dias` : 'nada vencido' },
         { titulo: 'Já comprou', valor: dinheiro(compras.total_comprado), nota: `${numero(compras.documentos)} documentos nos últimos 12 meses` },
         { titulo: 'Último recebimento', valor: dataBR(financeiro.ultimo_recebimento), nota: `última compra em ${dataBR(compras.ultima_compra)}` },

@@ -23,8 +23,8 @@ const SITUACAO_FILTRO = {
 };
 const NOMES_ORDEM = {
   vencimento: 'Vencimento', nota: 'Nota', titulo: 'Título', devedor: 'Devedor', forma: 'Forma',
-  valor: 'Valor', recebido: 'Recebido', pendente: 'Pendente', nota_valor: 'Valor da nota',
-  nota_recebido: 'Pago da nota', nota_pendente: 'A pagar da nota',
+  valor: 'Valor', recebido: 'Recebido', pendente: 'Em aberto', nota_valor: 'Valor da nota',
+  nota_recebido: 'Recebido da nota', nota_pendente: 'Em aberto da nota',
 };
 const MODALIDADES = {
   0: 'Carteira', 1: 'Boleto', 2: 'Depósito', 3: 'Cheque', 4: 'Dinheiro',
@@ -48,7 +48,7 @@ const COL_TITULOS = [
   { titulo: 'Emissão', chave: 'emissao', tipo: 'data', largura: 12 },
   { titulo: 'Valor', chave: 'valor', tipo: 'moeda', largura: 15, somar: true },
   { titulo: 'Recebido', chave: 'recebido', tipo: 'moeda', largura: 15, somar: true },
-  { titulo: 'Pendente', chave: 'pendente', tipo: 'moeda', largura: 15, somar: true },
+  { titulo: 'Em aberto', chave: 'pendente', tipo: 'moeda', largura: 15, somar: true },
   { titulo: 'Juros e multa', chave: 'juros_multa', tipo: 'moeda', largura: 13, somar: true },
   { titulo: 'Descontos', chave: 'descontos', tipo: 'moeda', largura: 13, somar: true },
   { titulo: 'Último recebimento', chave: 'ultimo_recebimento', tipo: 'data', largura: 14 },
@@ -61,7 +61,7 @@ const COL_CLIENTES = [
   { titulo: 'Vencimento mais antigo', chave: 'vencimento_mais_antigo', tipo: 'data', largura: 14 },
   { titulo: 'Maior atraso (dias)', chave: 'maior_atraso', tipo: 'inteiro', largura: 12 },
   { titulo: 'Vencido', chave: 'vencido', tipo: 'moeda', largura: 15, somar: true },
-  { titulo: 'Pendente', chave: 'pendente', tipo: 'moeda', largura: 15, somar: true },
+  { titulo: 'Em aberto', chave: 'pendente', tipo: 'moeda', largura: 15, somar: true },
   { titulo: 'Último recebimento', chave: 'ultimo_recebimento', tipo: 'data', largura: 14 },
 ];
 
@@ -91,8 +91,8 @@ function descreverFiltros(f, visao) {
   if (f.f_nota) add('Nota começa com', f.f_nota);
   if (f.f_pedido) add('Pedido começa com', f.f_pedido);
   if (f.f_titulo) add('Título contém', f.f_titulo);
-  if (f.f_valor_min !== null) add('Pendente a partir de', moedaBR(f.f_valor_min));
-  if (f.f_valor_max !== null) add('Pendente até', moedaBR(f.f_valor_max));
+  if (f.f_valor_min !== null) add('Em aberto a partir de', moedaBR(f.f_valor_min));
+  if (f.f_valor_max !== null) add('Em aberto até', moedaBR(f.f_valor_max));
   if (f.ordem && visao !== 'clientes') {
     add('Ordenado por', `${NOMES_ORDEM[f.ordem] ?? f.ordem}, ${f.direcao === 'desc' ? 'decrescente' : 'crescente'}`);
   }
@@ -132,7 +132,7 @@ const COL_CONCILIACAO = [
   { titulo: 'Emissão', chave: 'emissao', tipo: 'data', largura: 12 },
   { titulo: 'Valor do título', chave: 'valor', tipo: 'moeda', largura: 14, somar: true },
   { titulo: 'Já recebido', chave: 'recebido', tipo: 'moeda', largura: 13, somar: true },
-  { titulo: 'Pendente (procurar no banco)', chave: 'pendente', tipo: 'moeda', largura: 16, somar: true },
+  { titulo: 'Em aberto (procurar no banco)', chave: 'pendente', tipo: 'moeda', largura: 16, somar: true },
   // Colunas para preencher durante a conciliação
   { titulo: 'Data no extrato', valor: () => null, largura: 13 },
   { titulo: 'Valor no extrato', valor: () => null, tipo: 'moeda', largura: 14 },
@@ -179,14 +179,14 @@ function montarConciliacao(workbook, lista, filtros, hoje) {
     resumo.push(...[...grupos.values()].sort((a, b) => b.pendente - a.pendente));
   }
   excel.adicionarTabela(workbook, 'Resumo por mês', {
-    titulo: 'Pendente por mês de vencimento',
+    titulo: 'Em aberto por mês de vencimento',
     subtitulo: `${lista.length} títulos pendentes · ${meses.length} ${meses.length === 1 ? 'mês' : 'meses'}`,
     colunas: [
       { titulo: 'Mês de vencimento', chave: 'mes', largura: 16 },
       { titulo: 'Forma', chave: 'forma', largura: 16 },
       { titulo: 'Quem deve', chave: 'quem', largura: 22 },
       { titulo: 'Títulos', chave: 'titulos', tipo: 'inteiro', largura: 9, somar: true },
-      { titulo: 'Pendente', chave: 'pendente', tipo: 'moeda', largura: 16, somar: true },
+      { titulo: 'Em aberto', chave: 'pendente', tipo: 'moeda', largura: 16, somar: true },
     ],
     linhas: resumo,
     totais: true,

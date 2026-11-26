@@ -30,6 +30,14 @@
       <span class="divisao__item divisao__item--ativa" aria-current="page">Contas a pagar</span>
     </nav>
 
+    <!-- Nov/2026: o caixa de cada pessoa é TESOURARIA (o dinheiro que entrou e saiu), não dívida com
+         fornecedor. Fica nesta página porque usa os mesmos dados, mas aparece sozinho, como uma tela
+         própria (menu: Tesouraria > Caixa por pessoa). Estas abas ficam escondidas: quem troca é o menu. -->
+    <nav class="abas" id="abas-pagar" aria-label="Partes do contas a pagar">
+      <button class="aba aba--ativa" type="button" data-aba="pagar">Contas a pagar</button>
+      <button class="aba" type="button" data-aba="caixa">Caixa por pessoa</button>
+    </nav>
+
     <!-- Barra de filtros (padrão de todas as telas, ver DESIGN.md) -->
     <section class="barra-filtros" aria-label="Filtros">
       <div class="barra-filtros__linha">
@@ -71,6 +79,7 @@
         <div class="painel-topo">
           <div>
             <h2>Total a pagar (em aberto)</h2>
+          <span class="etiqueta-tempo">posição hoje</span>
             <p id="total-aberto" class="valor-grande">—</p>
             <p id="total-explica" class="explica"></p>
           </div>
@@ -111,9 +120,10 @@
       <section class="cartoes cartoes--seis" id="cartoes" aria-label="Situação dos títulos"></section>
 
       <!-- Quem lançou os pagamentos: cada pessoa, por caixa ou banco -->
-      <section class="bloco">
+      <section class="bloco" id="bloco-caixa">
         <div class="bloco-topo">
           <h2>Caixa por pessoa</h2>
+          <span class="etiqueta-tempo">no período</span>
         </div>
         <p class="bloco__descricao">Tudo o que entrou e saiu de dinheiro no caixa de cada pessoa. Entradas: recebimentos de
           títulos e retornos de despacho lançados por ela. Saídas: pagamentos de títulos. Clique na pessoa e escolha o período. Clique
@@ -149,11 +159,13 @@
       <div class="duas-colunas">
         <section class="bloco">
           <h2>Tempo de atraso</h2>
+          <span class="etiqueta-tempo">posição hoje</span>
           <p class="bloco__descricao">Quanto do vencido está em cada faixa de dias de atraso.</p>
           <div class="barras" id="barras-aging"></div>
         </section>
         <section class="bloco">
           <h2>Baixas em dia?</h2>
+          <span class="etiqueta-tempo">por mês de vencimento</span>
           <p class="bloco__descricao">Do que já venceu em cada mês, quanto foi baixado como pago no PROCFIT.</p>
           <div class="barras" id="barras-baixas"></div>
           <p id="baixas-resumo" class="explica"></p>
@@ -163,11 +175,13 @@
       <div class="duas-colunas">
         <section class="bloco">
           <h2>Previsão de pagamentos</h2>
+          <span class="etiqueta-tempo">próximas semanas</span>
           <p class="bloco__descricao">Quanto vence em cada semana, pelos títulos em aberto.</p>
           <div class="barras" id="barras-previsao"></div>
         </section>
         <section class="bloco">
           <h2>Maiores fornecedores</h2>
+          <span class="etiqueta-tempo">posição hoje</span>
           <p class="bloco__descricao">Em aberto. Clique no nome para ver só os títulos dele.</p>
           <div class="barras" id="barras-fornecedores"></div>
         </section>
@@ -175,6 +189,7 @@
 
       <section class="bloco">
         <h2>Onde o dinheiro vai</h2>
+          <span class="etiqueta-tempo">no período</span>
         <p class="bloco__descricao">Valor lançado no período, pelo grupo e pela categoria de cada título. A nota mostra quanto ainda está em aberto.</p>
         <p id="aviso-categoria" class="aviso-alerta" hidden></p>
         <div class="duas-colunas duas-colunas--sem-linha">
@@ -191,6 +206,7 @@
 
       <section class="bloco">
         <h2>Compromissos de longo prazo</h2>
+          <span class="etiqueta-tempo">posição hoje</span>
         <p id="longo-resumo" class="bloco__descricao"></p>
         <div class="duas-colunas duas-colunas--sem-linha">
           <div>

@@ -110,8 +110,8 @@
           <label>Pedido<input id="f_pedido" type="search" inputmode="numeric" placeholder="ex.: 12558"></label>
           <label>Título<input id="f_titulo" type="search" placeholder="ex.: 8513/1"></label>
           <label>Devedor<input id="f_cliente" type="search" placeholder="nome ou código"></label>
-          <label>Pendente de<input id="f_valor_min" type="search" inputmode="decimal" placeholder="R$ mínimo"></label>
-          <label>Pendente até<input id="f_valor_max" type="search" inputmode="decimal" placeholder="R$ máximo"></label>
+          <label>Em aberto de<input id="f_valor_min" type="search" inputmode="decimal" placeholder="R$ mínimo"></label>
+          <label>Em aberto até<input id="f_valor_max" type="search" inputmode="decimal" placeholder="R$ máximo"></label>
           <div class="filtros-lista-acoes">
             <button type="submit">Aplicar</button>
             <button id="limpar-filtros" type="button" class="botao-secundario">Limpar</button>
@@ -126,6 +126,7 @@
       <section class="destaque painel-topo" aria-labelledby="titulo-pendente">
         <div>
           <h2 id="titulo-pendente">Total a receber de clientes</h2>
+          <span class="etiqueta-tempo">posição hoje</span>
           <p id="total-pendente" class="valor-grande">—</p>
           <p id="resumo-linha" class="explica"></p>
         </div>
@@ -137,12 +138,14 @@
       <div class="duas-colunas">
         <section class="bloco" aria-labelledby="titulo-faixas">
           <h2 id="titulo-faixas">Por tempo de atraso</h2>
+          <span class="etiqueta-tempo">posição hoje</span>
           <p class="explica">Clique numa faixa para filtrar a lista.</p>
           <div id="grafico-faixas" class="barras"></div>
         </section>
 
         <section class="bloco" aria-labelledby="titulo-ranking">
           <h2 id="titulo-ranking">Maiores devedores</h2>
+          <span class="etiqueta-tempo">posição hoje</span>
           <p class="explica">Clique no nome para abrir a ficha.</p>
           <div id="ranking" class="barras"></div>
         </section>
@@ -150,12 +153,14 @@
 
       <section class="bloco" aria-labelledby="titulo-previsao">
         <h2 id="titulo-previsao">Previsão de recebimento</h2>
+          <span class="etiqueta-tempo">próximas semanas</span>
         <p class="explica">O que vence nas próximas semanas, pelos títulos em aberto.</p>
         <div id="previsao"></div>
       </section>
 
       <section class="bloco" aria-labelledby="titulo-baixas-receber">
         <h2 id="titulo-baixas-receber">Baixas em dia?</h2>
+          <span class="etiqueta-tempo">últimos 6 meses</span>
         <p class="explica">Do que já venceu em cada mês, quanto foi baixado como recebido no PROCFIT.</p>
         <p id="aviso-baixas-receber" class="aviso-alerta" hidden></p>
         <div id="grafico-baixas-receber"></div>
@@ -168,7 +173,7 @@
           <table class="tabela" id="tabela-clientes">
             <thead>
               <tr><th>Devedor</th><th>Títulos</th><th>Vencimento mais antigo</th>
-                  <th>Maior atraso</th><th>Vencido</th><th>Pendente</th></tr>
+                  <th>Maior atraso</th><th>Vencido</th><th>Em aberto</th></tr>
             </thead>
             <tbody></tbody>
           </table>
@@ -235,7 +240,7 @@
               <tr><th data-ordem="vencimento">Vencimento</th><th data-ordem="situacao">Situação</th>
                   <th data-ordem="nota">Nota</th><th data-ordem="pedido">Pedido</th>
                   <th data-ordem="titulo">Título</th><th data-ordem="valor">Valor</th>
-                  <th data-ordem="recebido">Recebido</th><th data-ordem="pendente">Pendente</th></tr>
+                  <th data-ordem="recebido">Recebido</th><th data-ordem="pendente">Em aberto</th></tr>
             </thead>
             <tbody></tbody>
           </table>

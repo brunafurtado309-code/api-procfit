@@ -69,17 +69,25 @@ const modulos = (() => {
       { titulo: 'Vendedores', pagina: 'index.html#vendedores', aba: 'vendedores' },
       { titulo: 'Caixa das lojas', pagina: 'index.html#caixa', aba: 'caixa' },
     ],
+    // Financeiro organizado pelo caminho do dinheiro (nov/2026):
+    //   Contas a receber = o que os outros devem (posição hoje)
+    //   Acerto de despachos = carga que saiu e o acerto do que voltou
+    //   Tesouraria = o dinheiro que de fato entrou/saiu e a conferência com o banco (no período)
+    //   Contas a pagar = o que a empresa deve
     financeiro: [
       { titulo: 'Contas a receber', itens: [
         { titulo: 'Títulos em aberto', pagina: 'financeiro.html#titulos', aba: 'titulos' },
         { titulo: 'Boletos e prazos', pagina: 'financeiro.html#boletos', aba: 'boletos' },
         { titulo: 'Recebíveis de cartão', pagina: 'financeiro.html#cartao', aba: 'cartao' },
-        { titulo: 'Despachos', pagina: 'despachos.html' },
         { titulo: 'Clientes e crédito', pagina: 'clientes.html' },
+      ] },
+      { titulo: 'Acerto de despachos', pagina: 'despachos.html' },
+      { titulo: 'Tesouraria', itens: [
         { titulo: 'Recebimentos', pagina: 'recebimentos.html' },
+        { titulo: 'Caixa por pessoa', pagina: 'pagar.html#caixa', aba: 'caixa' },
         { titulo: 'Conciliação com o banco', pagina: 'conciliacao.html' },
       ] },
-      { titulo: 'Contas a pagar', pagina: 'pagar.html' },
+      { titulo: 'Contas a pagar', pagina: 'pagar.html#pagar', aba: 'pagar' },
     ],
     // "setor" = a função tem permissão própria (sem ele, vale a permissão do módulo)
     faturamento: [
@@ -137,6 +145,7 @@ const modulos = (() => {
     'nav.abas[aria-label="Partes do faturamento"]',
     'nav.abas[aria-label="Tipo de cancelamento"]', // faturamento-canceladas.html
     'nav.abas[aria-label="Visões de entradas e saídas"]',
+    'nav.abas[aria-label="Partes do contas a pagar"]', // pagar.html: contas a pagar x caixa por pessoa
     'nav.abas[aria-label="Partes das vendas"]', // vendas
   ].join(', ');
   const PASTAS = 'menu-pastas-abertas';

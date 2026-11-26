@@ -1004,7 +1004,27 @@ async function baixarExcel() {
 }
 
 // ===== Início =====
+// Parte da página: 'pagar' (contas a pagar) ou 'caixa' (caixa por pessoa, da Tesouraria).
+// As duas usam os mesmos dados; a classe na página esconde o que não é da parte escolhida.
+const TITULO_DA_PAGINA = document.title;
+function mostrarParte(parte) {
+  const caixa = parte === 'caixa';
+  document.querySelector('main.conteudo').classList.toggle('parte-caixa', caixa);
+  for (const botao of document.querySelectorAll('#abas-pagar [data-aba]')) {
+    botao.classList.toggle('aba--ativa', botao.dataset.aba === parte);
+  }
+  document.title = caixa ? TITULO_DA_PAGINA.replace('Contas a pagar', 'Caixa por pessoa') : TITULO_DA_PAGINA;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
+  mostrarParte(window.location.hash === '#caixa' ? 'caixa' : 'pagar');
+  el('abas-pagar').addEventListener('click', (evento) => {
+    const botao = evento.target.closest('[data-aba]');
+    if (!botao) return;
+    mostrarParte(botao.dataset.aba);
+    window.history.replaceState(null, '', `#${botao.dataset.aba}`);
+    window.scrollTo({ top: 0 });
+  });
   if (!chave.ler()) {
     window.location.href = 'financeiro.html';
     return;
