@@ -23,6 +23,8 @@ router.get('/clientes', controller.porCliente);
 router.get('/faixas-atraso', controller.porFaixaAtraso);
 router.get('/titulos', controller.titulos);
 router.get('/baixas-mes', controller.baixasPorMes);
+// Formas de pagamento que aparecem nos títulos da tela (caixinha "Forma" da lista)
+router.get('/formas', controller.formas);
 router.get('/recebimentos', controller.recebimentos);
 router.get('/recebimentos/excel', controller.recebimentosExcel);
 // Excel do que está filtrado na tela (mesmos filtros da lista)

@@ -359,6 +359,26 @@ async function cartoes(filtros) {
   return recordset[0];
 }
 
+// Formas de pagamento que EXISTEM nos títulos da tela (nov/2026): alimenta a caixinha "Forma" em cima
+// da lista. Usa os mesmos filtros da lista, menos a própria forma (senão só sobraria a escolhida).
+async function formas(filtros) {
+  const request = await criarRequest({ ...filtros, modalidade: null });
+  const { recordset } = await request.query(`
+    ${SALDOS},
+    ${TITULOS}
+    SELECT modalidade_id, MAX(modalidade) AS forma, COUNT(*) AS titulos, SUM(pendente) AS pendente
+    FROM TITULOS
+    WHERE modalidade_id IS NOT NULL
+      AND ${filtroSituacao(filtros.situacao)}
+      AND ${filtroAtraso(filtros.atraso)}
+      AND ${filtroOrigem(filtros.origem)} AND ${filtroDevedor(filtros.devedor)}
+      AND ${FILTRO_COMUM}
+    GROUP BY modalidade_id
+    ORDER BY SUM(pendente) DESC
+  `);
+  return recordset;
+}
+
 // Um resumo por cliente (cartão "Clientes")
 async function porCliente(filtros) {
   const request = await criarRequest(filtros);
@@ -966,6 +986,6 @@ async function visaoGeral(filtros) {
 
 module.exports = {
   pedidosPendentes,
-  resumo, cartoes, indicadores, previsao, porFaixaAtraso, porCliente, titulos, fichaCliente, analiseClientes,
+  resumo, cartoes, indicadores, previsao, porFaixaAtraso, porCliente, titulos, fichaCliente, analiseClientes, formas,
   baixasPorMes, recebimentos, visaoGeral, ORIGENS_RECEBIMENTO, ORDENACAO_RECEBIMENTOS, FORMAS_RECEBIMENTO,
 };

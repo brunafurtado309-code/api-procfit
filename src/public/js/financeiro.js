@@ -639,6 +639,17 @@ function montarFiltroRapidoDevedor() {
   }
   rotuloVenc.append(venc);
 
+  // Forma de pagamento (nov/2026): as opções vêm dos títulos da tela (preencherFormas), não de uma
+  // lista fixa. Usa o mesmo campo do "Mais filtros" (modalidade), então os dois andam juntos.
+  const rotuloForma = document.createElement('label');
+  rotuloForma.style.cssText = 'display:grid;gap:0.25rem;font-size:0.85rem';
+  rotuloForma.append('Forma');
+  const forma = document.createElement('select');
+  forma.id = 'rapido-forma';
+  forma.style.cssText = estiloCampo;
+  forma.append(new Option('Todas as formas', ''));
+  rotuloForma.append(forma);
+
   const rotuloNome = document.createElement('label');
   rotuloNome.style.cssText = 'display:grid;gap:0.25rem;font-size:0.85rem';
   rotuloNome.append(ehCartao() ? 'Adquirente' : 'Cliente');
@@ -657,10 +668,11 @@ function montarFiltroRapidoDevedor() {
   limpar.type = 'button';
   limpar.className = 'botao-secundario';
   limpar.textContent = 'Limpar';
-  form.append(rotuloVenc, rotuloNome, filtrar, limpar);
+  form.append(rotuloVenc, rotuloForma, rotuloNome, filtrar, limpar);
 
   const aplicar = () => {
     atrasoRapido = venc.value || null;
+    if (!el('modalidade').disabled) el('modalidade').value = forma.value;
     el('f_cliente').value = nome.value.trim();
     if (nome.value.trim()) filtrosColuna.f_cliente = nome.value.trim();
     else delete filtrosColuna.f_cliente;
@@ -670,12 +682,14 @@ function montarFiltroRapidoDevedor() {
     carregar();
   };
   venc.addEventListener('change', aplicar);
+  forma.addEventListener('change', aplicar);
   form.addEventListener('submit', (evento) => {
     evento.preventDefault();
     aplicar();
   });
   limpar.addEventListener('click', () => {
     venc.value = '';
+    if (!forma.disabled) forma.value = '';
     nome.value = '';
     aplicar();
   });
@@ -685,9 +699,36 @@ function montarFiltroRapidoDevedor() {
 // Mantém o filtro rápido igual ao painel "Mais filtros" e aos marcadores
 function sincronizarFiltroRapido() {
   if (el('rapido-vencimento')) el('rapido-vencimento').value = atrasoRapido ?? '';
+  if (el('rapido-forma')) {
+    const fixa = ABAS[abaAtual].modalidade; // aba Boletos: a forma é fixa (Boleto)
+    el('rapido-forma').disabled = fixa != null;
+    el('rapido-forma').value = fixa != null ? String(fixa) : el('modalidade').value;
+  }
   const rotulo = el('rapido-cliente-rotulo');
   if (rotulo?.firstChild) rotulo.firstChild.textContent = ehCartao() ? 'Adquirente' : 'Cliente';
   if (el('rapido-cliente')) el('rapido-cliente').value = filtrosColuna.f_cliente ?? '';
+}
+
+// Preenche as caixinhas "Forma" (barra da lista e Mais filtros) com as formas dos títulos da tela,
+// com a quantidade de cada uma. A forma escolhida continua na lista mesmo se zerar.
+function preencherFormas(lista) {
+  const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const escolhida = el('modalidade').value;
+  const opcoes = lista.map((f) => ({
+    valor: String(f.modalidade_id),
+    texto: `${f.forma ?? `Forma ${f.modalidade_id}`} (${numero(f.titulos)} · ${fmt(f.pendente)})`,
+  }));
+  if (escolhida && !opcoes.some((o) => o.valor === escolhida)) {
+    const antiga = [...el('modalidade').options].find((o) => o.value === escolhida);
+    opcoes.push({ valor: escolhida, texto: `${(antiga?.textContent ?? `Forma ${escolhida}`).replace(/\s*\(.*\)$/, '')} (0)` });
+  }
+  for (const [id, primeira] of [['modalidade', 'Todas'], ['rapido-forma', 'Todas as formas']]) {
+    const select = el(id);
+    if (!select) continue;
+    select.replaceChildren(new Option(primeira, ''), ...opcoes.map((o) => new Option(o.texto, o.valor)));
+    select.value = escolhida;
+  }
+  sincronizarFiltroRapido();
 }
 
 function mostrarMarcadores() {
@@ -797,6 +838,10 @@ async function carregar() {
       buscar('clientes', { ...filtrosDaTela, situacao: 'aberto' }),
       buscar(porCliente ? 'clientes' : 'titulos', filtros),
     ]);
+    // Formas que existem nesses títulos (sem esperar: a lista já aparece; a caixinha atualiza logo depois)
+    buscar('formas', { ...filtros, modalidade: ABAS[abaAtual].modalidade ?? null, pagina: null, limite: null })
+      .then(preencherFormas)
+      .catch(() => {}); // sem a lista de formas, a caixinha fica com as opções anteriores
 
     mostrarMarcadores();
     mostrarResumo(resumo, pedidos, comPedidos);
@@ -1175,6 +1220,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const guardado = estado.aplicarCampos('financeiro', {
     inicio: 'inicio', fim: 'fim', busca: 'busca', modalidade: 'modalidade', origem: 'origem',
   });
+  // A forma guardada pode não estar entre as opções ainda (elas chegam da API depois): garante a opção
+  if (guardado.modalidade && el('modalidade').value !== String(guardado.modalidade)) {
+    el('modalidade').append(new Option(`Forma ${guardado.modalidade}`, String(guardado.modalidade)));
+    el('modalidade').value = String(guardado.modalidade);
+  }
   if (ABAS[guardado.aba]) {
     abaAtual = guardado.aba;
     for (const aba of el('abas').querySelectorAll('.aba[data-aba]')) {

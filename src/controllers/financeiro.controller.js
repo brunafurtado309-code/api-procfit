@@ -38,6 +38,7 @@ module.exports = {
   titulos: acao(service.titulos),
   fichaCliente: acao(service.fichaCliente),
   baixasPorMes: acao(service.baixasPorMes),
+  formas: acao(service.formas),
   recebimentos: acao(service.recebimentos),
   recebimentosExcel: download(service.exportarRecebimentos),
   excel: download(exportacao.exportarTitulos),

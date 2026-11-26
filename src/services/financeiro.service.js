@@ -145,6 +145,8 @@ const porCliente = (query) => repo.porCliente(montarFiltros(query));
 const indicadores = (query) => repo.indicadores(montarFiltros(query));
 const previsao = (query) => repo.previsao(montarFiltros(query));
 const baixasPorMes = (query) => repo.baixasPorMes(montarFiltros(query));
+// Formas de pagamento presentes nos títulos da tela (caixinha "Forma")
+const formas = (query) => repo.formas(montarFiltros(query));
 
 // ===== Recebimentos (todas as baixas de título, com a origem) =====
 const ORIGENS_TEXTO = Object.fromEntries(
@@ -250,6 +252,6 @@ function fichaCliente(query, params) {
 }
 
 module.exports = {
-  resumo, pedidosPendentes, cartoes, indicadores, previsao, porFaixaAtraso, porCliente, titulos, fichaCliente, baixasPorMes,
+  resumo, pedidosPendentes, cartoes, indicadores, previsao, porFaixaAtraso, porCliente, titulos, fichaCliente, baixasPorMes, formas,
   recebimentos, exportarRecebimentos, montarFiltros, // usado pela exportação para Excel (mesmas regras da tela)
 };
