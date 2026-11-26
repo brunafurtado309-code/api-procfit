@@ -540,6 +540,9 @@ async function titulosDasCargas(cargasLista) {
       T.VALOR                                 AS valor,
       CONVERT(varchar(10), T.VENCIMENTO, 23)  AS vencimento,
       T.TAB_MASTER_ORIGEM                     AS origem,
+      -- Título de adquirente (cartão, ex.: REDECARD): não é dívida de cliente
+      CASE WHEN EXISTS (SELECT 1 FROM ADQUIRENTES A WITH (NOLOCK)
+                        WHERE A.ENTIDADE = T.ENTIDADE AND A.ENTIDADE > 1) THEN 1 ELSE 0 END AS adquirente,
       ${CAMPOS_SITUACAO_TITULO}
     FROM TT
     JOIN TITULOS_RECEBER T WITH (NOLOCK) ON T.TITULO_RECEBER = TT.TITULO_RECEBER

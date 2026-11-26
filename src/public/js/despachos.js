@@ -1337,13 +1337,66 @@ async function montarDespacho(carga) {
   }
 }
 
+// Nov/2026: antes de baixar, pergunta de quais clientes: só os que estão devendo ou todos.
+// A janela é montada uma vez e devolve 'devendo', 'todos' ou null (cancelou).
+let janelaExcel = null;
+function escolherClientesExcel() {
+  if (!janelaExcel) {
+    janelaExcel = document.createElement('dialog');
+    janelaExcel.className = 'escolha-excel';
+    janelaExcel.setAttribute('aria-labelledby', 'escolha-excel-titulo');
+    const titulo = document.createElement('h2');
+    titulo.id = 'escolha-excel-titulo';
+    titulo.textContent = 'Baixar Excel dos despachos';
+    const texto = document.createElement('p');
+    texto.className = 'explica';
+    texto.textContent = 'De quais clientes? O Excel respeita o período, a pesquisa e o cartão escolhidos na tela.';
+    const opcoes = document.createElement('div');
+    opcoes.className = 'escolha-excel__opcoes';
+    const opcao = (valor, rotulo, nota, principal) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = principal ? '' : 'botao-secundario';
+      b.value = valor;
+      b.append(rotulo);
+      const n = document.createElement('small');
+      n.textContent = nota;
+      b.append(document.createElement('br'), n);
+      b.addEventListener('click', () => janelaExcel.close(valor));
+      return b;
+    };
+    opcoes.append(
+      opcao('devendo', 'Só clientes devendo', 'quem ainda tem título em aberto nessas cargas', true),
+      opcao('todos', 'Todos os clientes', 'todas as cargas e todos os títulos', false),
+    );
+    const cancelar = document.createElement('button');
+    cancelar.type = 'button';
+    cancelar.className = 'botao-texto';
+    cancelar.textContent = 'Cancelar';
+    cancelar.addEventListener('click', () => janelaExcel.close(''));
+    janelaExcel.append(titulo, texto, opcoes, cancelar);
+    document.body.append(janelaExcel);
+  }
+  return new Promise((resolver) => {
+    janelaExcel.returnValue = '';
+    janelaExcel.addEventListener('close', () => resolver(janelaExcel.returnValue || null), { once: true });
+    janelaExcel.showModal();
+  });
+}
+
+async function baixarExcelCargasComEscolha() {
+  const clientes = await escolherClientesExcel();
+  if (clientes) await baixarExcelCargas(clientes);
+}
+
 // Excel das cargas (respeita o período, a pesquisa e o cartão escolhido)
-async function baixarExcelCargas() {
+async function baixarExcelCargas(clientes = 'todos') {
   const botao = el('carga-excel');
   botao.disabled = true;
+  mostrarStatus(clientes === 'devendo' ? 'Gerando o Excel dos clientes devendo…' : 'Gerando o Excel de todos os clientes…');
   try {
     const url = new URL('/financeiro/despachos/cargas/excel', window.location.origin);
-    for (const [nome, valor] of Object.entries({ ...filtrosAtuais(), situacao: cargaSituacao })) {
+    for (const [nome, valor] of Object.entries({ ...filtrosAtuais(), situacao: cargaSituacao, clientes })) {
       if (valor) url.searchParams.set(nome, valor);
     }
     if (typeof modulos !== 'undefined') modulos.marcarLoja(url); // loja do menu
@@ -1361,6 +1414,7 @@ async function baixarExcelCargas() {
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    mostrarStatus(`Excel baixado: ${nome}`);
   } catch (erro) {
     mostrarStatus(erro.message, true);
   } finally {
@@ -1494,7 +1548,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Cargas: alternar entre as duas partes e baixar o Excel das cargas
   el('ver-saida').addEventListener('click', () => mostrarVisao('saida'));
   el('ver-retorno').addEventListener('click', () => mostrarVisao('retorno'));
-  el('carga-excel').addEventListener('click', () => baixarExcelCargas());
+  el('carga-excel').addEventListener('click', baixarExcelCargasComEscolha);
 
   // Volta como estava: mesma parte da tela (saída ou retorno) e mesmos filtros
   const guardado = estado.aplicarCampos('despachos', { inicio: 'inicio', fim: 'fim', busca: 'pesquisa-termo' });
@@ -1512,6 +1566,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       + 'quando processou, formas e títulos) e onde cada título foi baixado, inclusive fora do acerto.';
   }
   el('baixar-excel').removeEventListener('click', baixarExcel);
-  el('baixar-excel').addEventListener('click', () => baixarExcelCargas());
+  el('baixar-excel').addEventListener('click', baixarExcelCargasComEscolha);
   mostrarVisao('saida');
 });
