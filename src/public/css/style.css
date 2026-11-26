@@ -3681,3 +3681,8 @@ dialog.escolha-excel h2 { margin: 0 0 0.25rem; font-size: var(--texto-titulo); }
 .escolha-excel__opcoes { display: grid; gap: 0.5rem; margin: 1rem 0 0.75rem; }
 .escolha-excel__opcoes button { text-align: left; padding: 0.6rem 0.85rem; line-height: 1.3; }
 .escolha-excel__opcoes small { font-weight: 400; opacity: 0.85; }
+
+/* ===== Logística > Estoque por empresa (logistica-estoque.html, nov/2026) ===== */
+.tela-estoque-empresas .tabela td.negativo { color: var(--alerta); font-weight: 600; }
+.tela-estoque-empresas .tabela td .qtd { display: block; }
+.tela-estoque-empresas .tabela td strong { font-weight: 600; }

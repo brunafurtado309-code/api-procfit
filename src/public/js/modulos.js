@@ -109,6 +109,8 @@ const modulos = (() => {
       { titulo: 'Produtos', pagina: 'logistica.html' },
       { titulo: 'Notas de entrada', pagina: 'logistica-notas.html' },
       { titulo: 'Transferências', pagina: 'logistica-transferencias.html' },
+      // Nov/2026: estoque de cada produto por empresa ou da rede toda (visão de compras)
+      { titulo: 'Estoque por empresa', pagina: 'logistica-estoque.html' },
     ],
     movimentos: [
       { titulo: 'Notas de entrada', pagina: 'movimentos.html#notas', aba: 'notas' },

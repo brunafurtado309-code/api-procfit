@@ -1,6 +1,7 @@
 // Recebe os pedidos do módulo logística e devolve JSON ou a planilha.
 
 const service = require('../services/logistica.service');
+const estoqueEmpresas = require('../services/estoque-empresas.service');
 
 const TIPO_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -20,6 +21,20 @@ module.exports = {
   transferencia: acao(service.transferencia),
   notasEntrada: acao(service.notasEntrada),
   notaEntrada: acao(service.notaEntrada),
+  // Logística > Estoque por empresa (por empresa ou da rede toda)
+  estoque: acao(estoqueEmpresas.estoque),
+  estoqueExcel: async (req, res, next) => {
+    try {
+      const { workbook, nomeArquivo } = await estoqueEmpresas.exportar(req.query);
+      res.setHeader('Content-Type', TIPO_XLSX);
+      res.setHeader('Content-Disposition', `attachment; filename="${nomeArquivo}"`);
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+      await workbook.xlsx.write(res);
+      res.end();
+    } catch (err) {
+      next(err);
+    }
+  },
   excel: async (req, res, next) => {
     try {
       const { workbook, nomeArquivo } = await service.exportar(req.query);

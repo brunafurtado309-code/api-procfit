@@ -13,5 +13,7 @@ router.get('/transferencias', controller.transferencias);        // Logística >
 router.get('/transferencias/:id', controller.transferencia);     // produtos, notas e recebimento de uma
 router.get('/notas-entrada', controller.notasEntrada);           // Logística > Notas de entrada
 router.get('/notas-entrada/:id', controller.notaEntrada);        // itens de uma nota
+router.get('/estoque', controller.estoque);                      // Logística > Estoque por empresa
+router.get('/estoque/excel', controller.estoqueExcel);
 
 module.exports = router;

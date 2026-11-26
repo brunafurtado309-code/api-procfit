@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <script src="/painel/js/sessao.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Estoque por empresa | Logística | Painel | Belo Norte</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/modulos.js" defer></script>
+  <script src="js/paginacao.js" defer></script>
+  <script src="js/logistica-estoque.js" defer></script>
+</head>
+<body class="tela-estoque-empresas">
+  <header class="topo">
+    <div>
+      <p class="marca">Belo Norte</p>
+      <h1>Painel de logística</h1>
+    </div>
+    <div class="topo-acoes">
+      <nav id="modulos" class="modulos" aria-label="Módulos do painel" hidden></nav>
+      <button id="trocar-chave" class="botao-texto" type="button">Trocar chave</button>
+    </div>
+  </header>
+
+  <!-- Logística > Estoque por empresa (nov/2026): o saldo de cada produto em cada empresa ou na rede
+       toda, com venda por dia, cobertura e sugestão de transferência. Regras: estoque-empresas.service.js -->
+  <main class="conteudo conteudo--largo">
+    <section class="barra-filtros" aria-label="Filtros">
+      <div class="barra-filtros__linha">
+        <form id="form-pesquisa" class="pesquisa" role="search">
+          <label class="campo campo--busca">
+            <span class="sr-only">Encontrar produto</span>
+            <input id="pesquisa-termo" type="search" maxlength="60" autocomplete="off"
+                   placeholder="Encontrar produto (código ou parte da descrição)">
+          </label>
+          <button type="submit">Pesquisar</button>
+          <button id="limpar-pesquisa" type="button" class="botao-secundario" hidden>Limpar</button>
+        </form>
+        <div class="barra-filtros__acoes">
+          <button id="baixar-excel" type="button" class="botao-secundario">Baixar Excel</button>
+        </div>
+      </div>
+      <div class="filtros">
+        <!-- Visão: por empresa (uma coluna por empresa) ou rede toda (total de todas) -->
+        <div class="atalhos" id="visoes" aria-label="Como ver o estoque">
+          <button type="button" class="botao-secundario atalho--ativo" data-visao="empresa">Por empresa</button>
+          <button type="button" class="botao-secundario" data-visao="rede">Rede toda</button>
+        </div>
+      </div>
+      <div id="marcadores" class="marcadores" hidden></div>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <div id="painel" hidden>
+      <section class="bloco" aria-labelledby="titulo-alertas">
+        <div class="bloco-topo">
+          <h2 id="titulo-alertas">Produtos que pedem atenção</h2>
+          <span class="etiqueta-tempo" id="etiqueta-dias">saldo hoje · venda dos últimos 30 dias</span>
+        </div>
+        <p class="bloco__descricao" id="regras"></p>
+        <div class="cartoes" id="cartoes"></div>
+      </section>
+
+      <section class="bloco" aria-labelledby="titulo-lista">
+        <div class="bloco-topo">
+          <h2 id="titulo-lista">Produtos</h2>
+        </div>
+        <p class="bloco__descricao" id="explica-lista"></p>
+        <div id="paginador"></div>
+        <div class="tabela-rolagem">
+          <table class="tabela" id="tabela">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>
