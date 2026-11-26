@@ -637,7 +637,9 @@ async function abrirAcerto(numero) {
 // opcoes.titulosAbertos: mostra a tabela de títulos já aberta
 function montarAcerto(numero, resposta, opcoes = {}) {
   {
-    const { acerto: a, notas, parcelas, cartoes, bancos = [] } = resposta;
+    const { acerto: a, notas, parcelas, cartoes, bancos = [], financeiro = [] } = resposta;
+    // Situação de cada nota no contas a receber (o que foi pago fora do acerto e o saldo do título)
+    const financeiroPorNota = new Map(financeiro.map((f) => [String(f.nota), f]));
     const tituloJanela = a.carga ? `Despacho ${a.carga}` : `Acerto ${numero}`;
     const resumoJanela = [
       `acerto ${numero}`,
@@ -683,9 +685,22 @@ function montarAcerto(numero, resposta, opcoes = {}) {
         if (cartao) cartao.nome += ` (${complemento})`;
       }
     }
+    // Pago fora do acerto (nov/2026): o que foi baixado no título da nota por outra tela entra no
+    // "Pago" da nota. Antes a nota aparecia com tudo faltando mesmo já paga (ex.: NF 14608).
+    for (const nota of porNota.values()) {
+      const fin = financeiroPorNota.get(String(nota.nota));
+      nota.titulo_pendente = fin ? Number(fin.pendente) || 0 : null;
+      const fora = fin ? Number(fin.recebido_fora) || 0 : 0;
+      if (fora > 0.009) {
+        nota.pago += fora;
+        nota.pago_fora = fora;
+        nota.formas.push({ nome: 'Pago fora do acerto', valor: fora });
+      }
+    }
     const listaNotas = [...porNota.values()];
     const totalNotas = listaNotas.reduce((t, n) => t + (Number(n.valor_nota) || 0), 0);
     const totalPago = listaNotas.reduce((t, n) => t + n.pago, 0);
+    const totalFora = listaNotas.reduce((t, n) => t + (n.pago_fora ?? 0), 0);
     const totalFalta = Math.max(0, totalNotas - totalPago);
 
     // Resumo do despacho: quanto veio em cada forma (confere com o dinheiro e os comprovantes)
@@ -711,6 +726,7 @@ function montarAcerto(numero, resposta, opcoes = {}) {
     item('Situação', etiquetaSituacao(situacaoDoDespacho(a)));
     item('Valor das notas', dinheiro(totalNotas));
     item('Recebido', dinheiro(totalPago));
+    if (totalFora > 0.009) item('Do recebido, pago fora do acerto', dinheiro(totalFora));
     item('Falta receber', totalFalta > 0.01 ? dinheiro(totalFalta) : 'nada', totalFalta > 0.01);
     // Pessoas e momentos de cada etapa do despacho
     item('Conferente (criou o despacho)', [pessoa(a.carga_usuario_nome, a.carga_usuario, 'usuário'),
@@ -752,13 +768,17 @@ function montarAcerto(numero, resposta, opcoes = {}) {
       listaNotas.map((n) => {
         const falta = (Number(n.valor_nota) || 0) - n.pago;
         // Para onde foi o que faltou: os títulos desta nota gerados no acerto (ex.: "10174/Parc")
-        const destino = falta > 0.01
+        const gerados = falta > 0.01
           ? parcelas.filter((p) => String(p.titulo ?? '').startsWith(`${n.nota}/`)
               && !['Pago no acerto'].includes(situacaoTitulo(p).texto))
             .map((p) => `${p.titulo}: ${situacaoTitulo(p).texto}`
               + `${Number(p.pendente) > 0.009 ? ` ${dinheiro(p.pendente)}` : ''}`)
             .join(' · ')
           : '';
+        // Sem título gerado no acerto: mostra o saldo do título da própria nota no contas a receber
+        const destino = gerados || (falta > 0.01 && n.titulo_pendente != null
+          ? (n.titulo_pendente > 0.009 ? `título da nota em aberto: ${dinheiro(n.titulo_pendente)}` : 'título da nota sem saldo')
+          : '');
         const formas = n.formas.length
           ? n.formas.map((f) => `${f.nome} ${dinheiro(f.valor)}`).join(' + ')
           : 'nenhum pagamento informado';
