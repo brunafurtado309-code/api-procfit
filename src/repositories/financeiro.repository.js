@@ -29,6 +29,15 @@ const ORIGENS = {
   sem_nota: `(T.TAB_MASTER_ORIGEM <> ${TAB_NOTA_FISCAL} OR T.TAB_MASTER_ORIGEM IS NULL)`,
 };
 
+// Nota de um título gerado no ACERTO DE DESPACHO (origem 455510). Esse título não aponta para a
+// NF_FATURAMENTO, mas o nome dele segue "nota/parcela" (ex.: 8684/Parc = nota 8684), a mesma convenção
+// já usada na tela de despachos. Sem isso a lista mostrava "sem nota" para um pedido com nota
+// (caso real nov/2026: título 8684/Parc, pedido 12776, cliente 5593).
+const notaPeloTitulo = (alias) => `CASE
+        WHEN ${alias}.TAB_MASTER_ORIGEM = 455510 AND CHARINDEX('/', LTRIM(${alias}.TITULO)) > 1
+        THEN TRY_CAST(LEFT(LTRIM(${alias}.TITULO), CHARINDEX('/', LTRIM(${alias}.TITULO)) - 1) AS bigint)
+      END`;
+
 // Saldo de cada título, a partir do extrato de transações
 const SALDOS = `
   WITH SALDOS AS (
@@ -51,7 +60,7 @@ const TITULOS = `
       T.TITULO_RECEBER                        AS id,
       T.EMPRESA                               AS empresa,
       LTRIM(RTRIM(T.TITULO))                  AS titulo,
-      NF.NF_NUMERO                            AS nota,
+      COALESCE(NF.NF_NUMERO, ${notaPeloTitulo('T')}) AS nota,
       COALESCE(NULLIF(T.PEDIDO_PREVENDA, 0), NULLIF(NF.PEDIDO_CLIENTE, 0)) AS pedido,
       T.ENTIDADE                              AS cod_cliente,
       LTRIM(RTRIM(E.NOME))                    AS cliente,
@@ -107,10 +116,11 @@ const TITULOS = `
       END                                     AS situacao,
       -- Cada título é UMA PARCELA. Estas colunas somam todas as parcelas da mesma NOTA,
       -- para a tela poder mostrar o valor total da nota, o quanto já foi pago e o que falta.
-      COUNT(*)      OVER (PARTITION BY T.EMPRESA, NF.NF_NUMERO) AS nota_parcelas,
-      SUM(T.VALOR)  OVER (PARTITION BY T.EMPRESA, NF.NF_NUMERO) AS nota_valor,
-      SUM(S.RECEBIDO) OVER (PARTITION BY T.EMPRESA, NF.NF_NUMERO) AS nota_recebido,
-      SUM(S.PENDENTE) OVER (PARTITION BY T.EMPRESA, NF.NF_NUMERO) AS nota_pendente,
+      -- (título sem nota fiscal própria, ex.: gerado no acerto, fica no grupo dele sozinho)
+      COUNT(*)      OVER (PARTITION BY T.EMPRESA, COALESCE(CAST(NF.NF_NUMERO AS varchar(20)), CONCAT('titulo-', T.TITULO_RECEBER))) AS nota_parcelas,
+      SUM(T.VALOR)  OVER (PARTITION BY T.EMPRESA, COALESCE(CAST(NF.NF_NUMERO AS varchar(20)), CONCAT('titulo-', T.TITULO_RECEBER))) AS nota_valor,
+      SUM(S.RECEBIDO) OVER (PARTITION BY T.EMPRESA, COALESCE(CAST(NF.NF_NUMERO AS varchar(20)), CONCAT('titulo-', T.TITULO_RECEBER))) AS nota_recebido,
+      SUM(S.PENDENTE) OVER (PARTITION BY T.EMPRESA, COALESCE(CAST(NF.NF_NUMERO AS varchar(20)), CONCAT('titulo-', T.TITULO_RECEBER))) AS nota_pendente,
       -- Número da parcela ("2 de 4"): títulos gerados juntos, pela mesma origem (nota, acerto,
       -- renegociação...), para o mesmo devedor e na mesma forma, em ordem de vencimento
       ROW_NUMBER() OVER (PARTITION BY T.EMPRESA, T.ENTIDADE, T.TAB_MASTER_ORIGEM, T.REG_MASTER_ORIGEM, T.MODALIDADE
@@ -695,7 +705,7 @@ const SELECT_RECEBIMENTOS = `
       COALESCE(RB.USUARIO_LOGADO, RC.USUARIO_LOGADO, CF.USUARIO_LOGADO, RD.USUARIO_LOGADO) AS usuario,
       COALESCE(NULLIF(LTRIM(RTRIM(U.NOME)), ''), LTRIM(RTRIM(U.LOGIN)))  AS usuario_nome,
       LTRIM(RTRIM(T.TITULO))                                             AS titulo,
-      NF.NF_NUMERO                                                       AS nota,
+      COALESCE(NF.NF_NUMERO, ${notaPeloTitulo('T')})                     AS nota,
       COALESCE(NULLIF(T.PEDIDO_PREVENDA, 0), NULLIF(NF.PEDIDO_CLIENTE, 0)) AS pedido,
       T.ENTIDADE                                                         AS cod_cliente,
       LTRIM(RTRIM(E.NOME))                                               AS cliente,
@@ -760,6 +770,7 @@ async function recebimentos(filtros) {
       AND (@busca IS NULL
         OR T.TITULO LIKE '%' + @busca + '%'
         OR CAST(NF.NF_NUMERO AS varchar(20)) = @busca
+        OR CAST(${notaPeloTitulo('T')} AS varchar(20)) = @busca
         OR CAST(T.PEDIDO_PREVENDA AS varchar(20)) = @busca
         OR CAST(T.ENTIDADE AS varchar(20)) = @busca
         OR E.NOME LIKE '%' + @busca + '%')

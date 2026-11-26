@@ -268,82 +268,16 @@ function linhasDoTitulo(t, c) {
   return eventos.map((e) => ({ ...base, ...e }));
 }
 
-// Resumo por cliente dos títulos das cargas (aba "Clientes" do Excel)
-function resumoPorCliente(titulos) {
-  const porCliente = new Map();
-  for (const t of titulos) {
-    if (Number(t.adquirente) === 1) continue; // cartão: cobrado da adquirente, não do cliente
-    const chave = String(t.codigo_cliente ?? '');
-    if (!porCliente.has(chave)) {
-      porCliente.set(chave, {
-        codigo: t.codigo_cliente, cliente: t.cliente, cargas: new Set(), notas: new Set(),
-        titulos: 0, titulos_abertos: 0, valor_titulos: 0, em_aberto: 0, vencimento_mais_antigo: null,
-      });
-    }
-    const c = porCliente.get(chave);
-    c.cargas.add(t.carga);
-    if (t.nota != null) c.notas.add(t.nota);
-    c.titulos += 1;
-    c.valor_titulos += num(t.valor);
-    const aberto = num(t.pendente);
-    if (aberto > 0.009) {
-      c.titulos_abertos += 1;
-      c.em_aberto += aberto;
-      if (t.vencimento && (!c.vencimento_mais_antigo || t.vencimento < c.vencimento_mais_antigo)) {
-        c.vencimento_mais_antigo = t.vencimento;
-      }
-    }
-  }
-  return [...porCliente.values()]
-    .map((c) => ({ ...c, despachos: [...c.cargas].sort((a, b) => b - a).join(', '), qtd_notas: c.notas.size }))
-    .sort((a, b) => b.em_aberto - a.em_aberto || String(a.cliente ?? '').localeCompare(String(b.cliente ?? ''), 'pt-BR'));
-}
-
-// Excel dos despachos. Nov/2026: "clientes=devendo" tira só os clientes que ainda têm título em aberto
-// nessas cargas (e só as cargas e os títulos deles); "clientes=todos" (padrão) tira todos.
 async function exportarCargas(query) {
   const filtros = filtrosCarga(query);
-  const soDevendo = query.clientes === 'devendo';
-  const { lista: todasAsCargas } = await repo.cargas(filtros);
+  const { lista } = await repo.cargas(filtros);
   const geradoEm = new Date().toLocaleString('pt-BR');
   const workbook = excel.novaPlanilha();
-
-  const todosOsTitulos = await repo.titulosDasCargas(todasAsCargas);
-  const todosOsClientes = resumoPorCliente(todosOsTitulos);
-  const clientes = soDevendo ? todosOsClientes.filter((c) => c.em_aberto > 0.009) : todosOsClientes;
-  const devedores = new Set(clientes.map((c) => String(c.codigo ?? '')));
-  const titulos = soDevendo
-    ? todosOsTitulos.filter((t) => Number(t.adquirente) !== 1 && devedores.has(String(t.codigo_cliente ?? '')))
-    : todosOsTitulos;
-  const cargasDosDevedores = new Set(titulos.map((t) => Number(t.carga)));
-  const lista = soDevendo ? todasAsCargas.filter((c) => cargasDosDevedores.has(Number(c.carga))) : todasAsCargas;
-  const recorte = soDevendo ? 'só clientes devendo' : 'todos os clientes';
-
-  // Aba 0: um cliente por linha (quem deve primeiro)
-  excel.adicionarTabela(workbook, 'Clientes', {
-    titulo: `Clientes dos despachos (${recorte}) | Belo Norte`,
-    subtitulo: `${clientes.length} ${clientes.length === 1 ? 'cliente' : 'clientes'}`
-      + ` · ${clientes.filter((c) => c.em_aberto > 0.009).length} com título em aberto`
-      + `${filtros.situacao ? ` · ${SITUACAO_CARGA_TEXTO[filtros.situacao]}` : ''} · gerado em ${geradoEm}`,
-    colunas: [
-      { titulo: 'Cód. cliente', chave: 'codigo', tipo: 'codigo', largura: 11 },
-      { titulo: 'Cliente', chave: 'cliente', largura: 38 },
-      { titulo: 'Despachos', chave: 'despachos', largura: 22 },
-      { titulo: 'Notas', chave: 'qtd_notas', tipo: 'inteiro', largura: 8, somar: true },
-      { titulo: 'Títulos', chave: 'titulos', tipo: 'inteiro', largura: 8, somar: true },
-      { titulo: 'Valor dos títulos', chave: 'valor_titulos', tipo: 'moeda', largura: 15, somar: true },
-      { titulo: 'Títulos em aberto', chave: 'titulos_abertos', tipo: 'inteiro', largura: 10, somar: true },
-      { titulo: 'Em aberto', chave: 'em_aberto', tipo: 'moeda', largura: 15, somar: true },
-      { titulo: 'Vencimento mais antigo em aberto', chave: 'vencimento_mais_antigo', tipo: 'data', largura: 14 },
-    ],
-    linhas: clientes,
-    totais: true,
-  });
 
   // Aba 1: um despacho por linha
   excel.adicionarTabela(workbook, 'Despachos', {
     titulo: 'Despachos | Belo Norte',
-    subtitulo: `${lista.length} despachos · ${recorte}${filtros.situacao ? ` · ${SITUACAO_CARGA_TEXTO[filtros.situacao]}` : ''}`
+    subtitulo: `${lista.length} despachos${filtros.situacao ? ` · ${SITUACAO_CARGA_TEXTO[filtros.situacao]}` : ''}`
       + ` · gerado em ${geradoEm}`,
     colunas: [
       { titulo: 'Despacho', chave: 'carga', tipo: 'codigo', largura: 10 },
@@ -360,7 +294,6 @@ async function exportarCargas(query) {
       { titulo: 'Informado no acerto', chave: 'informado', tipo: 'moeda', largura: 15, somar: true },
       { titulo: 'Pago fora do acerto', chave: 'valor_pago_fora', tipo: 'moeda', largura: 15, somar: true },
       { titulo: 'A receber (notas sem acerto)', chave: 'valor_aberto_sem_acerto', tipo: 'moeda', largura: 16, somar: true },
-      { titulo: 'Em aberto (títulos da carga)', chave: 'valor_titulos_aberto', tipo: 'moeda', largura: 16, somar: true },
       { titulo: 'Situação', valor: situacaoDespacho, largura: 26 },
     ],
     linhas: lista,
@@ -369,6 +302,7 @@ async function exportarCargas(query) {
 
   // Aba 2: títulos de cada despacho e cada movimento (recebimento, estorno, encerramento...)
   const porCarga = new Map(lista.map((c) => [Number(c.carga), c]));
+  const titulos = await repo.titulosDasCargas(lista);
   const linhas = titulos.flatMap((t) => linhasDoTitulo(t, porCarga.get(Number(t.carga))));
   excel.adicionarTabela(workbook, 'Títulos e baixas', {
     titulo: 'Títulos e baixas dos despachos | Belo Norte',
@@ -404,8 +338,7 @@ async function exportarCargas(query) {
     totais: true,
   });
 
-  const sufixo = soDevendo ? 'clientes-devendo' : 'detalhado';
-  return { workbook, nomeArquivo: `despachos-${sufixo}_${new Date().toISOString().slice(0, 10)}.xlsx` };
+  return { workbook, nomeArquivo: `despachos-detalhado_${new Date().toISOString().slice(0, 10)}.xlsx` };
 }
 
 module.exports = {
